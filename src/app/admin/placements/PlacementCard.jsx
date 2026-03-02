@@ -1,0 +1,269 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import VendorLinkCopy from './VendorLinkCopy';
+import { ChevronDown, ChevronRight, Droplet, CheckCircle } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
+import { finalizeProjectAction } from './actions';
+
+export default function PlacementCard({ project, representativeHash }) {
+    // Default to collapsed to keep the dashboard clean
+    const [isCollapsed, setIsCollapsed] = useState(true);
+
+    // Manage live data locally to trigger re-renders
+    const [localStagingData, setLocalStagingData] = useState(project.project_list?.[0]?.vendor_staging_data || []);
+
+    // Real-time listener for this specific project
+    useEffect(() => {
+        if (!representativeHash) return;
+
+        const channel = supabase.channel(`placement-card-${project.id}`)
+            .on(
+                'postgres_changes',
+                { event: 'UPDATE', schema: 'public', table: 'project_list' },
+                (payload) => {
+                    // Only update if the hash exactly matches our project's vendor link hash
+                    if (payload.new.hash === representativeHash) {
+                        console.log(`Live update received for project ${project.id}`);
+                        setLocalStagingData(payload.new.vendor_staging_data || []);
+                    }
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [project.id, representativeHash]);
+
+    // Live computational function to build target summaries securely
+    function buildTargetSummary() {
+        const targets = project.project_targets || [];
+
+        return targets.map(t => {
+            const targetSubmissions = Array.isArray(localStagingData) ? localStagingData.filter(s => s.id.startsWith(`${t.id}-qty-`)) : [];
+            const uploadedCount = targetSubmissions.filter(s => s.published_url && s.published_url.trim().length > 0).length;
+
+            return {
+                id: t.id,
+                target_url: t.target_url,
+                anchor_text: t.anchor_text,
+                ordered_quantity: t.quantity,
+                uploaded_count: uploadedCount,
+                is_completed: uploadedCount === t.quantity
+            };
+        });
+    }
+
+    const liveTargetSummaries = buildTargetSummary();
+
+    // Verification Logic for Finalization
+    const [isFinalizing, setIsFinalizing] = useState(false);
+
+    // Math logic: Check if all dynamic target rows are explicitly 100% fulfilled
+    const allFulfilled = liveTargetSummaries.length > 0 && liveTargetSummaries.every(t => t.is_completed);
+
+    const stagingData = project.project_list?.[0]?.vendor_staging_data || [];
+    const completedLinks = Array.isArray(stagingData) ? stagingData.filter(p => p.published_url && p.published_url.trim().length > 0).length : 0;
+    const totalLinks = project.project_targets ? project.project_targets.reduce((acc, t) => acc + (t.quantity || 1), 0) : parseInt(project.quantity || 0);
+    const overallFulfillmentMatch = completedLinks === totalLinks && totalLinks > 0;
+
+    const hasPlacements = project.placements && project.placements.length > 0;
+    const isFinalized = project.status === 'Finalized' || hasPlacements;
+
+    const router = useRouter();
+
+    async function handleFinalize() {
+        if (!representativeHash) return;
+        setIsFinalizing(true);
+        try {
+            const res = await finalizeProjectAction(representativeHash);
+            if (!res.success) {
+                alert(`Error Finalizing: ${res.message}`);
+            } else {
+                alert(res.message);
+                router.refresh();
+            }
+        } catch (error) {
+            console.error(error);
+            alert("Crash triggering processor.");
+        } finally {
+            setIsFinalizing(false);
+        }
+    }
+
+    // Helper for safe URL parsing
+    const getSafeHostname = (urlString) => {
+        if (!urlString) return 'Unknown';
+        try {
+            return new URL(urlString).hostname;
+        } catch (e) {
+            return urlString;
+        }
+    };
+
+    return (
+        <div className="bg-white rounded-xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] ring-1 ring-gray-200 overflow-hidden transform transition-all hover:-translate-y-1 hover:shadow-[0_12px_40px_rgb(0,0,0,0.08)] duration-300 group">
+            {/* Header / Vendor Control Strip */}
+            <div className="px-6 py-5 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                    <h2 className="text-xl font-bold text-gray-900">{project.project_name}</h2>
+                    <div className="mt-1 flex items-center gap-3 text-sm text-gray-500 flex-wrap">
+                        <span className="font-medium text-indigo-600">{project.vendor_name}</span>
+                        <span className="text-gray-300">•</span>
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${(project.status === 'Completed' || isFinalized || allFulfilled) ? 'bg-green-50 text-green-700 border-green-200' : 'bg-yellow-50 text-yellow-700 border-yellow-200'}`}>
+                            {isFinalized ? 'Completed & Finalized' : (project.status === 'Completed' || allFulfilled) ? 'Completed' : project.status}
+                        </span>
+                        {project.country && (
+                            <>
+                                <span className="text-gray-300">•</span>
+                                <span className="uppercase text-xs font-bold text-gray-500 tracking-wider" title="Country">
+                                    {project.country}
+                                </span>
+                            </>
+                        )}
+                        {project.language && (
+                            <>
+                                <span className="text-gray-300">•</span>
+                                <span className="uppercase text-xs font-bold text-gray-500 tracking-wider" title="Language">
+                                    {project.language}
+                                </span>
+                            </>
+                        )}
+                        {project.backlinks_category && (
+                            <>
+                                <span className="text-gray-300">•</span>
+                                <span className="px-2 py-0.5 rounded-full text-xs font-medium border bg-purple-50 text-purple-700 border-purple-200" title="Category">
+                                    {project.backlinks_category}
+                                </span>
+                            </>
+                        )}
+                        {project.sheet_name && (
+                            <>
+                                <span className="text-gray-300">•</span>
+                                <span className="text-xs font-medium text-gray-500 italic" title="Target Sheet">
+                                    Sheet: {project.sheet_name}
+                                </span>
+                            </>
+                        )}
+                        <span className="text-gray-300">•</span>
+                        <span className="font-mono text-xs text-gray-400" title="Parent Project ID">PROJ: {project.id.split('-')[0]}</span>
+
+                        {/* Dripfeed Status */}
+                        {project.dripfeed_enabled && (
+                            <>
+                                <span className="text-gray-300">•</span>
+                                <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase border bg-amber-50 text-amber-700 border-amber-200" title="Drip Feed Schedule">
+                                    <Droplet className="w-3 h-3" />
+                                    Dripfeed: {project.urls_per_day} URLs / Day
+                                </span>
+                            </>
+                        )}
+                    </div>
+                </div>
+
+                {/* Action Center: Token & Link Generation */}
+                <div className="flex items-center gap-4 bg-white p-2 rounded-lg border border-gray-100 shadow-sm shrink-0">
+
+                    {/* Finalization Block */}
+                    {allFulfilled && !isFinalized && (
+                        <button
+                            onClick={handleFinalize}
+                            disabled={isFinalizing || !overallFulfillmentMatch}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded shadow-sm disabled:opacity-50 transition-colors"
+                        >
+                            <CheckCircle className="w-4 h-4" />
+                            {isFinalizing ? 'Normalizing Data...' : 'Approve & Finalize'}
+                        </button>
+                    )}
+
+                    {isFinalized && (
+                        <span className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-green-700 bg-green-50 border border-green-200 rounded">
+                            <CheckCircle className="w-4 h-4" />
+                            Finalized
+                        </span>
+                    )}
+
+                    <div className="flex flex-col border-l border-gray-100 pl-4">
+                        <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Vendor Portal Link</span>
+                        <span className="text-[10px] text-gray-400 italic">(View Placement Details)</span>
+                    </div>
+                    {representativeHash ? (
+                        <VendorLinkCopy projectHash={representativeHash} />
+                    ) : (
+                        <span className="text-sm text-red-500 italic px-2">Unlinked - No Kickoff Hash Created</span>
+                    )}
+
+                    {/* Collapse Toggle Button */}
+                    <div className="ml-2 pl-4 border-l border-gray-200">
+                        <button
+                            onClick={() => setIsCollapsed(!isCollapsed)}
+                            className="p-1.5 rounded-md text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            title={isCollapsed ? "Expand Targets" : "Collapse Targets"}
+                        >
+                            {isCollapsed ? <ChevronRight className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            {/* Nested Target Summary Table (Collapsible) */}
+            {!isCollapsed && (
+                <div className="overflow-x-auto border-t border-gray-100 transition-all duration-300 ease-in-out origin-top">
+                    <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                            <tr>
+                                <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-widest w-16">Target#</th>
+                                <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-widest">Target Domain</th>
+                                <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-widest">Anchor Text</th>
+                                <th scope="col" className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-widest">Fulfillment Progress</th>
+                            </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-100">
+                            {liveTargetSummaries && liveTargetSummaries.length > 0 ? (
+                                liveTargetSummaries.map((target, index) => (
+                                    <tr key={target.id} className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} hover:bg-indigo-50/30 transition-colors`}>
+                                        <td className="px-6 py-4 whitespace-nowrap text-xs font-mono font-medium text-gray-400">
+                                            T-{index + 1}
+                                        </td>
+                                        <td className="px-6 py-4 text-sm font-medium text-gray-900 max-w-xs truncate" title={target.target_url}>
+                                            <a href={target.target_url} target="_blank" rel="noopener noreferrer" className="hover:text-indigo-600 transition-colors">
+                                                {getSafeHostname(target.target_url)}
+                                            </a>
+                                        </td>
+                                        <td className="px-6 py-4 text-sm text-gray-500 font-mono">
+                                            {target.anchor_text}
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                                            <div className="flex flex-col items-center justify-center">
+                                                <span className="text-sm font-bold text-gray-700">
+                                                    {target.uploaded_count} <span className="text-gray-400 font-normal">/ {target.ordered_quantity}</span>
+                                                </span>
+                                                {target.is_completed ? (
+                                                    <span className="mt-1 px-2 inline-flex text-[10px] leading-4 font-semibold rounded-sm bg-green-100 text-green-800">
+                                                        Fulfilled
+                                                    </span>
+                                                ) : (
+                                                    <span className="mt-1 px-2 inline-flex text-[10px] leading-4 font-semibold rounded-sm bg-blue-100 text-blue-800">
+                                                        Pending
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))
+                            ) : (
+                                <tr>
+                                    <td colSpan="4" className="px-6 py-12 whitespace-nowrap text-center text-gray-400 bg-gray-50/30">
+                                        <span className="block text-sm font-medium text-gray-600">No Target Links configured for this project.</span>
+                                    </td>
+                                </tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+        </div>
+    );
+}
