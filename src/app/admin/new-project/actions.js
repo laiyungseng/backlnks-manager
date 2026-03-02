@@ -14,6 +14,7 @@ export async function createProjectAction(prevState, formData) {
             vendor_name: formData.get('vendor_name'),
             country: formData.get('country'),
             language: formData.get('language'),
+            languages_json: formData.get('languages_json'),
             targets_json: formData.get('targets_json'),
             backlinks_category: formData.get('backlinks_category'),
             sheet_name: formData.get('sheet_name') || null,
@@ -37,6 +38,7 @@ export async function createProjectAction(prevState, formData) {
 
         const projectData = validatedData.data;
         const targetsArray = projectData.targets_json;
+        const languagesArray = projectData.languages_json;
 
         const sumOfTargets = targetsArray.reduce((acc, row) => acc + row.quantity, 0);
         if (sumOfTargets !== projectData.quantity) {
@@ -50,7 +52,10 @@ export async function createProjectAction(prevState, formData) {
         const rawString = `${projectData.project_name}-${Date.now()}-${Math.random()}`;
         const projectHash = crypto.createHash('sha256').update(rawString).digest('hex');
 
-        // 3. Insert Master Project
+        // 3. Generate vendor_name slug for URL
+        const vendorSlug = projectData.vendor_name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+
+        // 4. Insert Master Project
         const { data: projectInsertResult, error: projectError } = await supabase
             .from('projects')
             .insert([
@@ -60,10 +65,9 @@ export async function createProjectAction(prevState, formData) {
                     start_date: projectData.start_date,
                     deadline: projectData.deadline,
                     vendor_name: projectData.vendor_name,
-                    // target_url and anchor_text logically dropped, 
-                    // replaced by country and language
                     country: projectData.country.toUpperCase(),
-                    language: projectData.language.toUpperCase(),
+                    language: languagesArray[0]?.code?.toUpperCase() || '',
+                    languages: languagesArray,
                     backlinks_category: projectData.backlinks_category,
                     sheet_name: projectData.sheet_name || null,
                     quantity: projectData.quantity,
@@ -86,13 +90,13 @@ export async function createProjectAction(prevState, formData) {
 
         const projectId = projectInsertResult.id;
 
-        // 4. Provision project_list (Hash Tracker / Virtual Hub)
+        // 5. Provision project_list (Hash Tracker / Virtual Hub)
         const { error: projectListError } = await supabase
             .from('project_list')
             .insert([{
                 project_id: projectId,
                 hash: projectHash,
-                vendor_staging_data: null, // Initially blank
+                vendor_staging_data: null,
                 created_at: new Date().toISOString()
             }]);
 
@@ -101,7 +105,7 @@ export async function createProjectAction(prevState, formData) {
             return { success: false, message: 'Project created, but failed to mint secure Vendor Hash.' };
         }
 
-        // 5. Bulk Insert Dynamic Targets Array matching `project_id`
+        // 6. Bulk Insert Dynamic Targets Array matching `project_id`
         const targetRowsMapping = targetsArray.map(target => ({
             project_id: projectId,
             anchor_text: target.anchor_text,
@@ -122,7 +126,8 @@ export async function createProjectAction(prevState, formData) {
         return {
             success: true,
             message: 'Complex SEO Kickoff successful.',
-            hash: projectHash
+            hash: projectHash,
+            vendorSlug: vendorSlug
         };
 
     } catch (error) {

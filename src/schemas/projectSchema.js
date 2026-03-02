@@ -7,7 +7,29 @@ export const projectSchema = z.object({
     deadline: z.string().min(1, 'Deadline is required'),
     vendor_name: z.string().min(1, 'Vendor Name is required'),
     country: z.string().min(1, 'Country is required').max(3),
-    language: z.string().min(1, 'Language is required').max(3),
+    // Legacy single language field (backward compat — populated from first language code)
+    language: z.string().min(1, 'Language is required').max(5),
+    // New: multi-language with ratios
+    languages_json: z.string()
+        .min(1, 'At least one language is required')
+        .transform((str, ctx) => {
+            try {
+                return JSON.parse(str);
+            } catch (e) {
+                ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Invalid languages JSON' });
+                return z.NEVER;
+            }
+        })
+        .pipe(
+            z.array(z.object({
+                code: z.string().min(1, 'Language code required').max(5),
+                ratio: z.coerce.number().min(0).max(100)
+            })).min(1, 'At least one language is required')
+        )
+        .refine(
+            (langs) => langs.reduce((sum, l) => sum + l.ratio, 0) === 100,
+            { message: 'Language ratios must sum to exactly 100%' }
+        ),
     targets_json: z.string()
         .min(1, 'Targets are required')
         .transform((str, ctx) => {
@@ -29,6 +51,7 @@ export const projectSchema = z.object({
             })).min(1, 'At least one target row is required')
         ),
     backlinks_category: z.enum([
+        'NULL',
         'PBN',
         'GP',
         'Tier 2',

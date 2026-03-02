@@ -210,6 +210,17 @@ export async function normalizeProjectData(projectHash) {
 
         if (finalizeErr) throw new Error(`Project finalize error: ${finalizeErr.message}`);
 
+        // AUTO-LOCK: Prevent vendor edits after finalization
+        const { error: lockErr } = await supabase
+            .from('project_list')
+            .update({ is_locked: true })
+            .eq('hash', projectHash);
+
+        if (lockErr) {
+            console.warn('Auto-lock warning:', lockErr.message);
+            // Non-fatal: finalization succeeded even if lock failed
+        }
+
         return {
             success: true,
             message: `Successfully mapped ${placementsToInsert.length} placements perfectly to ${domainMap.size} relational domains.`

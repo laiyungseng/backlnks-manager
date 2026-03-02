@@ -12,11 +12,12 @@ export default async function CompletedPlacementsPage() {
             status,
             country,
             language,
+            languages,
             backlinks_category,
             sheet_name,
             dripfeed_enabled,
             urls_per_day,
-            project_list ( hash, vendor_staging_data, completed_at ),
+            project_list ( hash, vendor_staging_data, completed_at, is_locked ),
             project_targets ( id, target_url, anchor_text, quantity ),
             placements ( id )
         `)

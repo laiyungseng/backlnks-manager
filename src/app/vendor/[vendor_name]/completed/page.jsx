@@ -1,0 +1,144 @@
+import { supabase } from '@/lib/supabase';
+import Link from 'next/link';
+import { Lock, ExternalLink, CheckCircle2 } from 'lucide-react';
+
+export const dynamic = 'force-dynamic';
+
+export default async function VendorCompletedPage({ params }) {
+    const resolvedParams = await params;
+    const vendorName = resolvedParams?.vendor_name;
+
+    if (!vendorName) {
+        return <div className="p-8 text-center text-gray-500">Invalid vendor path.</div>;
+    }
+
+    const displayName = vendorName.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
+    // Fetch all finalized projects for this vendor
+    const { data: projects, error } = await supabase
+        .from('projects')
+        .select(`
+            id,
+            project_name,
+            vendor_name,
+            status,
+            country,
+            language,
+            languages,
+            backlinks_category,
+            quantity,
+            deadline,
+            project_list ( hash, vendor_staging_data, is_locked ),
+            project_targets ( id, target_url, anchor_text, quantity ),
+            placements ( id )
+        `)
+        .ilike('vendor_name', vendorName.replace(/-/g, '%'))
+        .order('created_at', { ascending: false });
+
+    if (error) {
+        console.error('Vendor Completed fetch error:', error);
+    }
+
+    // Filter to finalized/completed only
+    const completedProjects = (projects || []).filter(p => {
+        const hasPlacements = p.placements && p.placements.length > 0;
+        return p.status === 'Finalized' || hasPlacements;
+    });
+
+    const formatLanguages = (project) => {
+        if (Array.isArray(project.languages) && project.languages.length > 0) {
+            return project.languages.map(l => `${l.code} (${l.ratio}%)`).join(', ');
+        }
+        return project.language ? `${project.language} (100%)` : '—';
+    };
+
+    const getProgress = (project) => {
+        const total = project.project_targets
+            ? project.project_targets.reduce((acc, t) => acc + (t.quantity || 1), 0)
+            : project.quantity || 0;
+        return { total };
+    };
+
+    return (
+        <div className="max-w-6xl mx-auto px-6 py-8 pb-20">
+            <div className="mb-8">
+                <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Completed Projects</h1>
+                <p className="mt-2 text-sm text-gray-500">
+                    Finalized assignments for <span className="font-semibold text-indigo-600">{displayName}</span>
+                </p>
+            </div>
+
+            <div className="space-y-6">
+                {completedProjects.length > 0 ? (
+                    completedProjects.map((project) => {
+                        const hash = project.project_list?.[0]?.hash;
+                        const isLocked = project.project_list?.[0]?.is_locked || false;
+                        const progress = getProgress(project);
+
+                        return (
+                            <div key={project.id} className="bg-white rounded-xl shadow-sm ring-1 ring-gray-200 overflow-hidden">
+                                <div className="px-6 py-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                                    <div className="flex-1">
+                                        <div className="flex items-center gap-2">
+                                            <h2 className="text-lg font-bold text-gray-900">{project.project_name}</h2>
+                                            <span className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold rounded bg-green-50 text-green-700 border border-green-200">
+                                                <CheckCircle2 className="w-3 h-3" /> Finalized
+                                            </span>
+                                        </div>
+                                        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                                            {project.country && (
+                                                <div>
+                                                    <span className="text-gray-400">Country: </span>
+                                                    <span className="font-semibold text-gray-700 uppercase">{project.country}</span>
+                                                </div>
+                                            )}
+                                            <div>
+                                                <span className="text-gray-400">Language: </span>
+                                                <span className="font-semibold text-gray-700 uppercase">{formatLanguages(project)}</span>
+                                            </div>
+                                            {project.backlinks_category && (
+                                                <div>
+                                                    <span className="text-gray-400">Category: </span>
+                                                    <span className="font-semibold text-purple-700">{project.backlinks_category}</span>
+                                                </div>
+                                            )}
+                                            <div>
+                                                <span className="text-gray-400">Qty: </span>
+                                                <span className="font-semibold text-gray-700">{progress.total}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center gap-3 shrink-0">
+                                        {/* Lock status */}
+                                        <span className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded ${isLocked
+                                            ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                                            : 'bg-blue-50 text-blue-700 border border-blue-200'
+                                            }`}>
+                                            {isLocked ? <Lock className="w-3.5 h-3.5" /> : <ExternalLink className="w-3.5 h-3.5" />}
+                                            {isLocked ? 'Locked' : 'Editable'}
+                                        </span>
+
+                                        {hash && !isLocked && (
+                                            <Link
+                                                href={`/vendor/${vendorName}/${hash}`}
+                                                className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-sm font-bold rounded-lg hover:bg-indigo-700 transition-colors shadow-sm"
+                                            >
+                                                <ExternalLink className="w-4 h-4" />
+                                                Open
+                                            </Link>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })
+                ) : (
+                    <div className="text-center py-20 bg-white rounded-xl border border-dashed border-gray-300">
+                        <p className="text-gray-500">No completed projects yet.</p>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}

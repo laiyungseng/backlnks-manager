@@ -3,18 +3,18 @@
 import { useState, useActionState, useMemo, useRef, useEffect } from 'react';
 import { createProjectAction } from './actions';
 import { useFormStatus } from 'react-dom';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Languages } from 'lucide-react';
 
 const initialState = {
     message: '',
     errors: null,
     success: false,
-    hash: null, // Return project hash instead of token
+    hash: null,
+    vendorSlug: null,
 };
 
 function SubmitButton({ isValid }) {
     const { pending } = useFormStatus();
-
     const disabled = pending || !isValid;
 
     return (
@@ -41,18 +41,28 @@ export default function NewProjectPage() {
     const [urlsPerDay, setUrlsPerDay] = useState('');
     const [manualOverride, setManualOverride] = useState(false);
 
+    // Language Ratio State
+    const [languages, setLanguages] = useState([
+        { id: crypto.randomUUID(), code: '', ratio: 100 }
+    ]);
+
     const [targets, setTargets] = useState([
         { id: crypto.randomUUID(), anchor_text: '', target_url: '', quantity: 1 }
     ]);
 
     useEffect(() => {
         if (state?.success && state?.hash) {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            setTimeout(() => {
+                alert('Project Kicked Off Successfully!');
+            }, 300);
             formRef.current?.reset();
             setMasterQuantity(1);
             setDripFeedEnabled(true);
             setDripfeedPeriod('');
             setUrlsPerDay('');
             setManualOverride(false);
+            setLanguages([{ id: crypto.randomUUID(), code: '', ratio: 100 }]);
             setTargets([{ id: crypto.randomUUID(), anchor_text: '', target_url: '', quantity: 1 }]);
         }
     }, [state?.success, state?.hash]);
@@ -69,6 +79,36 @@ export default function NewProjectPage() {
         }
     }, [masterQuantity, dripfeedPeriod, dripFeedEnabled, manualOverride]);
 
+    // --- Language Ratio Helpers ---
+    const addLanguage = () => {
+        setLanguages([...languages, { id: crypto.randomUUID(), code: '', ratio: 0 }]);
+    };
+
+    const removeLanguage = (idToRemove) => {
+        if (languages.length > 1) {
+            const remaining = languages.filter(l => l.id !== idToRemove);
+            // If only 1 left, auto-set to 100%
+            if (remaining.length === 1) {
+                remaining[0].ratio = 100;
+            }
+            setLanguages(remaining);
+        }
+    };
+
+    const updateLanguage = (id, field, value) => {
+        setLanguages(languages.map(l =>
+            l.id === id ? { ...l, [field]: field === 'ratio' ? parseInt(value) || 0 : value.toUpperCase() } : l
+        ));
+    };
+
+    const languageRatioSum = useMemo(() => {
+        return languages.reduce((sum, l) => sum + (parseInt(l.ratio) || 0), 0);
+    }, [languages]);
+
+    const isValidLanguageRatio = languageRatioSum === 100;
+    const allLanguagesFilled = languages.every(l => l.code.trim().length > 0);
+
+    // --- Target Row Helpers ---
     const addTargetRow = () => {
         setTargets([...targets, { id: crypto.randomUUID(), anchor_text: '', target_url: '', quantity: 1 }]);
     };
@@ -91,6 +131,9 @@ export default function NewProjectPage() {
 
     const isValidQuantity = currentSum === masterQuantity && masterQuantity > 0;
 
+    // Derived first language for backward compat hidden field
+    const firstLanguageCode = languages[0]?.code || '';
+
     return (
         <div className="max-w-4xl mx-auto py-10 px-4 sm:px-6 lg:px-8 pb-24">
             <h1 className="text-3xl font-bold text-gray-900 tracking-tight mb-2">Kickoff Project</h1>
@@ -106,8 +149,7 @@ export default function NewProjectPage() {
                             <div className="mt-2 text-sm text-green-700">
                                 <p>Encrypted Vendor Allocation Link (Share with Vendor):</p>
                                 <code className="mt-1 block p-2 bg-green-100 rounded text-green-900 border border-green-300 select-all overflow-x-auto font-mono text-xs">
-                                    {/* Will read domain on client securely, or fallback */}
-                                    {typeof window !== 'undefined' ? `${window.location.origin}/vendor/${state.hash}` : `/vendor/${state.hash}`}
+                                    {typeof window !== 'undefined' ? `${window.location.origin}/vendor/${state.vendorSlug || 'vendor'}/${state.hash}` : `/vendor/${state.vendorSlug || 'vendor'}/${state.hash}`}
                                 </code>
                             </div>
                         </div>
@@ -131,17 +173,17 @@ export default function NewProjectPage() {
                     <div className="grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-2">
                         <div className="sm:col-span-2">
                             <label className="block text-sm font-medium text-gray-700 mb-1">Project Name</label>
-                            <input type="text" name="project_name" required className="block w-full border border-gray-300 rounded-md shadow-sm p-2.5 text-gray-900 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" />
+                            <input type="text" name="project_name" required placeholder="e.g. Client XYZ SEO Campaign" className="block w-full border border-gray-300 rounded-md shadow-sm p-2.5 text-gray-900 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" />
                         </div>
 
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Project Owner (Internal)</label>
-                            <input type="text" name="owner" required className="block w-full border border-gray-300 rounded-md shadow-sm p-2.5 text-gray-900 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" />
+                            <input type="text" name="owner" required placeholder="e.g. John" className="block w-full border border-gray-300 rounded-md shadow-sm p-2.5 text-gray-900 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" />
                         </div>
 
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Vendor Assigned</label>
-                            <input type="text" name="vendor_name" required className="block w-full border border-gray-300 rounded-md shadow-sm p-2.5 text-gray-900 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" />
+                            <input type="text" name="vendor_name" required placeholder="e.g. IBETSEO" className="block w-full border border-gray-300 rounded-md shadow-sm p-2.5 text-gray-900 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" />
                         </div>
 
                         <div>
@@ -155,13 +197,8 @@ export default function NewProjectPage() {
                         </div>
 
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Country Code (e.g. MY, AUS, PNG)</label>
-                            <input type="text" name="country" required placeholder="MY" className="block w-full border border-gray-300 rounded-md shadow-sm p-2.5 text-gray-900 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm uppercase font-mono" maxLength={3} />
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Language Code (e.g. EN, MY)</label>
-                            <input type="text" name="language" required placeholder="EN" className="block w-full border border-gray-300 rounded-md shadow-sm p-2.5 text-gray-900 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm uppercase font-mono" maxLength={2} />
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Country Code</label>
+                            <input type="text" name="country" required placeholder="MY, AUS, PNG" className="block w-full border border-gray-300 rounded-md shadow-sm p-2.5 text-gray-900 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm uppercase font-mono" maxLength={3} />
                         </div>
 
                         <div>
@@ -191,6 +228,91 @@ export default function NewProjectPage() {
                             <input type="number" name="quantity" required min="1" value={masterQuantity} onChange={(e) => setMasterQuantity(parseInt(e.target.value) || 0)} className="block w-full border border-gray-300 rounded-md shadow-sm p-2.5 text-gray-900 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm font-bold bg-indigo-50" />
                         </div>
                     </div>
+                </div>
+
+                {/* Language Ratio Section */}
+                <div className="bg-gradient-to-r from-indigo-50 to-purple-50 -mx-6 sm:-mx-8 p-6 sm:p-8 border-y border-indigo-100">
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end mb-6 gap-4">
+                        <div>
+                            <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                                <Languages className="w-5 h-5 text-indigo-600" />
+                                Language Distribution
+                            </h2>
+                            <p className="text-xs text-gray-500 mt-1">Specify content languages and their quantity ratio. Must total 100%.</p>
+                        </div>
+                        <div className={`text-sm font-bold px-4 py-2 rounded-md border flex items-center justify-center transition-colors shadow-sm ${isValidLanguageRatio ? 'bg-green-100 text-green-800 border-green-300' : 'bg-red-50 text-red-700 border-red-200'}`}>
+                            Total: {languageRatioSum}% {isValidLanguageRatio ? '✓' : '✗'}
+                        </div>
+                    </div>
+
+                    <div className="space-y-3">
+                        {languages.map((lang, index) => (
+                            <div key={lang.id} className="flex items-center gap-3 bg-white p-3 rounded-lg border border-gray-200 shadow-sm group hover:border-indigo-300 transition-all">
+                                <div className="text-gray-400 font-mono text-xs w-6 text-center">#{index + 1}</div>
+
+                                <div className="flex-1">
+                                    <input
+                                        type="text"
+                                        placeholder="EN, MY, BM, ZH, JP..."
+                                        value={lang.code}
+                                        onChange={(e) => updateLanguage(lang.id, 'code', e.target.value)}
+                                        maxLength={5}
+                                        className="w-full border border-gray-300 rounded p-2 text-sm text-gray-900 uppercase font-mono focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all placeholder:text-gray-400 placeholder:normal-case"
+                                    />
+                                </div>
+
+                                <div className="w-28 relative">
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        max="100"
+                                        value={lang.ratio}
+                                        onChange={(e) => updateLanguage(lang.id, 'ratio', e.target.value)}
+                                        readOnly={languages.length === 1}
+                                        className={`w-full border border-gray-300 rounded p-2 text-sm font-mono text-right pr-7 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all ${languages.length === 1 ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : 'text-gray-900'}`}
+                                    />
+                                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-sm font-bold text-gray-400">%</span>
+                                </div>
+
+                                {lang.code && masterQuantity > 0 && (
+                                    <div className="text-xs text-indigo-600 font-semibold whitespace-nowrap w-16 text-center" title="Calculated quantity for this language">
+                                        = {Math.round(masterQuantity * lang.ratio / 100)} qty
+                                    </div>
+                                )}
+
+                                {languages.length > 1 && (
+                                    <button
+                                        type="button"
+                                        onClick={() => removeLanguage(lang.id)}
+                                        title="Remove Language"
+                                        className="text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md p-1.5 transition-colors shrink-0"
+                                    >
+                                        <Trash2 className="w-4 h-4" />
+                                    </button>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+
+                    <div className="mt-4 flex items-center justify-between">
+                        <button
+                            type="button"
+                            onClick={addLanguage}
+                            className="inline-flex items-center gap-1.5 text-sm font-semibold text-indigo-700 hover:text-indigo-800 bg-white hover:bg-indigo-50 px-4 py-2 rounded-md transition-colors border border-indigo-200 shadow-sm"
+                        >
+                            <Plus className="w-4 h-4" /> Add Language
+                        </button>
+
+                        {!isValidLanguageRatio && (
+                            <span className="text-sm font-medium text-red-600 bg-red-50 px-3 py-1 rounded-full animate-pulse">
+                                {languageRatioSum < 100 ? `${100 - languageRatioSum}% remaining` : `${languageRatioSum - 100}% over limit`}
+                            </span>
+                        )}
+                    </div>
+
+                    {/* Hidden inputs for form submission */}
+                    <input type="hidden" name="language" value={firstLanguageCode} />
+                    <input type="hidden" name="languages_json" value={JSON.stringify(languages.map(l => ({ code: l.code, ratio: l.ratio })))} />
                 </div>
 
                 {/* Drip Feed Configuration */}
@@ -256,7 +378,7 @@ export default function NewProjectPage() {
                     )}
                 </div>
 
-                {/* 2. Target URL & Anchor Configuration */}
+                {/* Placement Targets */}
                 <div className="bg-gray-50 -mx-6 sm:-mx-8 p-6 sm:p-8 border-y border-gray-200">
                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end mb-6 gap-4">
                         <div>
@@ -337,16 +459,15 @@ export default function NewProjectPage() {
                         )}
                     </div>
 
-                    {/* Hidden input to pass generic JSON state array safely to server action */}
                     <input type="hidden" name="targets_json" value={JSON.stringify(targets)} />
                 </div>
 
                 <div className="sm:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Remarks (Optional)</label>
-                    <textarea name="remarks" rows={3} className="block w-full border border-gray-300 rounded-md shadow-sm p-3 text-gray-900 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" />
+                    <textarea name="remarks" rows={3} placeholder="Any additional notes for this project..." className="block w-full border border-gray-300 rounded-md shadow-sm p-3 text-gray-900 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" />
                 </div>
 
-                <SubmitButton isValid={isValidQuantity} />
+                <SubmitButton isValid={isValidQuantity && isValidLanguageRatio && allLanguagesFilled} />
             </form>
         </div>
     );

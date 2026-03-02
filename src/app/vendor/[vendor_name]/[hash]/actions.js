@@ -8,6 +8,7 @@ const vendorPayloadSchema = z.array(z.object({
     target_id: z.string().uuid(),
     target_url: z.string(),
     anchor_text: z.string(),
+    language: z.string().optional().or(z.literal('')),
     published_url: z.string().url('Published URL must be a valid link').or(z.literal('')),
     published_date: z.string().or(z.literal('')),
     remark: z.string().optional().or(z.literal('')),

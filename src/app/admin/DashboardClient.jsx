@@ -22,12 +22,12 @@ export default function DashboardClient({ initialProjects }) {
                     // We need to update the specific project's vendor_staging_data in our local state
                     setProjects(currentProjects => {
                         return currentProjects.map(project => {
-                            // Find the project that owns this project_list row
-                            if (project.project_list && project.project_list[0] && project.project_list[0].hash === payload.new.hash) {
+                            // Find the project that owns this project_list row matching the project_id
+                            if (project.id === payload.new.project_id) {
                                 return {
                                     ...project,
                                     project_list: [{
-                                        ...project.project_list[0],
+                                        ...(project.project_list?.[0] || {}),
                                         vendor_staging_data: payload.new.vendor_staging_data
                                     }]
                                 };
@@ -219,11 +219,19 @@ export default function DashboardClient({ initialProjects }) {
                                                 })()}
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                                <form action={deleteProject.bind(null, project.id)}>
-                                                    <button type="submit" className="text-red-600 hover:text-red-900 p-1 rounded-full hover:bg-red-50 transition-colors cursor-pointer" title="Delete Project">
-                                                        <Trash2 className="w-5 h-5" />
-                                                    </button>
-                                                </form>
+                                                <button
+                                                    onClick={async (e) => {
+                                                        e.preventDefault();
+                                                        if (confirm("Are you sure you want to delete this project?")) {
+                                                            setProjects(prev => prev.filter(p => p.id !== project.id));
+                                                            await deleteProject(project.id);
+                                                        }
+                                                    }}
+                                                    className="text-red-600 hover:text-red-900 p-1 rounded-full hover:bg-red-50 transition-colors cursor-pointer"
+                                                    title="Delete Project"
+                                                >
+                                                    <Trash2 className="w-5 h-5" />
+                                                </button>
                                             </td>
                                         </tr>
                                     );

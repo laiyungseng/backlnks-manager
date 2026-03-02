@@ -3,9 +3,9 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import VendorLinkCopy from './VendorLinkCopy';
-import { ChevronDown, ChevronRight, Droplet, CheckCircle } from 'lucide-react';
+import { ChevronDown, ChevronRight, Droplet, CheckCircle, Lock, Unlock } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { finalizeProjectAction } from './actions';
+import { finalizeProjectAction, toggleProjectLockAction } from './actions';
 
 export default function PlacementCard({ project, representativeHash }) {
     // Default to collapsed to keep the dashboard clean
@@ -42,7 +42,7 @@ export default function PlacementCard({ project, representativeHash }) {
         const targets = project.project_targets || [];
 
         return targets.map(t => {
-            const targetSubmissions = Array.isArray(localStagingData) ? localStagingData.filter(s => s.id.startsWith(`${t.id}-qty-`)) : [];
+            const targetSubmissions = Array.isArray(localStagingData) ? localStagingData.filter(s => s.target_id === t.id) : [];
             const uploadedCount = targetSubmissions.filter(s => s.published_url && s.published_url.trim().length > 0).length;
 
             return {
@@ -64,7 +64,7 @@ export default function PlacementCard({ project, representativeHash }) {
     // Math logic: Check if all dynamic target rows are explicitly 100% fulfilled
     const allFulfilled = liveTargetSummaries.length > 0 && liveTargetSummaries.every(t => t.is_completed);
 
-    const stagingData = project.project_list?.[0]?.vendor_staging_data || [];
+    const stagingData = localStagingData || [];
     const completedLinks = Array.isArray(stagingData) ? stagingData.filter(p => p.published_url && p.published_url.trim().length > 0).length : 0;
     const totalLinks = project.project_targets ? project.project_targets.reduce((acc, t) => acc + (t.quantity || 1), 0) : parseInt(project.quantity || 0);
     const overallFulfillmentMatch = completedLinks === totalLinks && totalLinks > 0;
@@ -93,6 +93,38 @@ export default function PlacementCard({ project, representativeHash }) {
         }
     }
 
+    // Lock/Edit toggle
+    const [isToggling, setIsToggling] = useState(false);
+    const currentLockState = project.project_list?.[0]?.is_locked || false;
+    const [localLockState, setLocalLockState] = useState(currentLockState);
+
+    async function handleToggleLock() {
+        if (!representativeHash) return;
+        setIsToggling(true);
+        try {
+            const res = await toggleProjectLockAction(representativeHash, !localLockState);
+            if (res.success) {
+                setLocalLockState(!localLockState);
+                router.refresh();
+            } else {
+                alert(`Error: ${res.message}`);
+            }
+        } catch (error) {
+            console.error(error);
+        } finally {
+            setIsToggling(false);
+        }
+    }
+
+    // Language display helper
+    const formatLanguages = () => {
+        const languages = project.languages;
+        if (Array.isArray(languages) && languages.length > 0) {
+            return languages.map(l => `${l.code} (${l.ratio}%)`).join(', ');
+        }
+        return project.language ? `${project.language} (100%)` : null;
+    };
+
     // Helper for safe URL parsing
     const getSafeHostname = (urlString) => {
         if (!urlString) return 'Unknown';
@@ -109,57 +141,61 @@ export default function PlacementCard({ project, representativeHash }) {
             <div className="px-6 py-5 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
                     <h2 className="text-xl font-bold text-gray-900">{project.project_name}</h2>
-                    <div className="mt-1 flex items-center gap-3 text-sm text-gray-500 flex-wrap">
-                        <span className="font-medium text-indigo-600">{project.vendor_name}</span>
-                        <span className="text-gray-300">•</span>
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${(project.status === 'Completed' || isFinalized || allFulfilled) ? 'bg-green-50 text-green-700 border-green-200' : 'bg-yellow-50 text-yellow-700 border-yellow-200'}`}>
-                            {isFinalized ? 'Completed & Finalized' : (project.status === 'Completed' || allFulfilled) ? 'Completed' : project.status}
-                        </span>
-                        {project.country && (
-                            <>
-                                <span className="text-gray-300">•</span>
-                                <span className="uppercase text-xs font-bold text-gray-500 tracking-wider" title="Country">
-                                    {project.country}
-                                </span>
-                            </>
+                    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5 text-xs">
+                        {localLockState ? (
+                            <div className="flex items-center gap-1 text-amber-700 font-semibold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                                <Lock className="w-3 h-3" /> Locked
+                            </div>
+                        ) : (
+                            <div className="flex items-center gap-1 text-green-700 font-semibold bg-green-50 px-2 py-0.5 rounded border border-green-200">
+                                <Unlock className="w-3 h-3" /> Editable
+                            </div>
                         )}
-                        {project.language && (
-                            <>
-                                <span className="text-gray-300">•</span>
-                                <span className="uppercase text-xs font-bold text-gray-500 tracking-wider" title="Language">
-                                    {project.language}
-                                </span>
-                            </>
+                        <div>
+                            <span className="text-gray-400 font-medium">Vendor: </span>
+                            <span className="font-semibold text-indigo-600">{project.vendor_name}</span>
+                        </div>
+                        <div>
+                            <span className="text-gray-400 font-medium">Status: </span>
+                            <span className={`font-semibold ${(isFinalized || allFulfilled) ? 'text-green-700' : 'text-yellow-700'}`}>
+                                {isFinalized ? 'Finalized' : (project.status === 'Completed' || allFulfilled) ? 'Completed' : project.status}
+                            </span>
+                        </div>
+                        {project.country && (
+                            <div>
+                                <span className="text-gray-400 font-medium">Country: </span>
+                                <span className="font-semibold text-gray-700 uppercase">{project.country}</span>
+                            </div>
+                        )}
+                        {formatLanguages() && (
+                            <div>
+                                <span className="text-gray-400 font-medium">Language: </span>
+                                <span className="font-semibold text-gray-700 uppercase">{formatLanguages()}</span>
+                            </div>
                         )}
                         {project.backlinks_category && (
-                            <>
-                                <span className="text-gray-300">•</span>
-                                <span className="px-2 py-0.5 rounded-full text-xs font-medium border bg-purple-50 text-purple-700 border-purple-200" title="Category">
-                                    {project.backlinks_category}
-                                </span>
-                            </>
+                            <div>
+                                <span className="text-gray-400 font-medium">Category: </span>
+                                <span className="px-1.5 py-0.5 rounded text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200">{project.backlinks_category}</span>
+                            </div>
                         )}
                         {project.sheet_name && (
-                            <>
-                                <span className="text-gray-300">•</span>
-                                <span className="text-xs font-medium text-gray-500 italic" title="Target Sheet">
-                                    Sheet: {project.sheet_name}
-                                </span>
-                            </>
+                            <div>
+                                <span className="text-gray-400 font-medium">Sheet: </span>
+                                <span className="font-medium text-gray-600 italic">{project.sheet_name}</span>
+                            </div>
                         )}
-                        <span className="text-gray-300">•</span>
-                        <span className="font-mono text-xs text-gray-400" title="Parent Project ID">PROJ: {project.id.split('-')[0]}</span>
-
-                        {/* Dripfeed Status */}
                         {project.dripfeed_enabled && (
-                            <>
-                                <span className="text-gray-300">•</span>
-                                <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase border bg-amber-50 text-amber-700 border-amber-200" title="Drip Feed Schedule">
-                                    <Droplet className="w-3 h-3" />
-                                    Dripfeed: {project.urls_per_day} URLs / Day
-                                </span>
-                            </>
+                            <div className="flex items-center gap-1">
+                                <Droplet className="w-3 h-3 text-amber-600" />
+                                <span className="text-gray-400 font-medium">Dripfeed: </span>
+                                <span className="font-semibold text-amber-700">{project.urls_per_day} URLs/Day</span>
+                            </div>
                         )}
+                        <div>
+                            <span className="text-gray-400 font-medium">ID: </span>
+                            <span className="font-mono text-gray-400">{project.id.split('-')[0]}</span>
+                        </div>
                     </div>
                 </div>
 
@@ -179,10 +215,24 @@ export default function PlacementCard({ project, representativeHash }) {
                     )}
 
                     {isFinalized && (
-                        <span className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-green-700 bg-green-50 border border-green-200 rounded">
-                            <CheckCircle className="w-4 h-4" />
-                            Finalized
-                        </span>
+                        <div className="flex items-center gap-2">
+                            <span className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-green-700 bg-green-50 border border-green-200 rounded">
+                                <CheckCircle className="w-4 h-4" />
+                                Finalized
+                            </span>
+                            <button
+                                onClick={handleToggleLock}
+                                disabled={isToggling}
+                                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded shadow-sm transition-colors disabled:opacity-50 ${localLockState
+                                    ? 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
+                                    : 'bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100'
+                                    }`}
+                                title={localLockState ? 'Unlock for vendor editing' : 'Lock vendor editing'}
+                            >
+                                {localLockState ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
+                                {isToggling ? '...' : localLockState ? 'Locked' : 'Editable'}
+                            </button>
+                        </div>
                     )}
 
                     <div className="flex flex-col border-l border-gray-100 pl-4">

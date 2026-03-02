@@ -2,12 +2,18 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { LayoutDashboard, PlusCircle, ClipboardList, CheckCircle2, Settings, LogOut, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 
 export default function AdminLayout({ children }) {
     const pathname = usePathname();
+    const router = useRouter();
     const [isCollapsed, setIsCollapsed] = useState(false);
+
+    const handleSignOut = () => {
+        localStorage.removeItem('df_admin_session');
+        router.push('/login');
+    };
 
     const navigation = [
         { name: 'Dashboard', href: '/admin', icon: LayoutDashboard },
@@ -62,7 +68,9 @@ export default function AdminLayout({ children }) {
 
                 {/* Footer */}
                 <div className="p-3 pb-4 border-t border-gray-800 shrink-0">
-                    <button className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-400 hover:bg-gray-800 hover:text-white transition-colors w-full ${isCollapsed ? 'justify-center' : ''}`}
+                    <button
+                        onClick={handleSignOut}
+                        className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-400 hover:bg-gray-800 hover:text-white transition-colors w-full ${isCollapsed ? 'justify-center' : ''}`}
                         title={isCollapsed ? 'Sign Out' : ''}
                     >
                         <span className="bg-gray-700 w-7 h-7 rounded flex items-center justify-center text-[10px] font-bold text-gray-300 flex-shrink-0">DF</span>

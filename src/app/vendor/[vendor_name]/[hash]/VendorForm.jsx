@@ -1,12 +1,12 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { saveVendorProgress } from './actions';
-import { CheckCircle2, FileSpreadsheet, RefreshCw, Filter, ChevronDown, ChevronRight, Info, Calendar } from 'lucide-react';
+import { CheckCircle2, FileSpreadsheet, RefreshCw, Filter, ChevronDown, ChevronRight, Calendar, Lock, Unlock } from 'lucide-react';
 import { DataEditor, GridCellKind } from '@glideapps/glide-data-grid';
 import '@glideapps/glide-data-grid/dist/index.css';
 
-export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, dripfeedPeriod, urlsPerDay }) {
+export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, dripfeedPeriod, urlsPerDay, isLocked = false }) {
     const [rows, setRows] = useState(initialRows || []);
     const [isSaving, setIsSaving] = useState(false);
     const [lastSavedAt, setLastSavedAt] = useState(null);
@@ -65,11 +65,14 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
         setIsSaving(true);
         if (!isAutoSave) setFeedback({ type: '', message: '' });
 
+        if (isLocked) return; // Prevent saving when locked
+
         const rowsToUpdate = rows.map(r => ({
             id: r.id,
             target_id: r.target_id,
             target_url: r.target_url,
             anchor_text: r.anchor_text,
+            language: r.language || '',
             published_url: r.published_url || '',
             published_date: r.published_date || '',
             remark: r.remark || '',
@@ -140,7 +143,7 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
     const completedCount = rows.filter(r => r.published_url && r.published_date).length;
     const [showMetrics, setShowMetrics] = useState(false);
     const [isMounted, setIsMounted] = useState(false);
-    const [selection, setSelection] = useState(null);
+    const [selection, setSelection] = useState(undefined);
 
     useEffect(() => {
         setIsMounted(true);
@@ -148,26 +151,14 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
 
     const progressPercent = rows.length > 0 ? Math.round((completedCount / rows.length) * 100) : 0;
 
-    if (rows.length === 0) {
-        return (
-            <div className="flex items-center justify-center p-12 bg-white rounded-xl shadow-sm border border-gray-200 mt-8">
-                <div className="text-center">
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">No Active Targets</h3>
-                    <p className="text-gray-500 text-sm">
-                        This workflow environment has not been provisioned with target links. Please contact your administrator.
-                    </p>
-                </div>
-            </div>
-        )
-    }
-
     const columns = useMemo(() => [
         { title: "Target Authority", id: "target_url", width: 250 },
         { title: "Anchor Text", id: "anchor_text", width: 200 },
+        { title: "Language", id: "language", width: 100 },
         { title: "Remark", id: "remark", width: 150 },
         { title: "Published URL", id: "published_url", width: 300 },
         { title: "Published Date", id: "published_date", width: 180 },
-        { title: "indexed_status", id: "indexed_status", width: 180 }
+        { title: "Index Status", id: "indexed_status", width: 180 }
     ], []);
 
     const getCellContent = useCallback((cell) => {
@@ -202,21 +193,29 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
                     allowOverlay: false,
                     readonly: true
                 };
+            case "language":
+                return {
+                    kind: GridCellKind.Text,
+                    data: dataRow.language || "",
+                    displayData: dataRow.language || "",
+                    allowOverlay: false,
+                    readonly: true
+                };
             case "remark":
                 return {
                     kind: GridCellKind.Text,
                     data: dataRow.remark || "",
                     displayData: dataRow.remark || "",
-                    allowOverlay: true,
-                    readonly: false
+                    allowOverlay: !isLocked,
+                    readonly: isLocked
                 };
             case "published_url":
                 return {
                     kind: GridCellKind.Text,
                     data: dataRow.published_url || "",
                     displayData: dataRow.published_url || "",
-                    allowOverlay: true,
-                    readonly: false
+                    allowOverlay: !isLocked,
+                    readonly: isLocked
                 };
             case "published_date":
                 return {
@@ -231,8 +230,8 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
                     kind: GridCellKind.Text,
                     data: dataRow.indexed_status || "",
                     displayData: dataRow.indexed_status || "",
-                    allowOverlay: true,
-                    readonly: false
+                    allowOverlay: !isLocked,
+                    readonly: isLocked
                 };
             default:
                 return {
@@ -245,6 +244,7 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
     }, [filteredRows, columns]);
 
     const onCellEdited = useCallback((cell, newValue) => {
+        if (isLocked) return; // Block edits when locked
         const [col, row] = cell;
         const dataRow = filteredRows[row];
         if (!dataRow) return;
@@ -279,7 +279,74 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
         setIsDirty(true);
     }, [filteredRows, columns, rows]);
 
+    const onPaste = useCallback((target, values) => {
+        if (isLocked) return false;
+        const [x, y] = target;
+
+        let hasChanges = false;
+
+        setRows(prevRows => {
+            const newRows = [...prevRows];
+
+            for (let rIndex = 0; rIndex < values.length; rIndex++) {
+                const rowData = values[rIndex];
+                const targetRow = y + rIndex;
+
+                if (targetRow >= filteredRows.length) continue;
+
+                const dataRow = filteredRows[targetRow];
+                const originalIdx = newRows.findIndex(r => r.id === dataRow.id);
+                if (originalIdx === -1) continue;
+
+                let updatedRow = { ...newRows[originalIdx] };
+                let rowHasChanges = false;
+
+                for (let cIndex = 0; cIndex < rowData.length; cIndex++) {
+                    const valToSet = rowData[cIndex];
+                    const targetCol = x + cIndex;
+
+                    if (targetCol >= columns.length) continue;
+
+                    const colDef = columns[targetCol];
+                    const field = colDef.id;
+
+                    // Only map allowed editable columns
+                    if (["remark", "published_url", "indexed_status"].includes(field)) {
+                        updatedRow[field] = valToSet;
+                        rowHasChanges = true;
+
+                        // Apply Auto-logic
+                        if (field === 'published_url') {
+                            if (valToSet && valToSet.trim() !== '') {
+                                if (!updatedRow.published_date) {
+                                    updatedRow.published_date = getISOFormat();
+                                }
+                            } else {
+                                updatedRow.published_date = '';
+                            }
+                        }
+                    }
+                }
+
+                if (rowHasChanges) {
+                    newRows[originalIdx] = updatedRow;
+                    hasChanges = true;
+                }
+            }
+
+            return newRows;
+        });
+
+        if (hasChanges) {
+            setIsDirty(true);
+        }
+
+        return true;
+    }, [filteredRows, columns, isLocked]);
+
+
     const onDelete = useCallback((selection) => {
+        if (isLocked) return true; // Block deletion when locked
         if (!selection || (!selection.current && !selection.rows && !selection.columns)) return true;
 
         setRows(prevRows => {
@@ -343,8 +410,32 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
         }
     }, [selection, onDelete]);
 
+    if (rows.length === 0) {
+        return (
+            <div className="flex items-center justify-center p-12 bg-white rounded-xl shadow-sm border border-gray-200 mt-8">
+                <div className="text-center">
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">No Active Targets</h3>
+                    <p className="text-gray-500 text-sm">
+                        This workflow environment has not been provisioned with target links. Please contact your administrator.
+                    </p>
+                </div>
+            </div>
+        )
+    }
+
     return (
         <div className="mt-8 space-y-6">
+
+            {/* Lock Banner */}
+            {isLocked && (
+                <div className="flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl shadow-sm">
+                    <Lock className="w-5 h-5 text-amber-600 flex-shrink-0" />
+                    <div>
+                        <p className="text-sm font-semibold text-amber-900">This project is locked</p>
+                        <p className="text-xs text-amber-700">Editing is disabled. Contact your administrator to unlock this project.</p>
+                    </div>
+                </div>
+            )}
 
             {/* Dripfeed Progress Banner (Conditional) */}
             {dripfeedEnabled && (
@@ -462,23 +553,33 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
                         {isFilterActive ? 'Filters Active' : 'Enable Filters'}
                     </button>
 
-                    {/* Auto Save Status Indicator */}
-                    <div className="flex items-center gap-2 bg-white px-4 py-2 border border-gray-200 rounded-md shadow-sm min-w-[200px] w-full sm:w-auto justify-center">
-                        {isSaving ? (
-                            <>
-                                <RefreshCw className="w-4 h-4 animate-spin text-indigo-500" />
-                                <span className="text-sm font-medium text-indigo-700">Auto-saving...</span>
-                            </>
-                        ) : lastSavedAt ? (
-                            <>
-                                <CheckCircle2 className="w-4 h-4 text-green-500" />
-                                <span className="text-sm font-medium text-green-700">
-                                    Saved: {lastSavedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                                </span>
-                            </>
-                        ) : (
-                            <span className="text-sm font-medium text-gray-400">All changes saved.</span>
-                        )}
+                    <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+                        {/* Lock / Editable Status Badge */}
+                        <div className={`flex items-center justify-center gap-2 px-4 py-2 rounded-md shadow-sm border ${isLocked ? 'bg-amber-100/50 text-amber-800 border-amber-200' : 'bg-green-50 text-green-700 border-green-200'}`}>
+                            {isLocked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
+                            <span className="text-sm font-semibold tracking-wide">
+                                {isLocked ? 'LOCKED (READ-ONLY)' : 'EDITABLE'}
+                            </span>
+                        </div>
+
+                        {/* Auto Save Status Indicator */}
+                        <div className="flex items-center gap-2 bg-white px-4 py-2 border border-gray-200 rounded-md shadow-sm min-w-[200px] w-full sm:w-auto justify-center">
+                            {isSaving ? (
+                                <>
+                                    <RefreshCw className="w-4 h-4 animate-spin text-indigo-500" />
+                                    <span className="text-sm font-medium text-indigo-700">Auto-saving...</span>
+                                </>
+                            ) : lastSavedAt ? (
+                                <>
+                                    <CheckCircle2 className="w-4 h-4 text-green-500" />
+                                    <span className="text-sm font-medium text-green-700">
+                                        Saved: {lastSavedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                    </span>
+                                </>
+                            ) : (
+                                <span className="text-sm font-medium text-gray-400">All changes saved.</span>
+                            )}
+                        </div>
                     </div>
                 </div>
 
@@ -564,9 +665,9 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
                             onCellEdited={onCellEdited}
                             onDelete={onDelete}
                             onGridSelectionChange={setSelection}
+                            gridSelection={selection}
+                            onPaste={onPaste}
                             onKeyDown={onKeyDown}
-                            getCellsForSelection={true}
-                            onPaste={true}
                             smoothScrollX={true}
                             smoothScrollY={true}
                             rowMarkers="both"
@@ -579,9 +680,6 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
                     {isFilterActive && <span>Filters refer to Target Authority, Anchor Text, Last Published, and Remarks</span>}
                 </div>
             </div>
-
-            {/* Strict DOM Layer for Glide Data Editor Overlays */}
-            <div id="portal" className="fixed top-0 left-0 w-full h-full pointer-events-none z-[9999]" />
         </div>
     );
 }

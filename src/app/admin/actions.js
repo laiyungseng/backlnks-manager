@@ -30,7 +30,7 @@ export async function deleteProject(projectId) {
         }
 
         // 3. Revalidate the admin dashboard page so it refreshes immediately
-        revalidatePath('/admin');
+        revalidatePath('/admin', 'layout');
 
         return { success: true, message: 'Project deleted successfully.' };
 

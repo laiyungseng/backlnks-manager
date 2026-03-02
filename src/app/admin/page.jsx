@@ -1,7 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import DashboardClient from './DashboardClient';
 
-export const revalidate = 0; // Disable static caching so the dashboard is always fresh
+export const dynamic = 'force-dynamic';
 
 export default async function AdminDashboardPage() {
     // Fetch recent projects from Supabase ALONG WITH their related Phase 2 Targets and Virtual Staging Data
