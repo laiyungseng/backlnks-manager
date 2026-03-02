@@ -26,11 +26,14 @@ export default function LoginPage() {
         const res = await verifyLoginAction(username.trim(), password.trim());
 
         if (res.success) {
-            // Store successful session locally
+            // Store successful session locally for client-side speed
             localStorage.setItem('df_admin_session', JSON.stringify({
                 username: res.user.username,
                 loggedInAt: new Date().toISOString()
             }));
+
+            // Set a cookie so Middleware can protect routes on the server
+            document.cookie = `df_admin_session_active=true; path=/; max-age=${60 * 60 * 24}; SameSite=Strict`;
 
             router.push('/admin');
         } else {
