@@ -12,16 +12,16 @@ export default function PlacementCard({ project, representativeHash }) {
     const [isCollapsed, setIsCollapsed] = useState(true);
 
     // Manage live data locally to trigger re-renders
-    const [localStagingData, setLocalStagingData] = useState(project.project_list?.[0]?.vendor_staging_data || []);
+    const [localStagingData, setLocalStagingData] = useState(project.projects_hub?.[0]?.vendor_staging_data || []);
 
     // Real-time listener for this specific project
     useEffect(() => {
-        if (!representativeHash) return;
+        if (!representativeHash || !supabase) return;
 
         const channel = supabase.channel(`placement-card-${project.id}`)
             .on(
                 'postgres_changes',
-                { event: 'UPDATE', schema: 'public', table: 'project_list' },
+                { event: 'UPDATE', schema: 'public', table: 'projects_hub' },
                 (payload) => {
                     // Only update if the hash exactly matches our project's vendor link hash
                     if (payload.new.hash === representativeHash) {
@@ -33,25 +33,31 @@ export default function PlacementCard({ project, representativeHash }) {
             .subscribe();
 
         return () => {
-            supabase.removeChannel(channel);
+            if (supabase) supabase.removeChannel(channel);
         };
     }, [project.id, representativeHash]);
 
     // Live computational function to build target summaries securely
     function buildTargetSummary() {
-        const targets = project.project_targets || [];
+        // Parse from Hub
+        const hubContacts = project.projects_hub?.[0] || {};
+        const targetsArray = Array.isArray(hubContacts.targets) ? hubContacts.targets : [];
 
-        return targets.map(t => {
-            const targetSubmissions = Array.isArray(localStagingData) ? localStagingData.filter(s => s.target_id === t.id) : [];
+        return targetsArray.map((t, idx) => {
+            // Because target_id was synthetic, we have to match the generic idx fallback if it doesnt exist
+            const syntheticId = t.target_id || `idx-${idx}`;
+
+            const targetSubmissions = Array.isArray(localStagingData) ? localStagingData.filter(s => s.target_id === syntheticId) : [];
             const uploadedCount = targetSubmissions.filter(s => s.published_url && s.published_url.trim().length > 0).length;
+            const targetOrderedQty = parseInt(t.quantity || '0', 10);
 
             return {
-                id: t.id,
+                id: syntheticId,
                 target_url: t.target_url,
                 anchor_text: t.anchor_text,
-                ordered_quantity: t.quantity,
+                ordered_quantity: targetOrderedQty,
                 uploaded_count: uploadedCount,
-                is_completed: uploadedCount === t.quantity
+                is_completed: uploadedCount === targetOrderedQty
             };
         });
     }
@@ -66,7 +72,14 @@ export default function PlacementCard({ project, representativeHash }) {
 
     const stagingData = localStagingData || [];
     const completedLinks = Array.isArray(stagingData) ? stagingData.filter(p => p.published_url && p.published_url.trim().length > 0).length : 0;
-    const totalLinks = project.project_targets ? project.project_targets.reduce((acc, t) => acc + (t.quantity || 1), 0) : parseInt(project.quantity || 0);
+
+    // Parse from Hub
+    const hub = project.projects_hub?.[0] || {};
+    const hubTargets = Array.isArray(hub.targets) ? hub.targets : [];
+    const totalLinks = hubTargets.length > 0
+        ? hubTargets.reduce((acc, t) => acc + (parseInt(t.quantity || '0', 10)), 0)
+        : parseInt(project.quantity || '0', 10);
+
     const overallFulfillmentMatch = completedLinks === totalLinks && totalLinks > 0;
 
     const hasPlacements = project.placements && project.placements.length > 0;
@@ -95,7 +108,7 @@ export default function PlacementCard({ project, representativeHash }) {
 
     // Lock/Edit toggle
     const [isToggling, setIsToggling] = useState(false);
-    const currentLockState = project.project_list?.[0]?.is_locked || false;
+    const currentLockState = project.projects_hub?.[0]?.is_locked || false;
     const [localLockState, setLocalLockState] = useState(currentLockState);
 
     async function handleToggleLock() {
@@ -192,6 +205,29 @@ export default function PlacementCard({ project, representativeHash }) {
                                 <span className="font-semibold text-amber-700">{project.urls_per_day} URLs/Day</span>
                             </div>
                         )}
+                        <div>
+                            <span className="text-gray-400 font-medium">Target Domain: </span>
+                            {hubTargets.length > 0 ? (
+                                hubTargets.length === 1 ? (
+                                    <a href={hubTargets[0].target_url} target="_blank" rel="noopener noreferrer" className="font-semibold text-indigo-600 hover:text-indigo-900 truncate max-w-[150px] inline-block align-bottom">
+                                        {getSafeHostname(hubTargets[0].target_url)}
+                                    </a>
+                                ) : (
+                                    <button
+                                        onClick={(e) => { e.preventDefault(); setIsCollapsed(false); }}
+                                        className="font-semibold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded text-xs hover:bg-indigo-100 transition-colors"
+                                    >
+                                        {hubTargets.length} URLs
+                                    </button>
+                                )
+                            ) : (
+                                <span className="text-gray-400 italic">No Targets</span>
+                            )}
+                        </div>
+                        <div>
+                            <span className="text-gray-400 font-medium">Progress: </span>
+                            <span className="font-mono font-semibold text-gray-700">{completedLinks} / {totalLinks}</span>
+                        </div>
                         <div>
                             <span className="text-gray-400 font-medium">ID: </span>
                             <span className="font-mono text-gray-400">{project.id.split('-')[0]}</span>

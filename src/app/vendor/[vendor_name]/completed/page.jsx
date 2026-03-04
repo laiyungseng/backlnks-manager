@@ -28,8 +28,7 @@ export default async function VendorCompletedPage({ params }) {
             backlinks_category,
             quantity,
             deadline,
-            project_list ( hash, vendor_staging_data, is_locked ),
-            project_targets ( id, target_url, anchor_text, quantity ),
+            projects_hub ( hash, vendor_staging_data, is_locked, targets ),
             placements ( id )
         `)
         .ilike('vendor_name', vendorName.replace(/-/g, '%'))
@@ -53,9 +52,13 @@ export default async function VendorCompletedPage({ params }) {
     };
 
     const getProgress = (project) => {
-        const total = project.project_targets
-            ? project.project_targets.reduce((acc, t) => acc + (t.quantity || 1), 0)
-            : project.quantity || 0;
+        const hub = project.projects_hub?.[0] || {};
+        const hubTargets = Array.isArray(hub.targets) ? hub.targets : [];
+
+        const total = hubTargets.length > 0
+            ? hubTargets.reduce((acc, t) => acc + (parseInt(t.quantity || '0', 10)), 0)
+            : parseInt(project.quantity || '0', 10);
+
         return { total };
     };
 
@@ -71,8 +74,8 @@ export default async function VendorCompletedPage({ params }) {
             <div className="space-y-6">
                 {completedProjects.length > 0 ? (
                     completedProjects.map((project) => {
-                        const hash = project.project_list?.[0]?.hash;
-                        const isLocked = project.project_list?.[0]?.is_locked || false;
+                        const hash = project.projects_hub?.[0]?.hash;
+                        const isLocked = project.projects_hub?.[0]?.is_locked || false;
                         const progress = getProgress(project);
 
                         return (
@@ -105,6 +108,16 @@ export default async function VendorCompletedPage({ params }) {
                                             <div>
                                                 <span className="text-gray-400">Qty: </span>
                                                 <span className="font-semibold text-gray-700">{progress.total}</span>
+                                            </div>
+                                            <div>
+                                                <span className="text-gray-400">Target Domain: </span>
+                                                {(() => {
+                                                    const hubTargets = project.projects_hub?.[0]?.targets || [];
+                                                    const safeHostname = (url) => { try { return new URL(url).hostname; } catch (e) { return url; } };
+                                                    if (hubTargets.length === 0) return <span className="italic text-gray-400">No Targets</span>;
+                                                    if (hubTargets.length === 1) return <span className="font-semibold text-indigo-600 truncate max-w-[200px] inline-block align-bottom">{safeHostname(hubTargets[0].target_url)}</span>;
+                                                    return <span className="font-semibold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded text-xs">{hubTargets.length} Target URLs</span>;
+                                                })()}
                                             </div>
                                         </div>
                                     </div>

@@ -5,7 +5,7 @@ import { z } from 'zod';
 
 const vendorPayloadSchema = z.array(z.object({
     id: z.string(),
-    target_id: z.string().uuid(),
+    target_id: z.string(),
     target_url: z.string(),
     anchor_text: z.string(),
     language: z.string().optional().or(z.literal('')),
@@ -16,6 +16,10 @@ const vendorPayloadSchema = z.array(z.object({
 }));
 
 export async function saveVendorProgress(hash, payload) {
+    if (!supabase) {
+        return { success: false, message: 'Database connection not configured.' };
+    }
+
     try {
         if (!hash || typeof hash !== 'string') {
             return { success: false, message: 'Unauthorized Request: Missing Security Hash' };
@@ -30,7 +34,7 @@ export async function saveVendorProgress(hash, payload) {
 
         // Verify the Project exists matching that hash before pushing JSON payload
         const { data: projectList, error: checkError } = await supabase
-            .from('project_list')
+            .from('projects_hub')
             .select('id, project_id')
             .eq('hash', hash)
             .single();
@@ -53,7 +57,7 @@ export async function saveVendorProgress(hash, payload) {
 
         // Push precisely the virtual JSON array into the staging column
         const { error: updateError } = await supabase
-            .from('project_list')
+            .from('projects_hub')
             .update(updatePayload)
             .eq('hash', hash);
 

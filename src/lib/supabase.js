@@ -1,10 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+// Private server-only env vars (no NEXT_PUBLIC_ prefix) — never shipped to the browser.
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 
-if (!supabaseUrl || !supabaseAnonKey) {
-    console.warn('Missing Supabase environment variables');
-}
-
-export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '');
+// Return null when credentials are missing — avoids a crash at module load time
+// when .env is empty (e.g. after logout). Callers must guard against null.
+export const supabase = (supabaseUrl && supabaseAnonKey)
+    ? createClient(supabaseUrl, supabaseAnonKey)
+    : null;

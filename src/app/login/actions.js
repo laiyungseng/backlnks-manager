@@ -7,6 +7,10 @@ export async function verifyLoginAction(username, password) {
         return { success: false, message: 'Please provide both username and password.' };
     }
 
+    if (!supabase) {
+        return { success: false, message: 'Database connection not configured. Please set environment variables.' };
+    }
+
     // Check credentials against the admin_users table
     const { data, error } = await supabase
         .from('admin_users')

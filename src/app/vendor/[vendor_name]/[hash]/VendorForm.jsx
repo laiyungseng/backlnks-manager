@@ -152,7 +152,7 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
     const progressPercent = rows.length > 0 ? Math.round((completedCount / rows.length) * 100) : 0;
 
     const columns = useMemo(() => [
-        { title: "Target Authority", id: "target_url", width: 250 },
+        { title: "Target URL", id: "target_url", width: 250 },
         { title: "Anchor Text", id: "anchor_text", width: 200 },
         { title: "Language", id: "language", width: 100 },
         { title: "Remark", id: "remark", width: 150 },

@@ -31,8 +31,7 @@ export default async function VendorInProgressPage({ params }) {
             deadline,
             dripfeed_enabled,
             urls_per_day,
-            project_list ( hash, vendor_staging_data, is_locked ),
-            project_targets ( id, target_url, anchor_text, quantity ),
+            projects_hub ( hash, vendor_staging_data, is_locked, targets ),
             placements ( id )
         `)
         .ilike('vendor_name', vendorName.replace(/-/g, '%'))
@@ -58,13 +57,16 @@ export default async function VendorInProgressPage({ params }) {
 
     // Helper to calculate progress
     const getProgress = (project) => {
-        const stagingData = project.project_list?.[0]?.vendor_staging_data || [];
-        const completed = Array.isArray(stagingData)
-            ? stagingData.filter(s => s.published_url && s.published_url.trim().length > 0).length
-            : 0;
-        const total = project.project_targets
-            ? project.project_targets.reduce((acc, t) => acc + (t.quantity || 1), 0)
-            : project.quantity || 0;
+        const hub = project.projects_hub?.[0] || {};
+        const stagingData = Array.isArray(hub.vendor_staging_data) ? hub.vendor_staging_data : [];
+        const hubTargets = Array.isArray(hub.targets) ? hub.targets : [];
+
+        const completed = stagingData.filter(s => s.published_url && s.published_url.trim().length > 0).length;
+
+        const total = hubTargets.length > 0
+            ? hubTargets.reduce((acc, t) => acc + (parseInt(t.quantity || '0', 10)), 0)
+            : parseInt(project.quantity || '0', 10);
+
         return { completed, total, percent: total > 0 ? Math.round((completed / total) * 100) : 0 };
     };
 
@@ -80,7 +82,7 @@ export default async function VendorInProgressPage({ params }) {
             <div className="space-y-6">
                 {activeProjects.length > 0 ? (
                     activeProjects.map((project) => {
-                        const hash = project.project_list?.[0]?.hash;
+                        const hash = project.projects_hub?.[0]?.hash;
                         const progress = getProgress(project);
 
                         return (
@@ -116,6 +118,16 @@ export default async function VendorInProgressPage({ params }) {
                                                     <span className="font-semibold text-red-600">{new Date(project.deadline).toLocaleDateString()}</span>
                                                 </div>
                                             )}
+                                            <div>
+                                                <span className="text-gray-400">Target Domain: </span>
+                                                {(() => {
+                                                    const hubTargets = project.projects_hub?.[0]?.targets || [];
+                                                    const safeHostname = (url) => { try { return new URL(url).hostname; } catch (e) { return url; } };
+                                                    if (hubTargets.length === 0) return <span className="italic text-gray-400">No Targets</span>;
+                                                    if (hubTargets.length === 1) return <span className="font-semibold text-indigo-600 truncate max-w-[200px] inline-block align-bottom">{safeHostname(hubTargets[0].target_url)}</span>;
+                                                    return <span className="font-semibold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded text-xs">{hubTargets.length} Target URLs</span>;
+                                                })()}
+                                            </div>
                                         </div>
                                     </div>
 

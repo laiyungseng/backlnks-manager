@@ -3,15 +3,17 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, PlusCircle, ClipboardList, CheckCircle2, Settings, LogOut, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { LayoutDashboard, PlusCircle, ClipboardList, CheckCircle2, Settings, PanelLeftClose, PanelLeftOpen, Blocks, Users, Globe } from 'lucide-react';
+import { logoutAction } from '@/app/admin/settings/actions';
 
 export default function AdminLayout({ children }) {
     const pathname = usePathname();
     const router = useRouter();
     const [isCollapsed, setIsCollapsed] = useState(false);
 
-    const handleSignOut = () => {
+    const handleSignOut = async () => {
         localStorage.removeItem('df_admin_session');
+        await logoutAction();
         router.push('/login');
     };
 
@@ -20,6 +22,9 @@ export default function AdminLayout({ children }) {
         { name: 'Kickoff Project', href: '/admin/new-project', icon: PlusCircle },
         { name: 'Active Placements', href: '/admin/placements', icon: ClipboardList },
         { name: 'Completed Placements', href: '/admin/completed', icon: CheckCircle2 },
+        { name: 'Schema Builder', href: '/admin/schema-builder', icon: Blocks },
+        { name: 'Vendor Manager', href: '/admin/vendor-manager', icon: Users },
+        { name: 'Domains Manager', href: '/admin/domains-manager', icon: Globe },
         { name: 'Settings', href: '/admin/settings', icon: Settings },
     ];
 

@@ -14,15 +14,15 @@ export default async function VendorRootDispatcher({ params }) {
     // SCENARIO 1: LEGACY URL
     // The user visited /vendor/[hash]
     // Let's check if the path param is actually a hash in the database
-    const { data: projectList, error } = await supabase
-        .from('project_list')
+    const { data: projectHubHit, error } = await supabase
+        .from('projects_hub')
         .select('project_id, projects ( vendor_name )')
         .eq('hash', pathParam)
         .maybeSingle();
 
-    if (projectList && !error) {
+    if (projectHubHit && !error) {
         // It's a legacy URL! The pathParam is a hash.
-        const vendorName = projectList.projects?.vendor_name || 'vendor';
+        const vendorName = projectHubHit.projects?.vendor_name || 'vendor';
         const vendorSlug = vendorName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
 
         // Redirect to the new multi-page URL structure

@@ -28,7 +28,7 @@ export default function LoginPage() {
         if (res.success) {
             // Store successful session locally for client-side speed
             localStorage.setItem('df_admin_session', JSON.stringify({
-                username: res.user.username,
+                user: { id: res.user.id, username: res.user.username },
                 loggedInAt: new Date().toISOString()
             }));
 

@@ -17,8 +17,7 @@ export default async function CompletedPlacementsPage() {
             sheet_name,
             dripfeed_enabled,
             urls_per_day,
-            project_list ( hash, vendor_staging_data, completed_at, is_locked ),
-            project_targets ( id, target_url, anchor_text, quantity ),
+            projects_hub ( hash, vendor_staging_data, completed_at, is_locked, targets ),
             placements ( id )
         `)
         .order('created_at', { ascending: false });
@@ -45,7 +44,7 @@ export default async function CompletedPlacementsPage() {
             <div className="space-y-12">
                 {completedProjects.length > 0 ? (
                     completedProjects.map((project) => {
-                        const representativeHash = project.project_list?.[0]?.hash;
+                        const representativeHash = project.projects_hub?.[0]?.hash;
 
                         return (
                             <PlacementCard

@@ -3,7 +3,7 @@ import PlacementCard from './PlacementCard';
 export const revalidate = 0; // Always fresh
 
 export default async function PlacementsMonitoringPage() {
-    // 1. Fetch projects with relationship to project_list (for Hash/JSON) and project_targets (for required links)
+    // 1. Fetch projects with their projects_hub data (hash, targets, staging) and placements
     const { data: projects, error } = await supabase
         .from('projects')
         .select(`
@@ -18,8 +18,7 @@ export default async function PlacementsMonitoringPage() {
             sheet_name,
             dripfeed_enabled,
             urls_per_day,
-            project_list ( hash, vendor_staging_data, completed_at, is_locked ),
-            project_targets ( id, target_url, anchor_text, quantity ),
+            projects_hub ( hash, vendor_staging_data, completed_at, is_locked, targets ),
             placements ( id )
         `)
         .order('created_at', { ascending: false });
@@ -46,7 +45,7 @@ export default async function PlacementsMonitoringPage() {
             <div className="space-y-12">
                 {activeProjects.length > 0 ? (
                     activeProjects.map((project) => {
-                        const representativeHash = project.project_list?.[0]?.hash;
+                        const representativeHash = project.projects_hub?.[0]?.hash;
 
                         return (
                             <PlacementCard

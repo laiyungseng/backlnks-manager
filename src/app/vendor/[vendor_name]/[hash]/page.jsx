@@ -13,20 +13,20 @@ export default async function VendorProjectPage({ params }) {
         redirect('/unauthorized');
     }
 
-    // Cryptographically Secure DB Match via `project_list.hash`
-    const { data: projectList, error: listError } = await supabase
-        .from('project_list')
+    // Cryptographically Secure DB Match via `projects_hub.hash`
+    const { data: projectsHub, error: hubError } = await supabase
+        .from('projects_hub')
         .select('*')
         .eq('hash', hash)
         .single();
 
-    if (listError || !projectList) {
+    if (hubError || !projectsHub) {
         redirect('/unauthorized');
     }
 
-    const projectId = projectList.project_id;
-    const existingStagingData = projectList.vendor_staging_data || [];
-    const isLocked = projectList.is_locked || false;
+    const projectId = projectsHub.project_id;
+    const existingStagingData = projectsHub.vendor_staging_data || [];
+    const isLocked = projectsHub.is_locked || false;
 
     // Fetch Core Project Context
     const { data: projectData } = await supabase
@@ -35,12 +35,8 @@ export default async function VendorProjectPage({ params }) {
         .eq('id', projectId)
         .single();
 
-    // Fetch Target Alignments
-    const { data: targetsData } = await supabase
-        .from('project_targets')
-        .select('*')
-        .eq('project_id', projectId)
-        .order('created_at', { ascending: true });
+    // Parse targets from JSONB Hub
+    const targetsData = Array.isArray(projectsHub.targets) ? projectsHub.targets : [];
 
     // Parse language distribution
     const languages = projectData?.languages || [];
@@ -48,28 +44,31 @@ export default async function VendorProjectPage({ params }) {
     // Expand Target Rows with language assignment
     let generatedRows = [];
     if (targetsData && targetsData.length > 0) {
-        targetsData.forEach((target) => {
+        targetsData.forEach((target, tIdx) => {
+            const targetId = target.target_id || `idx-${tIdx}`; // Synthetic target ID fallback
+            const targetQty = parseInt(target.quantity || '0', 10); // Parse string quantity from JSON
+
             if (languages.length > 0) {
-                let remainingQty = target.quantity;
+                let remainingQty = targetQty;
                 languages.forEach((lang, langIdx) => {
                     let langQty;
                     if (langIdx === languages.length - 1) {
                         langQty = remainingQty;
                     } else {
-                        langQty = Math.round(target.quantity * lang.ratio / 100);
+                        langQty = Math.round(targetQty * lang.ratio / 100);
                         remainingQty -= langQty;
                     }
 
                     for (let i = 0; i < langQty; i++) {
-                        const rowId = `${target.id}-${lang.code}-qty-${i}`;
-                        const legacyRowId = `${target.id}-qty-${generatedRows.length}`;
+                        const rowId = `${targetId}-${lang.code}-qty-${i}`;
+                        const legacyRowId = `${targetId}-qty-${generatedRows.length}`;
                         const savedRow = Array.isArray(existingStagingData)
                             ? (existingStagingData.find(st => st.id === rowId) || existingStagingData.find(st => st.id === legacyRowId))
                             : null;
 
                         generatedRows.push({
                             id: rowId,
-                            target_id: target.id,
+                            target_id: targetId,
                             target_url: target.target_url,
                             anchor_text: target.anchor_text,
                             language: lang.code.toUpperCase(),
@@ -81,15 +80,15 @@ export default async function VendorProjectPage({ params }) {
                     }
                 });
             } else {
-                for (let i = 0; i < target.quantity; i++) {
-                    const rowId = `${target.id}-qty-${i}`;
+                for (let i = 0; i < targetQty; i++) {
+                    const rowId = `${targetId}-qty-${i}`;
                     const savedRow = Array.isArray(existingStagingData)
                         ? existingStagingData.find(st => st.id === rowId)
                         : null;
 
                     generatedRows.push({
                         id: rowId,
-                        target_id: target.id,
+                        target_id: targetId,
                         target_url: target.target_url,
                         anchor_text: target.anchor_text,
                         language: projectData?.language?.toUpperCase() || '',

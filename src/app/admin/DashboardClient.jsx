@@ -4,44 +4,33 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Trash2 } from 'lucide-react';
 import CopyButton from './CopyButton';
-import { supabase } from '@/lib/supabase';
 import { deleteProject } from './actions';
 
 export default function DashboardClient({ initialProjects }) {
     const [projects, setProjects] = useState(initialProjects || []);
+    const [selectedTargets, setSelectedTargets] = useState(null);
 
     useEffect(() => {
-        // Setup Realtime subscription on the project_list table
-        const channel = supabase.channel('dashboard-project-list-changes')
-            .on(
-                'postgres_changes',
-                { event: 'UPDATE', schema: 'public', table: 'project_list' },
-                (payload) => {
-                    console.log('Realtime Update Received (project_list):', payload);
+        // SSE connection — server polls Supabase with private credentials.
+        // The browser never holds any API keys.
+        const source = new EventSource('/api/realtime/dashboard');
 
-                    // We need to update the specific project's vendor_staging_data in our local state
-                    setProjects(currentProjects => {
-                        return currentProjects.map(project => {
-                            // Find the project that owns this project_list row matching the project_id
-                            if (project.id === payload.new.project_id) {
-                                return {
-                                    ...project,
-                                    project_list: [{
-                                        ...(project.project_list?.[0] || {}),
-                                        vendor_staging_data: payload.new.vendor_staging_data
-                                    }]
-                                };
-                            }
-                            return project;
-                        });
-                    });
-                }
-            )
-            .subscribe();
+        source.addEventListener('projects', (e) => {
+            try {
+                const data = JSON.parse(e.data);
+                if (Array.isArray(data)) setProjects(data);
+            } catch {
+                // Malformed event — ignore.
+            }
+        });
 
-        // Cleanup subscription on unmount
+        source.addEventListener('error', () => {
+            // SSE errors (network drop, etc.) — EventSource auto-reconnects.
+            console.warn('[Dashboard SSE] Connection error — will retry automatically.');
+        });
+
         return () => {
-            supabase.removeChannel(channel);
+            source.close();
         };
     }, []);
 
@@ -132,12 +121,18 @@ export default function DashboardClient({ initialProjects }) {
                         <tbody className="bg-white divide-y divide-gray-200">
                             {projects && projects.length > 0 ? (
                                 projects.map((project) => {
-                                    // Calculate total quantity requested
-                                    const totalLinks = project.project_targets ? project.project_targets.reduce((acc, t) => acc + (t.quantity || 1), 0) : parseInt(project.quantity || 0);
+                                    // Targets are now in JSONB array inside projects_hub
+                                    const hub = project.projects_hub?.[0] || {};
+                                    const hubTargets = Array.isArray(hub.targets) ? hub.targets : [];
+                                    const stagingData = Array.isArray(hub.vendor_staging_data) ? hub.vendor_staging_data : [];
+
+                                    // Calculate total quantity requested. quantity in JSONB array is a string so it requires parseInt
+                                    const totalLinks = hubTargets.length > 0
+                                        ? hubTargets.reduce((acc, t) => acc + (parseInt(t.quantity || '0', 10)), 0)
+                                        : parseInt(project.quantity || '0', 10);
 
                                     // Parse virtual JSON staging data for progress matching
-                                    const stagingData = project.project_list?.[0]?.vendor_staging_data || [];
-                                    const completedLinks = Array.isArray(stagingData) ? stagingData.filter(p => p.published_url && p.published_url.trim().length > 0).length : 0;
+                                    const completedLinks = stagingData.filter(p => p.published_url && p.published_url.trim().length > 0).length;
 
                                     const progressPercent = totalLinks > 0 ? Math.round((completedLinks / totalLinks) * 100) : 0;
 
@@ -158,13 +153,18 @@ export default function DashboardClient({ initialProjects }) {
                                                 <div className="flex flex-col gap-2">
                                                     {/* Targets Block */}
                                                     <div>
-                                                        {project.project_targets && project.project_targets.length > 0 ? (
-                                                            project.project_targets.length === 1 ? (
-                                                                <a href={project.project_targets[0].target_url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-900 font-medium">
-                                                                    {getSafeHostname(project.project_targets[0].target_url)}
+                                                        {hubTargets.length > 0 ? (
+                                                            hubTargets.length === 1 ? (
+                                                                <a href={hubTargets[0].target_url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-900 font-medium">
+                                                                    {getSafeHostname(hubTargets[0].target_url)}
                                                                 </a>
                                                             ) : (
-                                                                <span className="text-indigo-600 font-medium bg-indigo-50 px-2 py-1 rounded-md text-xs">{project.project_targets.length} Target URLs</span>
+                                                                <button
+                                                                    onClick={() => setSelectedTargets(hubTargets)}
+                                                                    className="text-indigo-600 font-medium bg-indigo-50 px-2 py-1 rounded-md text-xs hover:bg-indigo-100 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                                                >
+                                                                    {hubTargets.length} Target URLs
+                                                                </button>
                                                             )
                                                         ) : (
                                                             <span className="text-gray-400 italic">No Targets</span>
@@ -224,7 +224,11 @@ export default function DashboardClient({ initialProjects }) {
                                                         e.preventDefault();
                                                         if (confirm("Are you sure you want to delete this project?")) {
                                                             setProjects(prev => prev.filter(p => p.id !== project.id));
-                                                            await deleteProject(project.id);
+                                                            const res = await deleteProject(project.id);
+                                                            if (!res.success) {
+                                                                alert(`Could not delete: ${res.message}`);
+                                                                // It will naturally revert on the next SSE pulse if it failed in the DB
+                                                            }
                                                         }
                                                     }}
                                                     className="text-red-600 hover:text-red-900 p-1 rounded-full hover:bg-red-50 transition-colors cursor-pointer"
@@ -247,6 +251,41 @@ export default function DashboardClient({ initialProjects }) {
                     </table>
                 </div>
             </div>
+
+            {/* Target URLs Modal */}
+            {selectedTargets && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+                    <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[80vh]">
+                        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                            <h3 className="text-lg font-bold text-gray-900">Target URLs</h3>
+                            <button onClick={() => setSelectedTargets(null)} className="text-gray-400 hover:text-gray-600">
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                            </button>
+                        </div>
+                        <div className="px-6 py-4 overflow-y-auto flex-1">
+                            <ul className="divide-y divide-gray-100">
+                                {[...new Set(selectedTargets.map(t => t.target_url))].map((url, idx) => (
+                                    <li key={idx} className="py-3 flex items-center gap-3">
+                                        <span className="text-xs font-mono text-gray-400">{idx + 1}.</span>
+                                        <a href={url} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-indigo-600 hover:text-indigo-900 break-all">
+                                            {url}
+                                        </a>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                        <div className="bg-gray-50 px-6 py-3 border-t border-gray-100 flex justify-end">
+                            <button
+                                onClick={() => setSelectedTargets(null)}
+                                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
         </div>
     );
 }

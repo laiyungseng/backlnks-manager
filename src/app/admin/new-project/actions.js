@@ -5,6 +5,10 @@ import { projectSchema } from '@/schemas/projectSchema';
 import crypto from 'crypto';
 
 export async function createProjectAction(prevState, formData) {
+    if (!supabase) {
+        return { success: false, message: 'Database connection not configured.' };
+    }
+
     try {
         const rawData = {
             project_name: formData.get('project_name'),
@@ -90,37 +94,29 @@ export async function createProjectAction(prevState, formData) {
 
         const projectId = projectInsertResult.id;
 
-        // 5. Provision project_list (Hash Tracker / Virtual Hub)
-        const { error: projectListError } = await supabase
-            .from('project_list')
-            .insert([{
-                project_id: projectId,
-                hash: projectHash,
-                vendor_staging_data: null,
-                created_at: new Date().toISOString()
-            }]);
-
-        if (projectListError) {
-            console.error('Project List Insert Error:', projectListError);
-            return { success: false, message: 'Project created, but failed to mint secure Vendor Hash.' };
-        }
-
-        // 6. Bulk Insert Dynamic Targets Array matching `project_id`
-        const targetRowsMapping = targetsArray.map(target => ({
-            project_id: projectId,
-            anchor_text: target.anchor_text,
-            target_url: target.target_url,
-            quantity: target.quantity,
+        // 5. Format Targets Array for JSONB
+        const formattedTargets = targetsArray.map(target => ({
+            anchor_text: target.anchor_text || "",
+            target_url: target.target_url || "",
+            quantity: String(target.quantity || ""), // Enforce string for quantity per spec
             created_at: new Date().toISOString()
         }));
 
-        const { error: projectTargetsError } = await supabase
-            .from('project_targets')
-            .insert(targetRowsMapping);
+        // 6. Provision projects_hub (Hash Tracker + Virtual Targets)
+        const { error: projectsHubError } = await supabase
+            .from('projects_hub')
+            .insert([{
+                project_id: projectId,
+                hash: projectHash,
+                targets: formattedTargets,
+                vendor_staging_data: null,
+                is_locked: false,
+                created_at: new Date().toISOString()
+            }]);
 
-        if (projectTargetsError) {
-            console.error('Project Targets Error:', projectTargetsError);
-            return { success: false, message: 'Project mapped, but failed to explicitly allocate placement targets.' };
+        if (projectsHubError) {
+            console.error('Projects Hub Insert Error:', projectsHubError);
+            return { success: false, message: 'Project mapped, but failed to mint secure Vendor Hub.' };
         }
 
         return {

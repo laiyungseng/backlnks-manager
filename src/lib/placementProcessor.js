@@ -11,7 +11,7 @@ export async function normalizeProjectData(projectHash) {
     try {
         // 1. Fetch the overarching project and unverified vendor data
         const { data: projectRow, error: projectError } = await supabase
-            .from('project_list')
+            .from('projects_hub')
             .select(`
                 id,
                 project_id,
@@ -45,50 +45,9 @@ export async function normalizeProjectData(projectHash) {
         const nowIso = new Date().toISOString();
 
         // -------------------------------------------------------------
-        // PRIORITY 1 & 2: PARALLEL DOMAINS AND VENDORS EXTRACTION
+        // PRIORITY 1: VENDORS — resolved first so vendor_id is available
         // -------------------------------------------------------------
-
-        // Priority 1: Domains Promise
-        const domainsPromise = (async () => {
-            const uniqueDomainsSet = new Set();
-            for (const row of rawDataArray) {
-                if (row.published_url && row.published_date) {
-                    try {
-                        const parsedUrl = new URL(row.published_url);
-                        uniqueDomainsSet.add(parsedUrl.hostname);
-                    } catch (e) {
-                        console.warn("Invalid URL skipped for domain extraction:", row.published_url);
-                    }
-                }
-            }
-
-            const domainsToUpsert = Array.from(uniqueDomainsSet).map(domain => ({
-                domain_url: domain,
-                last_checked_at: nowIso
-            }));
-
-            let allUpsertedDomains = [];
-            const chunkSize = 1000;
-            for (let i = 0; i < domainsToUpsert.length; i += chunkSize) {
-                const chunk = domainsToUpsert.slice(i, i + chunkSize);
-                const { data: dData, error: domainsErr } = await supabase
-                    .from('domains')
-                    .upsert(chunk, {
-                        onConflict: 'domain_url',
-                        ignoreDuplicates: false
-                    })
-                    .select('id, domain_url');
-
-                if (domainsErr) throw new Error(`Domains Upsert Error (Chunk ${i}): ${domainsErr.message}`);
-                allUpsertedDomains = allUpsertedDomains.concat(dData || []);
-            }
-
-            // Map domains explicitly for memory binding
-            return new Map(allUpsertedDomains.map(d => [d.domain_url, d.id]));
-        })();
-
-        // Priority 2: Vendors Promise
-        const vendorsPromise = (async () => {
+        const targetVendorId = await (async () => {
             const { data: existingVendor } = await supabase
                 .from('vendors')
                 .select('id, vendor_name, created_at')
@@ -120,12 +79,51 @@ export async function normalizeProjectData(projectHash) {
             }
         })();
 
-        // Execute independently and await synchronization
-        const [domainMap, targetVendorId] = await Promise.all([domainsPromise, vendorsPromise]);
-
         if (!targetVendorId) {
             throw new Error('Failed to resolve Vendor ID during generation.');
         }
+
+        // -------------------------------------------------------------
+        // PRIORITY 2: DOMAINS — runs after vendor so vendor_id can be included
+        // -------------------------------------------------------------
+        const domainMap = await (async () => {
+            const uniqueDomainsSet = new Set();
+            for (const row of rawDataArray) {
+                if (row.published_url && row.published_date) {
+                    try {
+                        const parsedUrl = new URL(row.published_url);
+                        uniqueDomainsSet.add(parsedUrl.hostname);
+                    } catch (e) {
+                        console.warn("Invalid URL skipped for domain extraction:", row.published_url);
+                    }
+                }
+            }
+
+            const domainsToUpsert = Array.from(uniqueDomainsSet).map(domain => ({
+                domain_url: domain,
+                vendor_id: targetVendorId,
+                last_checked_at: nowIso
+            }));
+
+            let allUpsertedDomains = [];
+            const chunkSize = 1000;
+            for (let i = 0; i < domainsToUpsert.length; i += chunkSize) {
+                const chunk = domainsToUpsert.slice(i, i + chunkSize);
+                const { data: dData, error: domainsErr } = await supabase
+                    .from('domains')
+                    .upsert(chunk, {
+                        onConflict: 'domain_url',
+                        ignoreDuplicates: false
+                    })
+                    .select('id, domain_url');
+
+                if (domainsErr) throw new Error(`Domains Upsert Error (Chunk ${i}): ${domainsErr.message}`);
+                allUpsertedDomains = allUpsertedDomains.concat(dData || []);
+            }
+
+            // Map domains explicitly for memory binding
+            return new Map(allUpsertedDomains.map(d => [d.domain_url, d.id]));
+        })();
 
         // -------------------------------------------------------------
         // PRIORITY 2.5: FETCH EXISTING PLACEMENTS FOR STATUS PRESERVATION
@@ -212,7 +210,7 @@ export async function normalizeProjectData(projectHash) {
 
         // AUTO-LOCK: Prevent vendor edits after finalization
         const { error: lockErr } = await supabase
-            .from('project_list')
+            .from('projects_hub')
             .update({ is_locked: true })
             .eq('hash', projectHash);
 

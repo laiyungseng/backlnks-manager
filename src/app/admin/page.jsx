@@ -9,8 +9,7 @@ export default async function AdminDashboardPage() {
         .from('projects')
         .select(`
             id, project_name, vendor_name, status, start_date, deadline, created_at, updated_at, quantity, dripfeed_enabled, dripfeed_period, urls_per_day, backlinks_category,
-            project_targets ( target_url, quantity ),
-            project_list ( vendor_staging_data ),
+            projects_hub ( targets, vendor_staging_data ),
             placements ( id )
         `)
         .order('created_at', { ascending: false });

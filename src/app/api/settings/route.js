@@ -36,8 +36,8 @@ export async function GET() {
         const content = fs.readFileSync(envPath, 'utf-8');
         const env = parseEnv(content);
         return NextResponse.json({
-            supabaseUrl: env.NEXT_PUBLIC_SUPABASE_URL || '',
-            supabaseAnonKey: env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
+            supabaseUrl: env.SUPABASE_URL || '',
+            supabaseAnonKey: env.SUPABASE_ANON_KEY || '',
         });
     } catch (error) {
         console.error('Settings GET error:', error);
@@ -58,8 +58,8 @@ export async function POST(request) {
         }
 
         // Update only the Supabase keys
-        envObj.NEXT_PUBLIC_SUPABASE_URL = supabaseUrl || '';
-        envObj.NEXT_PUBLIC_SUPABASE_ANON_KEY = supabaseAnonKey || '';
+        envObj.SUPABASE_URL = supabaseUrl || '';
+        envObj.SUPABASE_ANON_KEY = supabaseAnonKey || '';
 
         fs.writeFileSync(envPath, serializeEnv(envObj), 'utf-8');
 
