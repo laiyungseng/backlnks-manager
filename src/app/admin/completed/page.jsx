@@ -7,20 +7,14 @@ export default async function CompletedPlacementsPage() {
         .from('projects')
         .select(`
             id,
-            project_name,
-            vendor_name,
-            status,
-            country,
-            language,
-            languages,
-            backlinks_category,
-            sheet_name,
-            dripfeed_enabled,
-            urls_per_day,
+            user,
+            created_date,
+            complete_date,
+            project_details,
             projects_hub ( hash, vendor_staging_data, completed_at, is_locked, targets ),
             placements ( id )
         `)
-        .order('created_at', { ascending: false });
+        .order('created_date', { ascending: false });
 
     if (error) {
         console.error("Completed Placements DB fetch error:", error);
@@ -29,7 +23,8 @@ export default async function CompletedPlacementsPage() {
     // Filter: Only show projects that HAVE been uploaded to the placements table
     const completedProjects = (projects || []).filter(p => {
         const hasPlacements = p.placements && p.placements.length > 0;
-        return p.status === 'Finalized' || hasPlacements;
+        const details = p.project_details?.[0] || {};
+        return details.status === 'Finalized' || hasPlacements;
     });
 
     return (

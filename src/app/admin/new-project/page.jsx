@@ -1,6 +1,14 @@
 'use client';
 
 import { useState, useActionState, useMemo, useRef, useEffect } from 'react';
+
+function genId() {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+        const r = Math.random() * 16 | 0;
+        return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+    });
+}
 import { createProjectAction } from './actions';
 import { useFormStatus } from 'react-dom';
 import { Plus, Trash2, Languages } from 'lucide-react';
@@ -51,11 +59,11 @@ export default function NewProjectPage() {
 
     // Language Ratio State
     const [languages, setLanguages] = useState([
-        { id: crypto.randomUUID(), code: '', ratio: 100 }
+        { id: genId(), code: '', ratio: 100 }
     ]);
 
     const [targets, setTargets] = useState([
-        { id: crypto.randomUUID(), anchor_text: '', target_url: '', quantity: 1 }
+        { id: genId(), anchor_text: '', target_url: '', quantity: 1 }
     ]);
 
     useEffect(() => {
@@ -74,8 +82,8 @@ export default function NewProjectPage() {
             setRandomizeLanguages(false);
             setPrice(0);
             setPriceType('per_url');
-            setLanguages([{ id: crypto.randomUUID(), code: '', ratio: 100 }]);
-            setTargets([{ id: crypto.randomUUID(), anchor_text: '', target_url: '', quantity: 1 }]);
+            setLanguages([{ id: genId(), code: '', ratio: 100 }]);
+            setTargets([{ id: genId(), anchor_text: '', target_url: '', quantity: 1 }]);
         }
     }, [state?.success, state?.hash]);
 
@@ -93,7 +101,7 @@ export default function NewProjectPage() {
 
     // --- Language Ratio Helpers ---
     const addLanguage = () => {
-        setLanguages([...languages, { id: crypto.randomUUID(), code: '', ratio: 0 }]);
+        setLanguages([...languages, { id: genId(), code: '', ratio: 0 }]);
     };
 
     const removeLanguage = (idToRemove) => {
@@ -122,7 +130,7 @@ export default function NewProjectPage() {
 
     // --- Target Row Helpers ---
     const addTargetRow = () => {
-        setTargets([...targets, { id: crypto.randomUUID(), anchor_text: '', target_url: '', quantity: 1 }]);
+        setTargets([...targets, { id: genId(), anchor_text: '', target_url: '', quantity: 1 }]);
     };
 
     const removeTargetRow = (idToRemove) => {

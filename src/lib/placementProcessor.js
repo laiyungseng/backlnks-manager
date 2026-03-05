@@ -10,37 +10,47 @@ import { supabase } from './supabase';
 export async function normalizeProjectData(projectHash) {
     try {
         // 1. Fetch the overarching project and unverified vendor data
-        const { data: projectRow, error: projectError } = await supabase
+        const { data: rawProjectsHub, error: fetchError } = await supabase
             .from('projects_hub')
             .select(`
-                id,
-                project_id,
-                vendor_staging_data,
-                projects (
-                    vendor_name,
-                    language,
-                    country,
-                    backlinks_category,
-                    sheet_name,
-                    created_at,
-                    status
-                )
+                id, project_id, vendor_staging_data,
+                projects ( id, project_details )
             `)
             .eq('hash', projectHash)
             .single();
 
-        if (projectError) throw new Error(`Project fetch error: ${projectError.message}`);
-        if (!projectRow || !projectRow.vendor_staging_data) {
+        if (fetchError) throw new Error(`Project fetch error: ${fetchError.message}`);
+        if (!rawProjectsHub || !rawProjectsHub.vendor_staging_data) {
             return { success: false, message: 'No vendor staging data found for this project.' };
         }
 
-        const projectUUID = projectRow.project_id;
-        const vendorName = projectRow.projects?.vendor_name || 'Unknown Vendor';
-        const rawDataArray = projectRow.vendor_staging_data;
-
-        if (!Array.isArray(rawDataArray) || rawDataArray.length === 0) {
+        const hubRow = rawProjectsHub;
+        const stagingData = hubRow.vendor_staging_data;
+        if (!Array.isArray(stagingData) || stagingData.length === 0) {
             return { success: false, message: 'Staging data is empty or invalid format.' };
         }
+
+        const projectRow = hubRow.projects;
+        if (!projectRow) {
+            return { success: false, message: 'No project details found for this project.' };
+        }
+
+        const details = projectRow.project_details?.[0] || {};
+
+        // Extract primary language logic from new format
+        let primaryLanguage = details.language || 'EN';
+        if (Array.isArray(details['languages-ratio']) && details['languages-ratio'].length > 0) {
+            primaryLanguage = details['languages-ratio'][0]['lang-code']?.toUpperCase() || primaryLanguage;
+        }
+
+        const projectUUID = hubRow.project_id;
+        const vendorName = details.vendor_name || 'Unknown Vendor';
+        const category = details.backlinks_category || 'Uncategorized';
+        const country = details.country || 'GLOBAL';
+        const sheetName = details.sheet_name || null;
+        const createdAt = details.created_at || null;
+
+        const rawDataArray = stagingData;
 
         const nowIso = new Date().toISOString();
 

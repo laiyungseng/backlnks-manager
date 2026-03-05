@@ -1,6 +1,14 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+
+function genId() {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+        const r = Math.random() * 16 | 0;
+        return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+    });
+}
 import Link from 'next/link';
 import {
     Plus, Trash2, Copy, Check, Table2, Send, X,
@@ -19,16 +27,16 @@ const COLUMN_TYPES = [
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function makeLockedCol(name, type, defaultVal, isPK = false) {
-    return { id: crypto.randomUUID(), name, type, nullable: false, defaultVal, unique: false, locked: true, isPK };
+    return { id: genId(), name, type, nullable: false, defaultVal, unique: false, locked: true, isPK };
 }
 
 function makeUserCol() {
-    return { id: crypto.randomUUID(), name: '', type: 'TEXT', nullable: true, defaultVal: '', unique: false, locked: false, isPK: false, isFk: false, fkTable: '', fkColumn: 'id' };
+    return { id: genId(), name: '', type: 'TEXT', nullable: true, defaultVal: '', unique: false, locked: false, isPK: false, isFk: false, fkTable: '', fkColumn: 'id' };
 }
 
 function makeTable() {
     return {
-        id: crypto.randomUUID(),
+        id: genId(),
         name: '',
         enableRLS: true,
         publicRead: false,

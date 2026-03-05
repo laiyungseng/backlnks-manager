@@ -71,15 +71,30 @@ export default function DashboardClient({ initialProjects }) {
     };
 
     const handleFieldChange = (projectId, field, value) => {
-        setEditedProjects(prev => prev.map(p => p.id === projectId ? { ...p, [field]: value } : p));
+        setEditedProjects(prev => prev.map(p => {
+            if (p.id === projectId) {
+                const newDetails = p.project_details ? [...p.project_details] : [{}];
+                newDetails[0] = { ...newDetails[0], [field]: value };
+                return { ...p, project_details: newDetails };
+            }
+            return p;
+        }));
     };
 
     const handleApprove = async (projectId) => {
         if (confirm("Approve this project? It will become active and available in Placements.")) {
             // Optimistic update
-            setProjects(prev => prev.map(p => p.id === projectId ? { ...p, is_approved: true } : p));
+            const updateProj = p => {
+                if (p.id === projectId) {
+                    const newDetails = p.project_details ? [...p.project_details] : [{}];
+                    newDetails[0] = { ...newDetails[0], is_approved: true };
+                    return { ...p, project_details: newDetails };
+                }
+                return p;
+            };
+            setProjects(prev => prev.map(updateProj));
             if (isEditMode) {
-                setEditedProjects(prev => prev.map(p => p.id === projectId ? { ...p, is_approved: true } : p));
+                setEditedProjects(prev => prev.map(updateProj));
             }
             const res = await approveProject(projectId);
             if (!res.success) alert(res.message);
@@ -146,7 +161,8 @@ export default function DashboardClient({ initialProjects }) {
                         <dd className="mt-1 text-3xl font-semibold text-gray-900">
                             {projects?.filter(p => {
                                 const hasPlacements = p.placements && p.placements.length > 0;
-                                return p.status === 'Completed' || p.status === 'Finalized' || hasPlacements;
+                                const details = p.project_details?.[0] || {};
+                                return details.status === 'Completed' || details.status === 'Finalized' || hasPlacements;
                             }).length || 0}
                         </dd>
                     </div>
@@ -157,7 +173,8 @@ export default function DashboardClient({ initialProjects }) {
                         <dd className="mt-1 text-3xl font-semibold text-gray-900">
                             {projects?.filter(p => {
                                 const hasPlacements = p.placements && p.placements.length > 0;
-                                return p.status !== 'Completed' && p.status !== 'Finalized' && !hasPlacements;
+                                const details = p.project_details?.[0] || {};
+                                return details.status !== 'Completed' && details.status !== 'Finalized' && !hasPlacements;
                             }).length || 0}
                         </dd>
                     </div>
@@ -193,10 +210,11 @@ export default function DashboardClient({ initialProjects }) {
                                     const hub = project.projects_hub?.[0] || {};
                                     const hubTargets = Array.isArray(hub.targets) ? hub.targets : [];
                                     const stagingData = Array.isArray(hub.vendor_staging_data) ? hub.vendor_staging_data : [];
+                                    const details = project.project_details?.[0] || {};
 
                                     const totalLinks = hubTargets.length > 0
                                         ? hubTargets.reduce((acc, t) => acc + (parseInt(t.quantity || '0', 10)), 0)
-                                        : parseInt(project.quantity || '0', 10);
+                                        : parseInt(details.quantity || '0', 10);
 
                                     const completedLinks = stagingData.filter(p => p.published_url && p.published_url.trim().length > 0).length;
                                     const progressPercent = totalLinks > 0 ? Math.round((completedLinks / totalLinks) * 100) : 0;
@@ -211,15 +229,15 @@ export default function DashboardClient({ initialProjects }) {
                                             </td>
 
                                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                                {isEditMode ? <input type="text" value={project.project_name || ''} onChange={(e) => handleFieldChange(project.id, 'project_name', e.target.value)} className="w-[140px] px-2 py-1 border border-indigo-300 focus:ring-1 focus:ring-indigo-500 rounded font-normal" /> : project.project_name}
+                                                {isEditMode ? <input type="text" value={details.project_name || ''} onChange={(e) => handleFieldChange(project.id, 'project_name', e.target.value)} className="w-[140px] px-2 py-1 border border-indigo-300 focus:ring-1 focus:ring-indigo-500 rounded font-normal" /> : details.project_name}
                                             </td>
 
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                {isEditMode ? <input type="text" value={project.vendor_name || ''} onChange={(e) => handleFieldChange(project.id, 'vendor_name', e.target.value)} className="w-24 px-2 py-1 border border-indigo-300 focus:ring-1 focus:ring-indigo-500 rounded font-normal" /> : project.vendor_name}
+                                                {isEditMode ? <input type="text" value={details.vendor_name || ''} onChange={(e) => handleFieldChange(project.id, 'vendor_name', e.target.value)} className="w-24 px-2 py-1 border border-indigo-300 focus:ring-1 focus:ring-indigo-500 rounded font-normal" /> : details.vendor_name}
                                             </td>
 
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 border-none font-mono">
-                                                {isEditMode ? <input type="text" value={project.country || ''} onChange={(e) => handleFieldChange(project.id, 'country', e.target.value)} className="w-16 px-2 py-1 border border-indigo-300 focus:ring-1 focus:ring-indigo-500 rounded font-normal" maxLength={3} /> : project.country}
+                                                {isEditMode ? <input type="text" value={details.country || ''} onChange={(e) => handleFieldChange(project.id, 'country', e.target.value)} className="w-16 px-2 py-1 border border-indigo-300 focus:ring-1 focus:ring-indigo-500 rounded font-normal" maxLength={3} /> : details.country}
                                             </td>
 
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -248,7 +266,7 @@ export default function DashboardClient({ initialProjects }) {
 
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 {isEditMode ? (
-                                                    <select value={project.backlinks_category || 'NULL'} onChange={(e) => handleFieldChange(project.id, 'backlinks_category', e.target.value)} className="w-24 px-1 py-1 border border-indigo-300 bg-white rounded text-xs select-auto">
+                                                    <select value={details.backlinks_category || 'NULL'} onChange={(e) => handleFieldChange(project.id, 'backlinks_category', e.target.value)} className="w-24 px-1 py-1 border border-indigo-300 bg-white rounded text-xs select-auto">
                                                         <option value="NULL">NULL</option>
                                                         <option value="PBN">PBN</option><option value="GP">GP</option>
                                                         <option value="Tier 2">Tier 2</option><option value="Tier 2 EDU">Tier 2 EDU</option>
@@ -257,7 +275,7 @@ export default function DashboardClient({ initialProjects }) {
                                                         <option value="Bookmark">Bookmark</option><option value="Forum">Forum</option>
                                                     </select>
                                                 ) : (
-                                                    project.backlinks_category ? <span className="px-2 py-0.5 rounded-full text-xs font-medium border bg-purple-50 text-purple-700 border-purple-200">{project.backlinks_category}</span> : <span className="text-gray-400 italic text-xs">-</span>
+                                                    details.backlinks_category ? <span className="px-2 py-0.5 rounded-full text-xs font-medium border bg-purple-50 text-purple-700 border-purple-200">{details.backlinks_category}</span> : <span className="text-gray-400 italic text-xs">-</span>
                                                 )}
                                             </td>
 
@@ -274,14 +292,14 @@ export default function DashboardClient({ initialProjects }) {
                                                 {isEditMode ? (
                                                     <div className="flex flex-col gap-1">
                                                         <span className="text-xs font-bold text-gray-400">Start:</span>
-                                                        <input type="date" value={project.start_date ? project.start_date.split('T')[0] : ''} onChange={(e) => handleFieldChange(project.id, 'start_date', e.target.value)} className="w-[124px] px-2 py-1 border border-indigo-300 rounded text-xs" />
+                                                        <input type="date" value={details.start_date ? details.start_date.split('T')[0] : ''} onChange={(e) => handleFieldChange(project.id, 'start_date', e.target.value)} className="w-[124px] px-2 py-1 border border-indigo-300 rounded text-xs" />
                                                         <span className="text-xs font-bold text-gray-400 mt-1">End:</span>
-                                                        <input type="date" value={project.deadline ? project.deadline.split('T')[0] : ''} onChange={(e) => handleFieldChange(project.id, 'deadline', e.target.value)} className="w-[124px] px-2 py-1 border border-indigo-300 rounded text-xs" />
+                                                        <input type="date" value={details.deadline ? details.deadline.split('T')[0] : ''} onChange={(e) => handleFieldChange(project.id, 'deadline', e.target.value)} className="w-[124px] px-2 py-1 border border-indigo-300 rounded text-xs" />
                                                     </div>
                                                 ) : (
                                                     <div className="flex flex-col gap-1 text-xs">
-                                                        <span><span className="font-semibold text-gray-400">S:</span> {project.start_date ? new Date(project.start_date).toLocaleDateString() : '-'}</span>
-                                                        <span><span className="font-semibold text-gray-400">E:</span> {project.deadline ? new Date(project.deadline).toLocaleDateString() : '-'}</span>
+                                                        <span><span className="font-semibold text-gray-400">S:</span> {details.start_date ? new Date(details.start_date).toLocaleDateString() : '-'}</span>
+                                                        <span><span className="font-semibold text-gray-400">E:</span> {details.deadline ? new Date(details.deadline).toLocaleDateString() : '-'}</span>
                                                     </div>
                                                 )}
                                             </td>
@@ -291,18 +309,18 @@ export default function DashboardClient({ initialProjects }) {
                                                     <div className="flex flex-col gap-2 min-w-[100px]">
                                                         <div className="flex items-center">
                                                             <span className="text-gray-500 mr-1 text-xs">$</span>
-                                                            <input type="number" step="0.01" value={project.price ?? ''} onChange={(e) => handleFieldChange(project.id, 'price', e.target.value)} className="w-16 px-1.5 py-1 border border-indigo-300 rounded text-xs" />
+                                                            <input type="number" step="0.01" value={details.price ?? ''} onChange={(e) => handleFieldChange(project.id, 'price', e.target.value)} className="w-16 px-1.5 py-1 border border-indigo-300 rounded text-xs" />
                                                         </div>
-                                                        <select value={project.price_type || 'per_url'} onChange={(e) => handleFieldChange(project.id, 'price_type', e.target.value)} className="w-[88px] px-1 py-1 border border-indigo-300 rounded text-[10px] bg-white">
+                                                        <select value={details.price_type || 'per_url'} onChange={(e) => handleFieldChange(project.id, 'price_type', e.target.value)} className="w-[88px] px-1 py-1 border border-indigo-300 rounded text-[10px] bg-white">
                                                             <option value="per_url">Per URL</option>
                                                             <option value="package">Package</option>
                                                         </select>
                                                     </div>
                                                 ) : (
                                                     <div className="flex flex-col bg-gray-50 p-1.5 rounded border border-gray-100 min-w-[90px]">
-                                                        <span className="text-sm font-bold text-gray-900">${project.price || '0.00'}</span>
+                                                        <span className="text-sm font-bold text-gray-900">${details.price || '0.00'}</span>
                                                         <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">
-                                                            {project.price_type === 'package' ? 'Package' : 'Per URL'}
+                                                            {details.price_type === 'package' ? 'Package' : 'Per URL'}
                                                         </span>
                                                     </div>
                                                 )}
@@ -311,22 +329,22 @@ export default function DashboardClient({ initialProjects }) {
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 {(() => {
                                                     const hasPlacements = project.placements && project.placements.length > 0;
-                                                    const isFinalized = project.status === 'Finalized' || hasPlacements;
+                                                    const isFinalized = details.status === 'Finalized' || hasPlacements;
 
-                                                    let statusText = project.status || 'In Progress';
+                                                    let statusText = details.status || 'In Progress';
                                                     let badgeColor = 'bg-yellow-100 text-yellow-800';
 
                                                     if (isFinalized) {
                                                         statusText = 'Completed & Finalized';
                                                         badgeColor = 'bg-green-100 text-green-800';
-                                                    } else if (project.status === 'Completed' || progressPercent === 100) {
+                                                    } else if (details.status === 'Completed' || progressPercent === 100) {
                                                         statusText = 'Completed';
                                                         badgeColor = 'bg-green-100 text-green-800';
-                                                    } else if (!project.is_approved) {
+                                                    } else if (!details.is_approved) {
                                                         statusText = 'Inprocess-pending payment';
                                                         badgeColor = 'bg-amber-100 text-amber-800 border border-amber-200';
                                                     } else {
-                                                        statusText = project.status || 'In Progress';
+                                                        statusText = details.status || 'In Progress';
                                                         badgeColor = 'bg-indigo-100 text-indigo-800';
                                                     }
 
@@ -338,44 +356,40 @@ export default function DashboardClient({ initialProjects }) {
                                                 })()}
                                             </td>
 
-                                            <td className="px-6 py-4 whitespace-nowrap text-center">
-                                                {isEditMode ? (
-                                                    <span className="text-xs text-gray-400 italic">Save to enable</span>
-                                                ) : (
-                                                    project.is_approved ? (
-                                                        <div className="flex justify-center text-green-500" title="Project Approved">
-                                                            <CheckCircle2 className="w-6 h-6" />
-                                                        </div>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                                <div className="flex space-x-2">
+                                                    {details.is_approved ? (
+                                                        <span className="inline-flex items-center justify-center text-green-600 px-2 py-1" title="Approved">
+                                                            <CheckCircle2 className="w-5 h-5" />
+                                                        </span>
                                                     ) : (
-                                                        <button
-                                                            onClick={() => handleApprove(project.id)}
-                                                            className="flex justify-center items-center gap-1 bg-white border border-gray-300 hover:bg-green-50 hover:border-green-300 hover:text-green-700 text-xs px-2 py-1 rounded-md text-gray-600 font-semibold transition-colors w-full"
-                                                        >
-                                                            <CheckCircle2 className="w-4 h-4 shrink-0" />
+                                                        <button onClick={() => handleApprove(project.id)} className="text-white bg-green-600 hover:bg-green-700 px-3 py-1 rounded transition-colors shadow-sm font-bold">
                                                             Approve
                                                         </button>
-                                                    )
-                                                )}
+                                                    )}
+                                                </div>
                                             </td>
 
                                             <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                                <button
-                                                    disabled={isEditMode}
-                                                    onClick={async (e) => {
-                                                        e.preventDefault();
-                                                        if (confirm("Are you sure you want to delete this project?")) {
-                                                            setProjects(prev => prev.filter(p => p.id !== project.id));
-                                                            const res = await deleteProject(project.id);
-                                                            if (!res.success) {
-                                                                alert(`Could not delete: ${res.message}`);
+                                                <div className="flex items-center justify-end space-x-3">
+                                                    <button
+                                                        disabled={isEditMode}
+                                                        onClick={async (e) => {
+                                                            e.preventDefault();
+                                                            if (confirm("Are you sure you want to delete this project?")) {
+                                                                setProjects(prev => prev.filter(p => p.id !== project.id));
+                                                                const res = await deleteProject(project.id);
+                                                                if (!res.success) {
+                                                                    alert(`Could not delete: ${res.message}`);
+                                                                }
                                                             }
-                                                        }
-                                                    }}
-                                                    className="text-red-600 hover:text-red-900 p-1 rounded-full hover:bg-red-50 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                                                    title="Delete Project"
-                                                >
-                                                    <Trash2 className="w-5 h-5" />
-                                                </button>
+                                                        }}
+                                                        className="text-red-500 hover:text-red-700 p-1.5 rounded-full hover:bg-red-50 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                                                        title="Delete Project"
+                                                    >
+                                                        <Trash2 className="w-5 h-5" />
+                                                    </button>
+                                                </div>
                                             </td>
                                         </tr>
                                     );

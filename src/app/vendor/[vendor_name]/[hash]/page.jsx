@@ -31,15 +31,17 @@ export default async function VendorProjectPage({ params }) {
     // Fetch Core Project Context
     const { data: projectData } = await supabase
         .from('projects')
-        .select('project_name, deadline, dripfeed_enabled, dripfeed_period, urls_per_day, languages, language, quantity, url_entry_enabled, randomize_languages')
+        .select('project_details')
         .eq('id', projectId)
         .single();
+
+    const details = projectData?.project_details?.[0] || {};
 
     // Parse targets from JSONB Hub
     const targetsData = Array.isArray(projectsHub.targets) ? projectsHub.targets : [];
 
     // Parse language distribution
-    const languages = projectData?.languages || [];
+    const languages = details['languages-ratio'] || [];
 
     // Expand Target Rows with language assignment
     let generatedRows = [];
@@ -71,7 +73,7 @@ export default async function VendorProjectPage({ params }) {
                             target_id: targetId,
                             target_url: target.target_url,
                             anchor_text: target.anchor_text,
-                            language: lang.code.toUpperCase(),
+                            language: lang['lang-code']?.toUpperCase() || '',
                             domain_url: savedRow?.domain_url || '',
                             published_url: savedRow?.published_url || '',
                             published_date: savedRow?.published_date || '',
@@ -92,7 +94,7 @@ export default async function VendorProjectPage({ params }) {
                         target_id: targetId,
                         target_url: target.target_url,
                         anchor_text: target.anchor_text,
-                        language: projectData?.language?.toUpperCase() || '',
+                        language: details.language?.toUpperCase() || 'EN',
                         domain_url: savedRow?.domain_url || '',
                         published_url: savedRow?.published_url || '',
                         published_date: savedRow?.published_date || '',
@@ -105,7 +107,7 @@ export default async function VendorProjectPage({ params }) {
     }
 
     // Apply deterministic randomization if enabled
-    if (projectData?.randomize_languages && generatedRows.length > 0) {
+    if (details.randomize_language && generatedRows.length > 0) {
         generatedRows.sort((a, b) => {
             const hashA = [...a.id].reduce((acc, char) => (acc * 31 + char.charCodeAt(0)) | 0, 0);
             const hashB = [...b.id].reduce((acc, char) => (acc * 31 + char.charCodeAt(0)) | 0, 0);
@@ -119,23 +121,23 @@ export default async function VendorProjectPage({ params }) {
                 <div className="bg-white shadow-sm rounded-xl border border-gray-200 p-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                     <div>
                         <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
-                            Assignment: <span className="text-indigo-600">{projectData?.project_name || 'Active SEO Project'}</span>
+                            Assignment: <span className="text-indigo-600">{details.project_name || 'Active SEO Project'}</span>
                         </h1>
                         <p className="text-sm text-gray-500 mt-1">Please fulfill all requested Target URL allocations below.</p>
                     </div>
                     <div className="px-4 py-2 bg-red-50 text-red-700 rounded-md border border-red-100 font-medium text-sm shadow-sm whitespace-nowrap">
-                        Deadline: {projectData?.deadline ? new Date(projectData.deadline).toLocaleDateString() : 'N/A'}
+                        Deadline: {details.deadline ? new Date(details.deadline).toLocaleDateString() : 'N/A'}
                     </div>
                 </div>
 
                 <VendorForm
                     initialRows={generatedRows}
                     projectHash={hash}
-                    dripfeedEnabled={projectData?.dripfeed_enabled}
-                    dripfeedPeriod={projectData?.dripfeed_period}
-                    urlsPerDay={projectData?.urls_per_day}
+                    dripfeedEnabled={details.dripfeed_enabled}
+                    dripfeedPeriod={details.dripfeed_period}
+                    urlsPerDay={details.urls_per_day}
                     isLocked={isLocked}
-                    urlEntryEnabled={projectData?.url_entry_enabled ?? true}
+                    urlEntryEnabled={details.url_entry_enabled ?? true}
                 />
             </main>
         </div>

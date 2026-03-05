@@ -57,9 +57,24 @@ export async function approveProject(projectId) {
     if (!supabase) return { success: false, message: 'Database connection not configured.' };
 
     try {
+        const { data: proj, error: fetchErr } = await supabase
+            .from('projects')
+            .select('project_details')
+            .eq('id', projectId)
+            .single();
+
+        if (fetchErr || !proj) {
+            return { success: false, message: 'Project not found.' };
+        }
+
+        const details = proj.project_details || [];
+        if (details.length > 0) {
+            details[0].is_approved = true;
+        }
+
         const { error } = await supabase
             .from('projects')
-            .update({ is_approved: true })
+            .update({ project_details: details })
             .eq('id', projectId);
 
         if (error) {
@@ -81,18 +96,24 @@ export async function updateDashboardProjects(projectsArray) {
 
     try {
         // Bulk update or individual updates
-        // Since Supabase doesn't easily do bulk updates with mixed structures without a loop or upsert array
-        const updates = projectsArray.map(p => {
-            return supabase.from('projects').update({
-                project_name: p.project_name,
-                vendor_name: p.vendor_name,
-                country: p.country,
-                backlinks_category: p.backlinks_category,
-                start_date: p.start_date,
-                deadline: p.deadline,
-                price: p.price,
-                price_type: p.price_type
-            }).eq('id', p.id);
+        const updates = projectsArray.map(async p => {
+            const edited = p.project_details?.[0] || {};
+            const { data: proj } = await supabase.from('projects').select('project_details').eq('id', p.id).single();
+            if (proj && proj.project_details && proj.project_details.length > 0) {
+                const details = proj.project_details;
+                details[0] = {
+                    ...details[0],
+                    project_name: edited.project_name,
+                    vendor_name: edited.vendor_name,
+                    country: edited.country,
+                    backlinks_category: edited.backlinks_category,
+                    start_date: edited.start_date,
+                    deadline: edited.deadline,
+                    price: String(edited.price || 0),
+                    price_type: edited.price_type
+                };
+                return supabase.from('projects').update({ project_details: details }).eq('id', p.id);
+            }
         });
 
         await Promise.all(updates);

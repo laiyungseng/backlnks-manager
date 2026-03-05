@@ -8,14 +8,14 @@ export default async function AdminDashboardPage() {
     const { data: projects, error } = await supabase
         .from('projects')
         .select(`
-            id, project_name, vendor_name, status, start_date, deadline, created_at, updated_at, quantity, dripfeed_enabled, dripfeed_period, urls_per_day, backlinks_category,
+            id, user, created_date, complete_date, project_details,
             projects_hub ( targets, vendor_staging_data ),
             placements ( id )
         `)
-        .order('created_at', { ascending: false });
+        .order('created_date', { ascending: false });
 
     if (error) {
-        console.error("Dashboard DB fetch error:", error);
+        console.error("Dashboard DB fetch error:", JSON.stringify(error, null, 2));
     }
 
     // Helper for safe URL parsing

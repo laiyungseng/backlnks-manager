@@ -14,6 +14,8 @@ export default function PlacementCard({ project, representativeHash }) {
     // Manage live data locally to trigger re-renders
     const [localStagingData, setLocalStagingData] = useState(project.projects_hub?.[0]?.vendor_staging_data || []);
 
+    const details = project.project_details?.[0] || {};
+
     // Real-time listener for this specific project
     useEffect(() => {
         if (!representativeHash || !supabase) return;
@@ -78,7 +80,7 @@ export default function PlacementCard({ project, representativeHash }) {
     const hubTargets = Array.isArray(hub.targets) ? hub.targets : [];
     const totalLinks = hubTargets.length > 0
         ? hubTargets.reduce((acc, t) => acc + (parseInt(t.quantity || '0', 10)), 0)
-        : parseInt(project.quantity || '0', 10);
+        : parseInt(details.quantity || '0', 10);
 
     const overallFulfillmentMatch = completedLinks === totalLinks && totalLinks > 0;
 
@@ -131,11 +133,11 @@ export default function PlacementCard({ project, representativeHash }) {
 
     // Language display helper
     const formatLanguages = () => {
-        const languages = project.languages;
+        const languages = details['languages-ratio'];
         if (Array.isArray(languages) && languages.length > 0) {
-            return languages.map(l => `${l.code} (${l.ratio}%)`).join(', ');
+            return languages.map(l => `${l['lang-code']} (${l.ratio}%)`).join(', ');
         }
-        return project.language ? `${project.language} (100%)` : null;
+        return details.language ? `${details.language} (100%)` : null;
     };
 
     // Helper for safe URL parsing
@@ -153,7 +155,7 @@ export default function PlacementCard({ project, representativeHash }) {
             {/* Header / Vendor Control Strip */}
             <div className="px-6 py-5 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
-                    <h2 className="text-xl font-bold text-gray-900">{project.project_name}</h2>
+                    <h2 className="text-xl font-bold text-gray-900">{details.project_name || 'Unnamed Project'}</h2>
                     <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5 text-xs">
                         {localLockState ? (
                             <div className="flex items-center gap-1 text-amber-700 font-semibold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
@@ -166,18 +168,18 @@ export default function PlacementCard({ project, representativeHash }) {
                         )}
                         <div>
                             <span className="text-gray-400 font-medium">Vendor: </span>
-                            <span className="font-semibold text-indigo-600">{project.vendor_name}</span>
+                            <span className="font-semibold text-indigo-600">{details.vendor_name}</span>
                         </div>
                         <div>
                             <span className="text-gray-400 font-medium">Status: </span>
                             <span className={`font-semibold ${(isFinalized || allFulfilled) ? 'text-green-700' : 'text-yellow-700'}`}>
-                                {isFinalized ? 'Finalized' : (project.status === 'Completed' || allFulfilled) ? 'Completed' : project.status}
+                                {isFinalized ? 'Finalized' : (details.status === 'Completed' || allFulfilled) ? 'Completed' : details.status}
                             </span>
                         </div>
-                        {project.country && (
+                        {details.country && (
                             <div>
                                 <span className="text-gray-400 font-medium">Country: </span>
-                                <span className="font-semibold text-gray-700 uppercase">{project.country}</span>
+                                <span className="font-semibold text-gray-700 uppercase">{details.country}</span>
                             </div>
                         )}
                         {formatLanguages() && (
@@ -186,23 +188,23 @@ export default function PlacementCard({ project, representativeHash }) {
                                 <span className="font-semibold text-gray-700 uppercase">{formatLanguages()}</span>
                             </div>
                         )}
-                        {project.backlinks_category && (
+                        {details.backlinks_category && (
                             <div>
                                 <span className="text-gray-400 font-medium">Category: </span>
-                                <span className="px-1.5 py-0.5 rounded text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200">{project.backlinks_category}</span>
+                                <span className="px-1.5 py-0.5 rounded text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200">{details.backlinks_category}</span>
                             </div>
                         )}
-                        {project.sheet_name && (
+                        {details.sheet_name && (
                             <div>
                                 <span className="text-gray-400 font-medium">Sheet: </span>
-                                <span className="font-medium text-gray-600 italic">{project.sheet_name}</span>
+                                <span className="font-medium text-gray-600 italic">{details.sheet_name}</span>
                             </div>
                         )}
-                        {project.dripfeed_enabled && (
+                        {details.dripfeed_enabled && (
                             <div className="flex items-center gap-1">
                                 <Droplet className="w-3 h-3 text-amber-600" />
                                 <span className="text-gray-400 font-medium">Dripfeed: </span>
-                                <span className="font-semibold text-amber-700">{project.urls_per_day} URLs/Day</span>
+                                <span className="font-semibold text-amber-700">{details.urls_per_day} URLs/Day</span>
                             </div>
                         )}
                         <div>
@@ -276,7 +278,7 @@ export default function PlacementCard({ project, representativeHash }) {
                         <span className="text-[10px] text-gray-400 italic">(View Placement Details)</span>
                     </div>
                     {representativeHash ? (
-                        <VendorLinkCopy projectHash={representativeHash} />
+                        <VendorLinkCopy projectHash={representativeHash} vendorName={details.vendor_name || 'unknown'} />
                     ) : (
                         <span className="text-sm text-red-500 italic px-2">Unlinked - No Kickoff Hash Created</span>
                     )}

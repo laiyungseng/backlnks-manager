@@ -30,11 +30,11 @@ async function fetchProjects(supabase) {
     const { data, error } = await supabase
         .from('projects')
         .select(`
-            id, project_name, vendor_name, status, start_date, deadline, created_at, updated_at, quantity, dripfeed_enabled, dripfeed_period, urls_per_day, backlinks_category, country, price, price_type, is_approved,
+            id, user, created_date, complete_date, project_details,
             projects_hub ( hash, targets, vendor_staging_data ),
             placements ( id )
         `)
-        .order('created_at', { ascending: false });
+        .order('created_date', { ascending: false });
 
     if (error) {
         console.error('[SSE] Dashboard fetch error:', error.message);

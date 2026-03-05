@@ -72,10 +72,21 @@ export async function saveVendorProgress(hash, payload) {
         if (targetProjectId) {
             const newStatus = completedCount === totalQuantity ? 'Completed' : 'Inprogress';
 
-            await supabase
-                .from('projects')
-                .update({ status: newStatus, updated_at: new Date().toISOString() })
-                .eq('id', targetProjectId);
+            const { data: proj } = await supabase.from('projects').select('project_details, complete_date').eq('id', targetProjectId).single();
+            if (proj && proj.project_details && proj.project_details.length > 0) {
+                const details = proj.project_details;
+                details[0].status = newStatus;
+
+                const dbUpdatePayload = { project_details: details };
+                if (newStatus === 'Completed' && !proj.complete_date) {
+                    dbUpdatePayload.complete_date = new Date().toISOString();
+                }
+
+                await supabase
+                    .from('projects')
+                    .update(dbUpdatePayload)
+                    .eq('id', targetProjectId);
+            }
         }
 
         return {
@@ -111,9 +122,17 @@ export async function toggleUrlEntryMode(hash, isEnabled) {
         }
 
         // 2. Update Master Project Table
+        const { data: proj } = await supabase.from('projects').select('project_details').eq('id', projectList.project_id).single();
+        if (!proj || !proj.project_details || proj.project_details.length === 0) {
+            return { success: false, message: 'Could not toggle URL entry.' };
+        }
+
+        const details = proj.project_details;
+        details[0].url_entry_enabled = isEnabled;
+
         const { error: updateError } = await supabase
             .from('projects')
-            .update({ url_entry_enabled: isEnabled })
+            .update({ project_details: details })
             .eq('id', projectList.project_id);
 
         if (updateError) {

@@ -68,29 +68,33 @@ export async function createProjectAction(prevState, formData) {
             .from('projects')
             .insert([
                 {
-                    project_name: projectData.project_name,
-                    owner: projectData.owner,
-                    start_date: projectData.start_date,
-                    deadline: projectData.deadline,
-                    vendor_name: projectData.vendor_name,
-                    country: projectData.country.toUpperCase(),
-                    language: languagesArray[0]?.code?.toUpperCase() || '',
-                    languages: languagesArray,
-                    backlinks_category: projectData.backlinks_category,
-                    sheet_name: projectData.sheet_name || null,
-                    quantity: projectData.quantity,
-                    remarks: projectData.remarks,
-                    dripfeed_enabled: projectData.dripfeed_enabled,
-                    dripfeed_period: projectData.dripfeed_enabled && projectData.dripfeed_period ? parseInt(projectData.dripfeed_period) : null,
-                    urls_per_day: projectData.dripfeed_enabled && projectData.urls_per_day ? parseInt(projectData.urls_per_day) : null,
-                    url_entry_enabled: projectData.url_entry_enabled,
-                    price: projectData.price,
-                    price_type: projectData.price_type,
-                    is_approved: false,
-                    randomize_languages: projectData.randomize_languages,
-                    status: 'Inprogress',
-                    created_at: new Date().toISOString(),
-                    updated_at: new Date().toISOString()
+                    user: projectData.owner,
+                    created_date: new Date().toISOString(),
+                    complete_date: null,
+                    project_details: [{
+                        project_name: projectData.project_name,
+                        owner: projectData.owner,
+                        start_date: projectData.start_date,
+                        deadline: projectData.deadline,
+                        vendor_name: projectData.vendor_name,
+                        country: projectData.country.toUpperCase(),
+                        "languages-ratio": languagesArray.map(l => ({ "lang-code": l.code.toUpperCase(), "ratio": l.ratio })),
+                        backlinks_category: projectData.backlinks_category,
+                        sheet_name: projectData.sheet_name || null,
+                        quantity: String(projectData.quantity),
+                        remarks: projectData.remarks,
+                        dripfeed_enabled: projectData.dripfeed_enabled,
+                        dripfeed_period: projectData.dripfeed_enabled && projectData.dripfeed_period ? String(projectData.dripfeed_period) : null,
+                        urls_per_day: projectData.dripfeed_enabled && projectData.urls_per_day ? String(projectData.urls_per_day) : null,
+                        url_entry_enabled: projectData.url_entry_enabled,
+                        price: String(projectData.price || 0),
+                        price_type: projectData.price_type,
+                        is_approved: false,
+                        randomize_language: projectData.randomize_languages,
+                        status: 'Inprogress',
+                        created_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString()
+                    }]
                 }
             ])
             .select()

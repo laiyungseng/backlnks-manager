@@ -8,20 +8,14 @@ export default async function PlacementsMonitoringPage() {
         .from('projects')
         .select(`
             id,
-            project_name,
-            vendor_name,
-            status,
-            country,
-            language,
-            languages,
-            sheet_name,
-            dripfeed_enabled,
-            urls_per_day,
-            is_approved,
+            user,
+            created_date,
+            complete_date,
+            project_details,
             projects_hub ( hash, vendor_staging_data, completed_at, is_locked, targets ),
             placements ( id )
         `)
-        .order('created_at', { ascending: false });
+        .order('created_date', { ascending: false });
 
     if (error) {
         console.error("Placements DB fetch error:", error);
@@ -30,7 +24,8 @@ export default async function PlacementsMonitoringPage() {
     // Filter: Only show projects that have NOT been uploaded to the placements table yet and ARE approved
     const activeProjects = (projects || []).filter(p => {
         const hasPlacements = p.placements && p.placements.length > 0;
-        return p.is_approved === true && p.status !== 'Finalized' && !hasPlacements;
+        const details = p.project_details?.[0] || {};
+        return details.is_approved === true && details.status !== 'Finalized' && !hasPlacements;
     });
 
     return (
