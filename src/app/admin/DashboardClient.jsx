@@ -2,17 +2,20 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Trash2 } from 'lucide-react';
+import { Trash2, CheckCircle2 } from 'lucide-react';
 import CopyButton from './CopyButton';
-import { deleteProject } from './actions';
+import { deleteProject, approveProject, updateDashboardProjects } from './actions';
 
 export default function DashboardClient({ initialProjects }) {
     const [projects, setProjects] = useState(initialProjects || []);
     const [selectedTargets, setSelectedTargets] = useState(null);
 
+    // Edit Mode State
+    const [isEditMode, setIsEditMode] = useState(false);
+    const [editedProjects, setEditedProjects] = useState([]);
+    const [isSaving, setIsSaving] = useState(false);
+
     useEffect(() => {
-        // SSE connection — server polls Supabase with private credentials.
-        // The browser never holds any API keys.
         const source = new EventSource('/api/realtime/dashboard');
 
         source.addEventListener('projects', (e) => {
@@ -20,12 +23,11 @@ export default function DashboardClient({ initialProjects }) {
                 const data = JSON.parse(e.data);
                 if (Array.isArray(data)) setProjects(data);
             } catch {
-                // Malformed event — ignore.
+                // Malformed event
             }
         });
 
         source.addEventListener('error', () => {
-            // SSE errors (network drop, etc.) — EventSource auto-reconnects.
             console.warn('[Dashboard SSE] Connection error — will retry automatically.');
         });
 
@@ -34,7 +36,6 @@ export default function DashboardClient({ initialProjects }) {
         };
     }, []);
 
-    // Helper for safe URL parsing
     const getSafeHostname = (urlString) => {
         if (!urlString) return 'Unknown';
         try {
@@ -43,6 +44,49 @@ export default function DashboardClient({ initialProjects }) {
             return urlString;
         }
     };
+
+    const handleEnterEditMode = () => {
+        // Deep copy the current projects array 
+        const snap = JSON.parse(JSON.stringify(projects));
+        setEditedProjects(snap);
+        setIsEditMode(true);
+    };
+
+    const handleCancelEdit = () => {
+        setIsEditMode(false);
+        setEditedProjects([]);
+    };
+
+    const handleSaveEdits = async () => {
+        setIsSaving(true);
+        // Identify changes (optional: we just pass exactly what's currently in editedProjects)
+        const res = await updateDashboardProjects(editedProjects);
+        if (res.success) {
+            setProjects([...editedProjects]); // Optimistic update
+            setIsEditMode(false);
+        } else {
+            alert(`Failed to save edits: ${res.message}`);
+        }
+        setIsSaving(false);
+    };
+
+    const handleFieldChange = (projectId, field, value) => {
+        setEditedProjects(prev => prev.map(p => p.id === projectId ? { ...p, [field]: value } : p));
+    };
+
+    const handleApprove = async (projectId) => {
+        if (confirm("Approve this project? It will become active and available in Placements.")) {
+            // Optimistic update
+            setProjects(prev => prev.map(p => p.id === projectId ? { ...p, is_approved: true } : p));
+            if (isEditMode) {
+                setEditedProjects(prev => prev.map(p => p.id === projectId ? { ...p, is_approved: true } : p));
+            }
+            const res = await approveProject(projectId);
+            if (!res.success) alert(res.message);
+        }
+    };
+
+    const displayProjects = isEditMode ? editedProjects : projects;
 
     return (
         <div className="max-w-6xl mx-auto space-y-8">
@@ -54,6 +98,31 @@ export default function DashboardClient({ initialProjects }) {
                     </p>
                 </div>
                 <div className="flex gap-3">
+                    {isEditMode ? (
+                        <>
+                            <button
+                                onClick={handleCancelEdit}
+                                disabled={isSaving}
+                                className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleSaveEdits}
+                                disabled={isSaving}
+                                className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors"
+                            >
+                                {isSaving ? 'Saving...' : 'Save Changes'}
+                            </button>
+                        </>
+                    ) : (
+                        <button
+                            onClick={handleEnterEditMode}
+                            className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"
+                        >
+                            Edit Mode
+                        </button>
+                    )}
                     <Link
                         href="/admin/new-project"
                         className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"
@@ -63,7 +132,7 @@ export default function DashboardClient({ initialProjects }) {
                 </div>
             </div>
 
-            {/* Dashboard Stats row */}
+            {/* Dashboard Stats row text unchanged */}
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
                 <div className="bg-white overflow-hidden shadow-sm rounded-lg border border-gray-100">
                     <div className="px-4 py-5 sm:p-6">
@@ -96,44 +165,40 @@ export default function DashboardClient({ initialProjects }) {
             </div>
 
             {/* Recent Projects Table */}
-            <div className="bg-white shadow-sm rounded-lg border border-gray-200 overflow-hidden">
+            <div className="bg-white shadow-sm rounded-lg border border-gray-200 overflow-hidden w-full overflow-x-auto">
                 <div className="px-4 py-5 sm:px-6 border-b border-gray-200 bg-gray-50">
-                    <h3 className="text-lg leading-6 font-medium text-gray-900">Recent Projects</h3>
+                    <h3 className="text-lg leading-6 font-medium text-gray-900">Recent Projects {isEditMode && <span className="ml-2 text-indigo-600 text-sm font-bold tracking-widest uppercase">(Edit Mode Active)</span>}</h3>
                 </div>
-                <div className="overflow-x-auto">
+                <div className="inline-block min-w-full align-middle">
                     <table className="min-w-full divide-y divide-gray-200">
                         <thead className="bg-white">
                             <tr>
                                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Project ID</th>
                                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Project Name</th>
                                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vendor</th>
+                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Country</th>
                                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Target Domain</th>
                                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
                                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Progress</th>
-                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Start Date</th>
-                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Deadline</th>
-                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created At</th>
-                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Updated At</th>
+                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Start/Deadline</th>
+                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price Info</th>
                                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Approve</th>
                                 <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
-                            {projects && projects.length > 0 ? (
-                                projects.map((project) => {
-                                    // Targets are now in JSONB array inside projects_hub
+                            {displayProjects && displayProjects.length > 0 ? (
+                                displayProjects.map((project) => {
                                     const hub = project.projects_hub?.[0] || {};
                                     const hubTargets = Array.isArray(hub.targets) ? hub.targets : [];
                                     const stagingData = Array.isArray(hub.vendor_staging_data) ? hub.vendor_staging_data : [];
 
-                                    // Calculate total quantity requested. quantity in JSONB array is a string so it requires parseInt
                                     const totalLinks = hubTargets.length > 0
                                         ? hubTargets.reduce((acc, t) => acc + (parseInt(t.quantity || '0', 10)), 0)
                                         : parseInt(project.quantity || '0', 10);
 
-                                    // Parse virtual JSON staging data for progress matching
                                     const completedLinks = stagingData.filter(p => p.published_url && p.published_url.trim().length > 0).length;
-
                                     const progressPercent = totalLinks > 0 ? Math.round((completedLinks / totalLinks) * 100) : 0;
 
                                     return (
@@ -141,27 +206,35 @@ export default function DashboardClient({ initialProjects }) {
                                             <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-500">
                                                 <div className="flex items-center group">
                                                     <span title={project.id}>{project.id.split('-')[0]}...</span>
-                                                    <CopyButton textToCopy={project.id} />
+                                                    {!isEditMode && <CopyButton textToCopy={project.id} />}
                                                 </div>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{project.project_name}</td>
 
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{project.vendor_name}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                                {isEditMode ? <input type="text" value={project.project_name || ''} onChange={(e) => handleFieldChange(project.id, 'project_name', e.target.value)} className="w-[140px] px-2 py-1 border border-indigo-300 focus:ring-1 focus:ring-indigo-500 rounded font-normal" /> : project.project_name}
+                                            </td>
 
-                                            {/* Target Domain Logic for 1-to-Many */}
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                {isEditMode ? <input type="text" value={project.vendor_name || ''} onChange={(e) => handleFieldChange(project.id, 'vendor_name', e.target.value)} className="w-24 px-2 py-1 border border-indigo-300 focus:ring-1 focus:ring-indigo-500 rounded font-normal" /> : project.vendor_name}
+                                            </td>
+
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 border-none font-mono">
+                                                {isEditMode ? <input type="text" value={project.country || ''} onChange={(e) => handleFieldChange(project.id, 'country', e.target.value)} className="w-16 px-2 py-1 border border-indigo-300 focus:ring-1 focus:ring-indigo-500 rounded font-normal" maxLength={3} /> : project.country}
+                                            </td>
+
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                                 <div className="flex flex-col gap-2">
-                                                    {/* Targets Block */}
                                                     <div>
                                                         {hubTargets.length > 0 ? (
                                                             hubTargets.length === 1 ? (
-                                                                <a href={hubTargets[0].target_url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-900 font-medium">
+                                                                <a href={hubTargets[0].target_url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-900 font-medium truncate max-w-[150px] inline-block align-bottom">
                                                                     {getSafeHostname(hubTargets[0].target_url)}
                                                                 </a>
                                                             ) : (
                                                                 <button
                                                                     onClick={() => setSelectedTargets(hubTargets)}
-                                                                    className="text-indigo-600 font-medium bg-indigo-50 px-2 py-1 rounded-md text-xs hover:bg-indigo-100 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                                                    disabled={isEditMode}
+                                                                    className="text-indigo-600 font-medium bg-indigo-50 px-2 py-1 rounded-md text-xs hover:bg-indigo-100 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
                                                                 >
                                                                     {hubTargets.length} Target URLs
                                                                 </button>
@@ -170,56 +243,124 @@ export default function DashboardClient({ initialProjects }) {
                                                             <span className="text-gray-400 italic">No Targets</span>
                                                         )}
                                                     </div>
-
-                                                    {/* Dripfeed Status Card */}
-                                                    {project.dripfeed_enabled && (
-                                                        <div className="mt-1 bg-amber-50 border border-amber-200 rounded-md p-2">
-                                                            <p className="text-[10px] font-bold text-amber-800 uppercase tracking-wider mb-1">Dripfeed Status</p>
-                                                            <div className="flex items-center gap-3 text-xs text-amber-900">
-                                                                <span>Period: <span className="font-semibold">{project.dripfeed_period || '-'} Days</span></span>
-                                                                <span className="text-amber-300">|</span>
-                                                                <span>URLs/day: <span className="font-semibold">{project.urls_per_day || '-'}</span></span>
-                                                            </div>
-                                                        </div>
-                                                    )}
                                                 </div>
                                             </td>
 
                                             <td className="px-6 py-4 whitespace-nowrap">
-                                                {project.backlinks_category ? (
-                                                    <span className="px-2 py-0.5 rounded-full text-xs font-medium border bg-purple-50 text-purple-700 border-purple-200" title="Category">
-                                                        {project.backlinks_category}
-                                                    </span>
+                                                {isEditMode ? (
+                                                    <select value={project.backlinks_category || 'NULL'} onChange={(e) => handleFieldChange(project.id, 'backlinks_category', e.target.value)} className="w-24 px-1 py-1 border border-indigo-300 bg-white rounded text-xs select-auto">
+                                                        <option value="NULL">NULL</option>
+                                                        <option value="PBN">PBN</option><option value="GP">GP</option>
+                                                        <option value="Tier 2">Tier 2</option><option value="Tier 2 EDU">Tier 2 EDU</option>
+                                                        <option value="Tier 2 GOV">Tier 2 GOV</option><option value="EDU GP">EDU GP</option>
+                                                        <option value="GOV GP">GOV GP</option><option value="Web2.0">Web2.0</option>
+                                                        <option value="Bookmark">Bookmark</option><option value="Forum">Forum</option>
+                                                    </select>
                                                 ) : (
-                                                    <span className="text-gray-400 italic text-xs">-</span>
+                                                    project.backlinks_category ? <span className="px-2 py-0.5 rounded-full text-xs font-medium border bg-purple-50 text-purple-700 border-purple-200">{project.backlinks_category}</span> : <span className="text-gray-400 italic text-xs">-</span>
                                                 )}
                                             </td>
+
                                             <td className="px-6 py-4 whitespace-nowrap">
-                                                <div className="flex flex-col">
+                                                <div className="flex flex-col min-w-[80px]">
                                                     <span className="text-sm font-semibold text-gray-900">{completedLinks} / {totalLinks}</span>
                                                     <div className="w-full bg-gray-200 rounded-full h-1.5 mt-1">
                                                         <div className={`h-1.5 rounded-full ${progressPercent === 100 ? 'bg-green-500' : 'bg-indigo-600'}`} style={{ width: `${progressPercent}%` }}></div>
                                                     </div>
                                                 </div>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{new Date(project.start_date).toLocaleDateString()}</td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{new Date(project.deadline).toLocaleDateString()}</td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400 text-xs">{new Date(project.created_at).toLocaleDateString()}</td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400 text-xs">{new Date(project.updated_at).toLocaleDateString()}</td>
+
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                {isEditMode ? (
+                                                    <div className="flex flex-col gap-1">
+                                                        <span className="text-xs font-bold text-gray-400">Start:</span>
+                                                        <input type="date" value={project.start_date ? project.start_date.split('T')[0] : ''} onChange={(e) => handleFieldChange(project.id, 'start_date', e.target.value)} className="w-[124px] px-2 py-1 border border-indigo-300 rounded text-xs" />
+                                                        <span className="text-xs font-bold text-gray-400 mt-1">End:</span>
+                                                        <input type="date" value={project.deadline ? project.deadline.split('T')[0] : ''} onChange={(e) => handleFieldChange(project.id, 'deadline', e.target.value)} className="w-[124px] px-2 py-1 border border-indigo-300 rounded text-xs" />
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex flex-col gap-1 text-xs">
+                                                        <span><span className="font-semibold text-gray-400">S:</span> {project.start_date ? new Date(project.start_date).toLocaleDateString() : '-'}</span>
+                                                        <span><span className="font-semibold text-gray-400">E:</span> {project.deadline ? new Date(project.deadline).toLocaleDateString() : '-'}</span>
+                                                    </div>
+                                                )}
+                                            </td>
+
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                {isEditMode ? (
+                                                    <div className="flex flex-col gap-2 min-w-[100px]">
+                                                        <div className="flex items-center">
+                                                            <span className="text-gray-500 mr-1 text-xs">$</span>
+                                                            <input type="number" step="0.01" value={project.price ?? ''} onChange={(e) => handleFieldChange(project.id, 'price', e.target.value)} className="w-16 px-1.5 py-1 border border-indigo-300 rounded text-xs" />
+                                                        </div>
+                                                        <select value={project.price_type || 'per_url'} onChange={(e) => handleFieldChange(project.id, 'price_type', e.target.value)} className="w-[88px] px-1 py-1 border border-indigo-300 rounded text-[10px] bg-white">
+                                                            <option value="per_url">Per URL</option>
+                                                            <option value="package">Package</option>
+                                                        </select>
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex flex-col bg-gray-50 p-1.5 rounded border border-gray-100 min-w-[90px]">
+                                                        <span className="text-sm font-bold text-gray-900">${project.price || '0.00'}</span>
+                                                        <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">
+                                                            {project.price_type === 'package' ? 'Package' : 'Per URL'}
+                                                        </span>
+                                                    </div>
+                                                )}
+                                            </td>
+
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 {(() => {
                                                     const hasPlacements = project.placements && project.placements.length > 0;
                                                     const isFinalized = project.status === 'Finalized' || hasPlacements;
+
+                                                    let statusText = project.status || 'In Progress';
+                                                    let badgeColor = 'bg-yellow-100 text-yellow-800';
+
+                                                    if (isFinalized) {
+                                                        statusText = 'Completed & Finalized';
+                                                        badgeColor = 'bg-green-100 text-green-800';
+                                                    } else if (project.status === 'Completed' || progressPercent === 100) {
+                                                        statusText = 'Completed';
+                                                        badgeColor = 'bg-green-100 text-green-800';
+                                                    } else if (!project.is_approved) {
+                                                        statusText = 'Inprocess-pending payment';
+                                                        badgeColor = 'bg-amber-100 text-amber-800 border border-amber-200';
+                                                    } else {
+                                                        statusText = project.status || 'In Progress';
+                                                        badgeColor = 'bg-indigo-100 text-indigo-800';
+                                                    }
+
                                                     return (
-                                                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
-                                                            ${(project.status === 'Completed' || isFinalized || progressPercent === 100) ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
-                                                            {isFinalized ? 'Completed & Finalized' : (project.status === 'Completed' || progressPercent === 100) ? 'Completed' : (project.status || 'In Progress')}
+                                                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${badgeColor}`}>
+                                                            {statusText}
                                                         </span>
                                                     );
                                                 })()}
                                             </td>
+
+                                            <td className="px-6 py-4 whitespace-nowrap text-center">
+                                                {isEditMode ? (
+                                                    <span className="text-xs text-gray-400 italic">Save to enable</span>
+                                                ) : (
+                                                    project.is_approved ? (
+                                                        <div className="flex justify-center text-green-500" title="Project Approved">
+                                                            <CheckCircle2 className="w-6 h-6" />
+                                                        </div>
+                                                    ) : (
+                                                        <button
+                                                            onClick={() => handleApprove(project.id)}
+                                                            className="flex justify-center items-center gap-1 bg-white border border-gray-300 hover:bg-green-50 hover:border-green-300 hover:text-green-700 text-xs px-2 py-1 rounded-md text-gray-600 font-semibold transition-colors w-full"
+                                                        >
+                                                            <CheckCircle2 className="w-4 h-4 shrink-0" />
+                                                            Approve
+                                                        </button>
+                                                    )
+                                                )}
+                                            </td>
+
                                             <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                                 <button
+                                                    disabled={isEditMode}
                                                     onClick={async (e) => {
                                                         e.preventDefault();
                                                         if (confirm("Are you sure you want to delete this project?")) {
@@ -227,11 +368,10 @@ export default function DashboardClient({ initialProjects }) {
                                                             const res = await deleteProject(project.id);
                                                             if (!res.success) {
                                                                 alert(`Could not delete: ${res.message}`);
-                                                                // It will naturally revert on the next SSE pulse if it failed in the DB
                                                             }
                                                         }
                                                     }}
-                                                    className="text-red-600 hover:text-red-900 p-1 rounded-full hover:bg-red-50 transition-colors cursor-pointer"
+                                                    className="text-red-600 hover:text-red-900 p-1 rounded-full hover:bg-red-50 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
                                                     title="Delete Project"
                                                 >
                                                     <Trash2 className="w-5 h-5" />
@@ -242,7 +382,7 @@ export default function DashboardClient({ initialProjects }) {
                                 })
                             ) : (
                                 <tr>
-                                    <td colSpan="11" className="px-6 py-10 whitespace-nowrap text-sm text-gray-500 text-center flex-col items-center">
+                                    <td colSpan="12" className="px-6 py-10 whitespace-nowrap text-sm text-gray-500 text-center flex-col items-center">
                                         <span className="block">No projects have been kicked off yet.</span>
                                     </td>
                                 </tr>
@@ -289,3 +429,4 @@ export default function DashboardClient({ initialProjects }) {
         </div>
     );
 }
+

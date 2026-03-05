@@ -41,6 +41,14 @@ export default function NewProjectPage() {
     const [urlsPerDay, setUrlsPerDay] = useState('');
     const [manualOverride, setManualOverride] = useState(false);
 
+    // Performance Toggles
+    const [urlEntryEnabled, setUrlEntryEnabled] = useState(false);
+    const [randomizeLanguages, setRandomizeLanguages] = useState(false);
+
+    // Pricing State
+    const [price, setPrice] = useState(0);
+    const [priceType, setPriceType] = useState('per_url');
+
     // Language Ratio State
     const [languages, setLanguages] = useState([
         { id: crypto.randomUUID(), code: '', ratio: 100 }
@@ -62,6 +70,10 @@ export default function NewProjectPage() {
             setDripfeedPeriod('');
             setUrlsPerDay('');
             setManualOverride(false);
+            setUrlEntryEnabled(false);
+            setRandomizeLanguages(false);
+            setPrice(0);
+            setPriceType('per_url');
             setLanguages([{ id: crypto.randomUUID(), code: '', ratio: 100 }]);
             setTargets([{ id: crypto.randomUUID(), anchor_text: '', target_url: '', quantity: 1 }]);
         }
@@ -227,6 +239,65 @@ export default function NewProjectPage() {
                             <label className="block text-sm font-medium text-gray-700 mb-1">Total Quantity Desired</label>
                             <input type="number" name="quantity" required min="1" value={masterQuantity} onChange={(e) => setMasterQuantity(parseInt(e.target.value) || 0)} className="block w-full border border-gray-300 rounded-md shadow-sm p-2.5 text-gray-900 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm font-bold bg-indigo-50" />
                         </div>
+
+                        <div className="sm:col-span-2 mt-2 pt-4 border-t border-gray-100 flex items-center justify-between">
+                            <div>
+                                <label className="block text-sm font-bold text-gray-900 mb-1">Perform URL Entry</label>
+                                <p className="text-xs text-gray-500">Allow vendor to enter domain URLs for each published link.</p>
+                            </div>
+                            <label className="inline-flex items-center cursor-pointer">
+                                <input type="checkbox" className="sr-only peer" checked={urlEntryEnabled} onChange={(e) => setUrlEntryEnabled(e.target.checked)} />
+                                <div className="relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                            </label>
+                            <input type="hidden" name="url_entry_enabled" value={urlEntryEnabled ? 'true' : 'false'} />
+                        </div>
+                    </div>
+                </div>
+
+                {/* Pricing Section */}
+                <div className="bg-gray-50 -mx-6 sm:-mx-8 p-6 sm:p-8 border-y border-gray-200">
+                    <h2 className="text-lg font-bold text-gray-900 mb-4">Pricing Configuration</h2>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 bg-white p-5 rounded-lg border border-gray-200 shadow-sm">
+                        <div className="relative">
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Project Price</label>
+                            <div className="relative rounded-md shadow-sm">
+                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <span className="text-gray-500 sm:text-sm font-bold">$</span>
+                                </div>
+                                <input
+                                    type="number"
+                                    name="price"
+                                    required
+                                    min="0"
+                                    step="0.01"
+                                    value={price}
+                                    onChange={(e) => setPrice(parseFloat(e.target.value) || 0)}
+                                    className="pl-7 block w-full border border-gray-300 rounded-md p-2.5 text-gray-900 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm font-mono"
+                                    placeholder="0.00"
+                                />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Pricing Model</label>
+                            <div className="flex bg-gray-100 rounded-lg p-1">
+                                <button
+                                    type="button"
+                                    onClick={() => setPriceType('per_url')}
+                                    className={`flex-1 text-sm font-medium py-1.5 px-3 rounded-md transition-colors ${priceType === 'per_url' ? 'bg-white shadow-sm text-indigo-700' : 'text-gray-500 hover:text-gray-700'}`}
+                                >
+                                    Per URL
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setPriceType('package')}
+                                    className={`flex-1 text-sm font-medium py-1.5 px-3 rounded-md transition-colors ${priceType === 'package' ? 'bg-white shadow-sm text-indigo-700' : 'text-gray-500 hover:text-gray-700'}`}
+                                >
+                                    Total Package
+                                </button>
+                            </div>
+                            <input type="hidden" name="price_type" value={priceType} />
+                        </div>
                     </div>
                 </div>
 
@@ -308,9 +379,21 @@ export default function NewProjectPage() {
                                 {languageRatioSum < 100 ? `${100 - languageRatioSum}% remaining` : `${languageRatioSum - 100}% over limit`}
                             </span>
                         )}
+
+                        {/* Randomize Distribution Toggle */}
+                        {languages.length > 1 && (
+                            <div className="flex items-center gap-3">
+                                <label className="text-sm font-medium text-gray-700 cursor-pointer">Randomize Distribution</label>
+                                <label className="inline-flex items-center cursor-pointer">
+                                    <input type="checkbox" className="sr-only peer" checked={randomizeLanguages} onChange={(e) => setRandomizeLanguages(e.target.checked)} />
+                                    <div className="relative w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+                                </label>
+                            </div>
+                        )}
                     </div>
 
                     {/* Hidden inputs for form submission */}
+                    <input type="hidden" name="randomize_languages" value={randomizeLanguages ? 'true' : 'false'} />
                     <input type="hidden" name="language" value={firstLanguageCode} />
                     <input type="hidden" name="languages_json" value={JSON.stringify(languages.map(l => ({ code: l.code, ratio: l.ratio })))} />
                 </div>

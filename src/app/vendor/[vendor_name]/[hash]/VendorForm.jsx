@@ -1,17 +1,20 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { saveVendorProgress } from './actions';
-import { CheckCircle2, FileSpreadsheet, RefreshCw, Filter, ChevronDown, ChevronRight, Calendar, Lock, Unlock } from 'lucide-react';
+import { saveVendorProgress, toggleUrlEntryMode } from './actions';
+import { CheckCircle2, FileSpreadsheet, RefreshCw, Filter, ChevronDown, ChevronRight, Calendar, Lock, Unlock, Link } from 'lucide-react';
 import { DataEditor, GridCellKind } from '@glideapps/glide-data-grid';
 import '@glideapps/glide-data-grid/dist/index.css';
 
-export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, dripfeedPeriod, urlsPerDay, isLocked = false }) {
+export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, dripfeedPeriod, urlsPerDay, isLocked = false, urlEntryEnabled = true }) {
     const [rows, setRows] = useState(initialRows || []);
     const [isSaving, setIsSaving] = useState(false);
     const [lastSavedAt, setLastSavedAt] = useState(null);
     const [isDirty, setIsDirty] = useState(false);
     const [feedback, setFeedback] = useState({ type: '', message: '' });
+
+    // Live Toggle State
+    const [localUrlEntryEnabled, setLocalUrlEntryEnabled] = useState(urlEntryEnabled);
 
     // Filter Features States
     const [isFilterActive, setIsFilterActive] = useState(false);
@@ -61,6 +64,17 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
         return now.toISOString().replace('T', ' ').substring(0, 19);
     };
 
+    // Helper — extract domain from a URL string
+    const parseDomainUrl = (url) => {
+        if (!url) return '';
+        try {
+            const u = new URL(url);
+            return `${u.protocol}//${u.hostname}/`;
+        } catch {
+            return '';
+        }
+    };
+
     const handleSaveProgress = async (isAutoSave = false) => {
         setIsSaving(true);
         if (!isAutoSave) setFeedback({ type: '', message: '' });
@@ -73,6 +87,7 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
             target_url: r.target_url,
             anchor_text: r.anchor_text,
             language: r.language || '',
+            domain_url: r.domain_url || '',
             published_url: r.published_url || '',
             published_date: r.published_date || '',
             remark: r.remark || '',
@@ -96,6 +111,22 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
             if (!isAutoSave && feedback.type !== 'error') {
                 setTimeout(() => setFeedback({ type: '', message: '' }), 4000);
             }
+        }
+    };
+
+    const handleToggleUrlEntry = async () => {
+        if (isLocked) return;
+        const newValue = !localUrlEntryEnabled;
+        setLocalUrlEntryEnabled(newValue);
+
+        const result = await toggleUrlEntryMode(projectHash, newValue);
+        if (!result.success) {
+            // Revert on failure
+            setLocalUrlEntryEnabled(!newValue);
+            setFeedback({ type: 'error', message: result.message });
+        } else {
+            setFeedback({ type: 'success', message: `URL Entry Mode ${newValue ? 'Enabled' : 'Disabled'}` });
+            setTimeout(() => setFeedback({ type: '', message: '' }), 4000);
         }
     };
 
@@ -152,6 +183,7 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
     const progressPercent = rows.length > 0 ? Math.round((completedCount / rows.length) * 100) : 0;
 
     const columns = useMemo(() => [
+        { title: "Domain URL", id: "domain_url", width: 220 },
         { title: "Target URL", id: "target_url", width: 250 },
         { title: "Anchor Text", id: "anchor_text", width: 200 },
         { title: "Language", id: "language", width: 100 },
@@ -177,6 +209,17 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
         const colDef = columns[col];
 
         switch (colDef.id) {
+            case "domain_url":
+                const displayDomain = !localUrlEntryEnabled && dataRow.published_url
+                    ? parseDomainUrl(dataRow.published_url)
+                    : (dataRow.domain_url || "");
+                return {
+                    kind: GridCellKind.Text,
+                    data: displayDomain,
+                    displayData: displayDomain,
+                    allowOverlay: localUrlEntryEnabled && !isLocked,
+                    readonly: !localUrlEntryEnabled || isLocked
+                };
             case "target_url":
                 return {
                     kind: GridCellKind.Uri,
@@ -252,23 +295,36 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
         const colDef = columns[col];
         const field = colDef.id;
 
+        if (field === 'domain_url' && !localUrlEntryEnabled) return; // Block explicit edits if toggle is off
+
         const originalIdx = rows.findIndex(r => r.id === dataRow.id);
         if (originalIdx === -1) return;
 
         let valToSet = newValue.data;
 
+        // If manual URL entry is enabled, ensure typed/pasted URLs into domain_url are cleanly parsed
+        if (field === 'domain_url') {
+            valToSet = parseDomainUrl(valToSet) || valToSet;
+        }
+
         setRows(prevRows => {
             const newRows = [...prevRows];
             const updatedRow = { ...newRows[originalIdx], [field]: valToSet };
 
-            // AUTO-LOGIC: Published URL & Date
+            // AUTO-LOGIC: Published URL & Date & Auto-Domain
             if (field === 'published_url') {
                 if (valToSet && valToSet.trim() !== '') {
                     if (!updatedRow.published_date) {
                         updatedRow.published_date = getISOFormat();
                     }
+                    if (!localUrlEntryEnabled) {
+                        updatedRow.domain_url = parseDomainUrl(valToSet);
+                    }
                 } else {
                     updatedRow.published_date = '';
+                    if (!localUrlEntryEnabled) {
+                        updatedRow.domain_url = '';
+                    }
                 }
             }
 
@@ -311,8 +367,17 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
                     const field = colDef.id;
 
                     // Only map allowed editable columns
-                    if (["remark", "published_url", "indexed_status"].includes(field)) {
-                        updatedRow[field] = valToSet;
+                    const allowedEditFields = ["remark", "published_url", "indexed_status"];
+                    if (localUrlEntryEnabled) allowedEditFields.push("domain_url");
+
+                    if (allowedEditFields.includes(field)) {
+                        // If manually pasting directly into domain_url, parse it cleanly
+                        let finalVal = valToSet;
+                        if (field === 'domain_url') {
+                            finalVal = parseDomainUrl(finalVal) || finalVal;
+                        }
+
+                        updatedRow[field] = finalVal;
                         rowHasChanges = true;
 
                         // Apply Auto-logic
@@ -321,8 +386,14 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
                                 if (!updatedRow.published_date) {
                                     updatedRow.published_date = getISOFormat();
                                 }
+                                if (!localUrlEntryEnabled) {
+                                    updatedRow.domain_url = parseDomainUrl(valToSet);
+                                }
                             } else {
                                 updatedRow.published_date = '';
+                                if (!localUrlEntryEnabled) {
+                                    updatedRow.domain_url = '';
+                                }
                             }
                         }
                     }
@@ -375,12 +446,18 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
                         const field = colDef.id;
 
                         // Only allow clearing editable data columns
-                        if (['published_url', 'remark', 'indexed_status'].includes(field)) {
+                        const allowedClearFields = ['published_url', 'remark', 'indexed_status'];
+                        if (localUrlEntryEnabled) allowedClearFields.push("domain_url");
+
+                        if (allowedClearFields.includes(field)) {
                             updatedRow[field] = '';
                             rowChanged = true;
 
                             if (field === 'published_url') {
                                 updatedRow.published_date = '';
+                                if (!localUrlEntryEnabled) {
+                                    updatedRow.domain_url = '';
+                                }
                             }
                         }
                     }
@@ -554,6 +631,23 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
                     </button>
 
                     <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+
+                        {/* URL Entry Mode Toggle */}
+                        <div className="flex items-center gap-3 bg-white px-4 py-2 border border-gray-200 rounded-md shadow-sm">
+                            <Link className={`w-4 h-4 ${localUrlEntryEnabled ? 'text-indigo-600' : 'text-gray-400'}`} />
+                            <span className="text-sm font-semibold tracking-wide text-gray-700">URL Entry</span>
+                            <label className="inline-flex items-center cursor-pointer ml-1">
+                                <input
+                                    type="checkbox"
+                                    className="sr-only peer"
+                                    checked={localUrlEntryEnabled}
+                                    onChange={handleToggleUrlEntry}
+                                    disabled={isLocked}
+                                />
+                                <div className="relative w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+                            </label>
+                        </div>
+
                         {/* Lock / Editable Status Badge */}
                         <div className={`flex items-center justify-center gap-2 px-4 py-2 rounded-md shadow-sm border ${isLocked ? 'bg-amber-100/50 text-amber-800 border-amber-200' : 'bg-green-50 text-green-700 border-green-200'}`}>
                             {isLocked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}

@@ -14,10 +14,10 @@ export default async function PlacementsMonitoringPage() {
             country,
             language,
             languages,
-            backlinks_category,
             sheet_name,
             dripfeed_enabled,
             urls_per_day,
+            is_approved,
             projects_hub ( hash, vendor_staging_data, completed_at, is_locked, targets ),
             placements ( id )
         `)
@@ -27,10 +27,10 @@ export default async function PlacementsMonitoringPage() {
         console.error("Placements DB fetch error:", error);
     }
 
-    // Filter: Only show projects that have NOT been uploaded to the placements table yet
+    // Filter: Only show projects that have NOT been uploaded to the placements table yet and ARE approved
     const activeProjects = (projects || []).filter(p => {
         const hasPlacements = p.placements && p.placements.length > 0;
-        return p.status !== 'Finalized' && !hasPlacements;
+        return p.is_approved === true && p.status !== 'Finalized' && !hasPlacements;
     });
 
     return (

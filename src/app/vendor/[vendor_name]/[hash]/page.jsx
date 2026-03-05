@@ -31,7 +31,7 @@ export default async function VendorProjectPage({ params }) {
     // Fetch Core Project Context
     const { data: projectData } = await supabase
         .from('projects')
-        .select('project_name, deadline, dripfeed_enabled, dripfeed_period, urls_per_day, languages, language, quantity')
+        .select('project_name, deadline, dripfeed_enabled, dripfeed_period, urls_per_day, languages, language, quantity, url_entry_enabled, randomize_languages')
         .eq('id', projectId)
         .single();
 
@@ -72,6 +72,7 @@ export default async function VendorProjectPage({ params }) {
                             target_url: target.target_url,
                             anchor_text: target.anchor_text,
                             language: lang.code.toUpperCase(),
+                            domain_url: savedRow?.domain_url || '',
                             published_url: savedRow?.published_url || '',
                             published_date: savedRow?.published_date || '',
                             remark: savedRow?.remark || '',
@@ -92,6 +93,7 @@ export default async function VendorProjectPage({ params }) {
                         target_url: target.target_url,
                         anchor_text: target.anchor_text,
                         language: projectData?.language?.toUpperCase() || '',
+                        domain_url: savedRow?.domain_url || '',
                         published_url: savedRow?.published_url || '',
                         published_date: savedRow?.published_date || '',
                         remark: savedRow?.remark || '',
@@ -99,6 +101,15 @@ export default async function VendorProjectPage({ params }) {
                     });
                 }
             }
+        });
+    }
+
+    // Apply deterministic randomization if enabled
+    if (projectData?.randomize_languages && generatedRows.length > 0) {
+        generatedRows.sort((a, b) => {
+            const hashA = [...a.id].reduce((acc, char) => (acc * 31 + char.charCodeAt(0)) | 0, 0);
+            const hashB = [...b.id].reduce((acc, char) => (acc * 31 + char.charCodeAt(0)) | 0, 0);
+            return hashA - hashB;
         });
     }
 
@@ -124,6 +135,7 @@ export default async function VendorProjectPage({ params }) {
                     dripfeedPeriod={projectData?.dripfeed_period}
                     urlsPerDay={projectData?.urls_per_day}
                     isLocked={isLocked}
+                    urlEntryEnabled={projectData?.url_entry_enabled ?? true}
                 />
             </main>
         </div>

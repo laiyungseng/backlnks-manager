@@ -51,3 +51,56 @@ export async function deleteProject(projectId) {
         return { success: false, message: 'An unexpected error occurred.' };
     }
 }
+
+export async function approveProject(projectId) {
+    if (!projectId) return { success: false, message: 'Project ID is missing.' };
+    if (!supabase) return { success: false, message: 'Database connection not configured.' };
+
+    try {
+        const { error } = await supabase
+            .from('projects')
+            .update({ is_approved: true })
+            .eq('id', projectId);
+
+        if (error) {
+            console.error('Failed to approve project:', error);
+            return { success: false, message: 'Failed to approve. Check DB schema migration.' };
+        }
+
+        revalidatePath('/admin', 'layout');
+        return { success: true, message: 'Project approved successfully.' };
+    } catch (error) {
+        console.error('Server error approving project:', error);
+        return { success: false, message: 'An unexpected error occurred.' };
+    }
+}
+
+export async function updateDashboardProjects(projectsArray) {
+    if (!Array.isArray(projectsArray) || projectsArray.length === 0) return { success: true };
+    if (!supabase) return { success: false, message: 'Database connection not configured.' };
+
+    try {
+        // Bulk update or individual updates
+        // Since Supabase doesn't easily do bulk updates with mixed structures without a loop or upsert array
+        const updates = projectsArray.map(p => {
+            return supabase.from('projects').update({
+                project_name: p.project_name,
+                vendor_name: p.vendor_name,
+                country: p.country,
+                backlinks_category: p.backlinks_category,
+                start_date: p.start_date,
+                deadline: p.deadline,
+                price: p.price,
+                price_type: p.price_type
+            }).eq('id', p.id);
+        });
+
+        await Promise.all(updates);
+
+        revalidatePath('/admin', 'layout');
+        return { success: true, message: 'Changes saved successfully.' };
+    } catch (error) {
+        console.error('Server error updating projects:', error);
+        return { success: false, message: 'An unexpected error occurred while saving edits.' };
+    }
+}

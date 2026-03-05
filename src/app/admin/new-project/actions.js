@@ -27,6 +27,10 @@ export async function createProjectAction(prevState, formData) {
             dripfeed_enabled: formData.has('dripfeed_enabled'),
             dripfeed_period: formData.get('dripfeed_period') || null,
             urls_per_day: formData.get('urls_per_day') || null,
+            url_entry_enabled: formData.get('url_entry_enabled') === 'true',
+            price: formData.get('price'),
+            price_type: formData.get('price_type'),
+            randomize_languages: formData.get('randomize_languages') === 'true'
         };
 
         // 1. Strict Validation
@@ -79,6 +83,11 @@ export async function createProjectAction(prevState, formData) {
                     dripfeed_enabled: projectData.dripfeed_enabled,
                     dripfeed_period: projectData.dripfeed_enabled && projectData.dripfeed_period ? parseInt(projectData.dripfeed_period) : null,
                     urls_per_day: projectData.dripfeed_enabled && projectData.urls_per_day ? parseInt(projectData.urls_per_day) : null,
+                    url_entry_enabled: projectData.url_entry_enabled,
+                    price: projectData.price,
+                    price_type: projectData.price_type,
+                    is_approved: false,
+                    randomize_languages: projectData.randomize_languages,
                     status: 'Inprogress',
                     created_at: new Date().toISOString(),
                     updated_at: new Date().toISOString()

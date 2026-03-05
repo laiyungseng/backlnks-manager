@@ -30,7 +30,7 @@ async function fetchProjects(supabase) {
     const { data, error } = await supabase
         .from('projects')
         .select(`
-            id, project_name, vendor_name, status, start_date, deadline, created_at, updated_at, quantity, dripfeed_enabled, dripfeed_period, urls_per_day, backlinks_category,
+            id, project_name, vendor_name, status, start_date, deadline, created_at, updated_at, quantity, dripfeed_enabled, dripfeed_period, urls_per_day, backlinks_category, country, price, price_type, is_approved,
             projects_hub ( hash, targets, vendor_staging_data ),
             placements ( id )
         `)

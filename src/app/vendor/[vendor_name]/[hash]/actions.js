@@ -9,6 +9,7 @@ const vendorPayloadSchema = z.array(z.object({
     target_url: z.string(),
     anchor_text: z.string(),
     language: z.string().optional().or(z.literal('')),
+    domain_url: z.string().optional().or(z.literal('')),
     published_url: z.string().url('Published URL must be a valid link').or(z.literal('')),
     published_date: z.string().or(z.literal('')),
     remark: z.string().optional().or(z.literal('')),
@@ -85,5 +86,45 @@ export async function saveVendorProgress(hash, payload) {
     } catch (e) {
         console.error("Vendor Action Critical Error:", e);
         return { success: false, message: 'An unexpected server error occurred during JSON serialization.' };
+    }
+}
+
+export async function toggleUrlEntryMode(hash, isEnabled) {
+    if (!supabase) {
+        return { success: false, message: 'Database connection not configured.' };
+    }
+
+    try {
+        if (!hash || typeof hash !== 'string') {
+            return { success: false, message: 'Unauthorized Request: Missing Security Hash' };
+        }
+
+        // 1. Verify Project context
+        const { data: projectList, error: checkError } = await supabase
+            .from('projects_hub')
+            .select('project_id')
+            .eq('hash', hash)
+            .single();
+
+        if (checkError || !projectList) {
+            return { success: false, message: 'Project context lost. Action Rejected.' };
+        }
+
+        // 2. Update Master Project Table
+        const { error: updateError } = await supabase
+            .from('projects')
+            .update({ url_entry_enabled: isEnabled })
+            .eq('id', projectList.project_id);
+
+        if (updateError) {
+            console.error("Toggle URL Entry Error:", updateError);
+            return { success: false, message: 'Could not toggle URL entry.' };
+        }
+
+        return { success: true };
+
+    } catch (e) {
+        console.error("Toggle URL Entry Critical Error:", e);
+        return { success: false, message: 'An unexpected error occurred.' };
     }
 }

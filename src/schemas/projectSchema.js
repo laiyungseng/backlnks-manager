@@ -69,4 +69,8 @@ export const projectSchema = z.object({
     dripfeed_enabled: z.coerce.boolean().default(true),
     dripfeed_period: z.coerce.number().nullable().optional(),
     urls_per_day: z.coerce.number().nullable().optional(),
+    url_entry_enabled: z.preprocess(v => v === 'true', z.boolean()).default(false),
+    price: z.coerce.number().min(0).default(0),
+    price_type: z.enum(['per_url', 'package']).default('per_url'),
+    randomize_languages: z.coerce.boolean().default(false),
 });
