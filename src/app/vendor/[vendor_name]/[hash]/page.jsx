@@ -62,10 +62,14 @@ export default async function VendorProjectPage({ params }) {
                     }
 
                     for (let i = 0; i < langQty; i++) {
-                        const rowId = `${targetId}-${lang.code}-qty-${i}`;
+                        const langCode = lang['lang-code'];
+                        const rowId = `${targetId}-${langCode}-qty-${i}`;
                         const legacyRowId = `${targetId}-qty-${generatedRows.length}`;
+                        const undefinedEraRowId = `${targetId}-undefined-qty-${i}`;
                         const savedRow = Array.isArray(existingStagingData)
-                            ? (existingStagingData.find(st => st.id === rowId) || existingStagingData.find(st => st.id === legacyRowId))
+                            ? (existingStagingData.find(st => st.id === rowId)
+                                || existingStagingData.find(st => st.id === legacyRowId)
+                                || existingStagingData.find(st => st.id === undefinedEraRowId))
                             : null;
 
                         generatedRows.push({
