@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { getVendors, saveVendors, deleteVendors } from './actions';
+import { getVendors, saveVendors, deleteVendors, getLinkedDomains } from './actions';
 import { DataEditor, GridCellKind, CompactSelection } from '@glideapps/glide-data-grid';
 import '@glideapps/glide-data-grid/dist/index.css';
 import { Filter, UserPlus, Save, RefreshCw, Trash2, CheckCircle2 } from 'lucide-react';
@@ -12,6 +12,14 @@ export default function VendorManager() {
     const [isSaving, setIsSaving] = useState(false);
     const [lastSavedAt, setLastSavedAt] = useState(null);
     const [feedback, setFeedback] = useState({ type: '', message: '' });
+
+    // Delete Confirmation Modal State
+    const [deleteModalState, setDeleteModalState] = useState({
+        isOpen: false,
+        linkedDomains: [],
+        vendorIdsToDelete: [],
+        isLoading: false
+    });
 
     // Edit Mode & Change Tracking
     const [isEditMode, setIsEditMode] = useState(false);
@@ -104,27 +112,48 @@ export default function VendorManager() {
             return showFeedback('error', 'Select rows to delete.');
         }
 
-        if (!confirm(`Are you sure you want to delete ${rowsToDelete.length} row(s)?`)) return;
-
         // Map row indices to IDs
         const vendorIdsToDelete = rowsToDelete.map(idx => filteredVendors[idx]?.id).filter(Boolean);
 
-        // If the user selects a new, unsaved row, just remove it from state locally
-        const rowsRemaining = vendors.filter(v => !vendorIdsToDelete.includes(v.id));
+        if (vendorIdsToDelete.length === 0) return;
 
+        // Check for linked domains before deleting
         setIsSaving(true);
-        const result = await deleteVendors(vendorIdsToDelete);
+        const linkCheck = await getLinkedDomains(vendorIdsToDelete);
+        setIsSaving(false);
+
+        if (linkCheck.success && linkCheck.domains && linkCheck.domains.length > 0) {
+            // Unsaved row ids will just be ignored by DB but we can show modal still
+            setDeleteModalState({
+                isOpen: true,
+                linkedDomains: linkCheck.domains,
+                vendorIdsToDelete,
+                isLoading: false
+            });
+            return;
+        }
+
+        // Standard delete if no linked domains
+        if (!confirm(`Are you sure you want to delete ${rowsToDelete.length} row(s)?`)) return;
+        executeDelete(vendorIdsToDelete);
+    };
+
+    const executeDelete = async (vendorIds) => {
+        setDeleteModalState(prev => ({ ...prev, isLoading: true }));
+        setIsSaving(true);
+        const result = await deleteVendors(vendorIds);
 
         if (result.success) {
-            setVendors(rowsRemaining);
+            setVendors(prev => prev.filter(v => !vendorIds.includes(v.id)));
             setSelection(undefined);
             showFeedback('success', result.message);
-            // Sync dirty rows after deletion
             setDirtyRows(new Set());
         } else {
             showFeedback('error', result.message);
         }
+
         setIsSaving(false);
+        setDeleteModalState({ isOpen: false, linkedDomains: [], vendorIdsToDelete: [], isLoading: false });
     };
 
     // Create a blank row template
@@ -446,6 +475,50 @@ export default function VendorManager() {
                     </div>
                 )
             }
+
+            {/* Delete Confirmation Modal */}
+            {deleteModalState.isOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                    <div className="bg-white rounded-xl shadow-xl max-w-lg w-full overflow-hidden flex flex-col">
+                        <div className="p-5 border-b border-gray-100 bg-red-50 text-red-800 flex items-center gap-3">
+                            <Trash2 className="w-5 h-5" />
+                            <h2 className="font-bold text-lg">⚠️ Linked Domains Detected</h2>
+                        </div>
+                        <div className="p-6">
+                            <p className="text-gray-700 font-medium mb-3">
+                                Deleting this vendor will <span className="text-red-600 font-bold">automatically unlink</span> the following {deleteModalState.linkedDomains.length} domain(s):
+                            </p>
+                            <div className="bg-gray-50 border border-gray-200 rounded-md p-3 max-h-48 overflow-y-auto mb-4">
+                                <ul className="list-disc list-inside text-sm text-gray-600 space-y-1">
+                                    {deleteModalState.linkedDomains.map(d => (
+                                        <li key={d.id} className="truncate">{d.url}</li>
+                                    ))}
+                                </ul>
+                            </div>
+                            <p className="text-sm text-gray-500">
+                                The domains will remain in the database but will no longer be associated with any vendor. This action cannot be undone.
+                            </p>
+                        </div>
+                        <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end gap-3">
+                            <button
+                                onClick={() => setDeleteModalState({ isOpen: false, linkedDomains: [], vendorIdsToDelete: [], isLoading: false })}
+                                disabled={deleteModalState.isLoading}
+                                className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 bg-gray-100 rounded-md transition disabled:opacity-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => executeDelete(deleteModalState.vendorIdsToDelete)}
+                                disabled={deleteModalState.isLoading}
+                                className="px-4 py-2 text-sm font-medium text-white hover:bg-red-700 bg-red-600 rounded-md transition flex items-center gap-2 disabled:opacity-50"
+                            >
+                                {deleteModalState.isLoading && <RefreshCw className="w-4 h-4 animate-spin" />}
+                                {deleteModalState.isLoading ? 'Deleting...' : 'Unlink & Delete Vendor'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col h-[700px]">
                 {/* Top Toolbar */}

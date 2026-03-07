@@ -95,13 +95,24 @@ export async function deleteVendors(rowIds) {
     }
 
     try {
-        // Filter out temporary IDs (like 'new_1') before attempting DB deletion
         const validIds = rowIds.filter(id => id && !id.startsWith('new_'));
 
         if (validIds.length === 0) {
             return { success: true, message: 'Only unsaved rows were removed.' };
         }
 
+        // STEP 1: Unlink any domains associated with these vendors
+        const { error: unlinkError } = await supabase
+            .from('domains')
+            .update({ vendor_id: null })
+            .in('vendor_id', validIds);
+
+        if (unlinkError) {
+            console.error('Error unlinking domains before vendor deletion:', unlinkError);
+            return { success: false, message: 'Failed to unlink domains from vendor before deletion.' };
+        }
+
+        // STEP 2: Delete the vendors
         const { error } = await supabase
             .from('vendors')
             .delete()
@@ -112,9 +123,45 @@ export async function deleteVendors(rowIds) {
             return { success: false, message: error.message };
         }
 
-        return { success: true, message: 'Selected vendors deleted successfully.' };
+        return { success: true, message: 'Selected vendors deleted (and any linked domains have been unlinked).' };
     } catch (e) {
         console.error('Unexpected error in deleteVendors:', e);
         return { success: false, message: 'Failed to delete vendors.' };
+    }
+}
+
+export async function getLinkedDomains(vendorIds) {
+    if (!supabase) {
+        return { success: false, message: 'Database client not initialized.' };
+    }
+
+    try {
+        const validIds = vendorIds.filter(id => id && !id.startsWith('new_'));
+        if (validIds.length === 0) return { success: true, domains: [] };
+
+        const { data, error } = await supabase
+            .from('domains')
+            .select('id, vendor_id, domain_details')
+            .in('vendor_id', validIds);
+
+        if (error) {
+            console.error('Error fetching linked domains:', error);
+            return { success: false, message: error.message };
+        }
+
+        // Parse JSONB block to get human-readable URLs for the modal
+        const domains = data.map(d => {
+            const details = Array.isArray(d.domain_details) ? d.domain_details[0] : (d.domain_details || {});
+            return {
+                id: d.id,
+                vendor_id: d.vendor_id,
+                url: details.domain_url || 'Unknown URL'
+            };
+        });
+
+        return { success: true, domains };
+    } catch (e) {
+        console.error('Unexpected error in getLinkedDomains:', e);
+        return { success: false, message: 'Failed to fetch linked domains.' };
     }
 }
