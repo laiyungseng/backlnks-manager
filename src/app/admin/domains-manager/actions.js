@@ -1,6 +1,7 @@
 'use server';
 
 import { createClient } from '@supabase/supabase-js';
+import { domainSchema } from '../../../schemas/domainSchema';
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_ANON_KEY;
@@ -74,7 +75,7 @@ export async function saveDomains(rows) {
                 }
             }
 
-            const details = {
+            const payloadToValidate = {
                 ...existingDetails,
                 domain_url: r.domain_url || existingDetails.domain_url,
                 DR: r.domain_rating !== undefined ? (r.domain_rating ? parseInt(r.domain_rating) : null) : existingDetails.DR,
@@ -83,6 +84,15 @@ export async function saveDomains(rows) {
                 Spam_Score: r.spam_score !== undefined ? (r.spam_score ? parseFloat(r.spam_score) : null) : existingDetails.Spam_Score,
                 Last_checked_at: r.last_checked_at !== undefined ? r.last_checked_at : existingDetails.Last_checked_at,
             };
+
+            const parsedResult = domainSchema.safeParse(payloadToValidate);
+
+            if (!parsedResult.success) {
+                const errorMessages = parsedResult.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join(', ');
+                throw new Error(`Validation failed for domain "${r.domain_url}": ${errorMessages}`);
+            }
+
+            const details = parsedResult.data;
 
             const row = {
                 vendor_id: r.vendor_id || null,

@@ -24,24 +24,27 @@ export default function VendorLinkCopy({ projectHash, vendorName }) {
     if (!projectHash) return null;
 
     return (
-        <div className="flex items-center gap-2">
-            <a
-                href={fullUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                title="Open Vendor Link"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 transition-colors focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-            >
-                <ExternalLink className="w-3.5 h-3.5" />
-                Vendor Link
-            </a>
-            <button
-                onClick={handleCopy}
-                title="Copy Vendor URL"
-                className="p-1.5 text-gray-400 hover:text-gray-900 bg-white border border-gray-200 rounded-md hover:bg-gray-50 transition-colors shadow-sm"
-            >
-                {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <LinkIcon className="w-3.5 h-3.5" />}
-            </button>
+        <div className="flex items-center gap-3">
+            <div className="flex flex-col">
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Portal Access</span>
+                <div className="flex items-center gap-1.5">
+                    <a
+                        href={fullUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-4 py-2 text-[11px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-lg hover:bg-indigo-100 transition-all uppercase tracking-tighter"
+                    >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        Open Link
+                    </a>
+                    <button
+                        onClick={handleCopy}
+                        className="p-2 text-slate-400 hover:text-indigo-600 bg-white border border-slate-200 rounded-lg hover:border-indigo-200 transition-all shadow-sm"
+                    >
+                        {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <LinkIcon className="w-4 h-4" />}
+                    </button>
+                </div>
+            </div>
         </div>
     );
 }

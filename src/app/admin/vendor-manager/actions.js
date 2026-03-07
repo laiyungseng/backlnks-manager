@@ -1,6 +1,7 @@
 'use server';
 
 import { createClient } from '@supabase/supabase-js';
+import { vendorSchema } from '../../../schemas/vendorSchema';
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_ANON_KEY;
@@ -50,7 +51,8 @@ export async function saveVendors(rows) {
                 }
             }
 
-            const details = {
+            // Merge incoming row data over existing details BEFORE validation
+            const mergedPayload = {
                 ...existingDetails,
                 vendor_name: r.vendor_name,
                 contact: r.contact !== undefined ? r.contact : existingDetails.contact,
@@ -61,6 +63,15 @@ export async function saveVendors(rows) {
                 option_stock: r.option_stock !== undefined ? r.option_stock : existingDetails.option_stock,
                 max_discount_pct: r.max_discount_pct !== undefined ? r.max_discount_pct : existingDetails.max_discount_pct,
             };
+
+            const parsedResult = vendorSchema.safeParse(mergedPayload);
+
+            if (!parsedResult.success) {
+                const errorMessages = parsedResult.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join(', ');
+                throw new Error(`Validation failed for vendor "${r.vendor_name}": ${errorMessages}`);
+            }
+
+            const details = parsedResult.data;
 
             const row = {
                 vendor_details: [details]

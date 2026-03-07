@@ -28,11 +28,11 @@ export default async function CompletedPlacementsPage() {
     });
 
     return (
-        <div className="max-w-7xl mx-auto space-y-10 pb-20">
+        <div className="max-w-7xl mx-auto space-y-12 pb-20 px-4">
             <div>
-                <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Completed Placements</h1>
-                <p className="mt-2 text-sm text-gray-500">
-                    Finalized projects that have been approved and uploaded to the database.
+                <h1 className="text-4xl font-bold text-slate-900 tracking-tight">Completed Placements</h1>
+                <p className="mt-2 text-slate-500">
+                    Archive of finalized projects and confirmed deliverables.
                 </p>
             </div>
 
@@ -50,8 +50,10 @@ export default async function CompletedPlacementsPage() {
                         );
                     })
                 ) : (
-                    <div className="text-center py-20 bg-white rounded-xl border border-dashed border-gray-300">
-                        <p className="text-gray-500">No completed projects yet. Finalized projects will appear here.</p>
+                    <div className="text-center py-32 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                            Archive Empty / No completed projects recorded
+                        </p>
                     </div>
                 )}
             </div>

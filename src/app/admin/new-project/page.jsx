@@ -64,6 +64,17 @@ export default function NewProjectPage() {
 
     const [targets, setTargets] = useState([
         { id: genId(), anchor_text: '', target_url: '', quantity: 1 }
+    ]); // Kept momentarily around just in case required by leftover refs, but will be removed once completely cleared
+
+    const [projectInfoGroups, setProjectInfoGroups] = useState([
+        {
+            id: genId(),
+            sheet_name: '',
+            category: 'NULL',
+            placement_target: [
+                { id: genId(), anchor_text: '', target_url: '', quantity: 1 }
+            ]
+        }
     ]);
 
     useEffect(() => {
@@ -83,7 +94,12 @@ export default function NewProjectPage() {
             setPrice(0);
             setPriceType('per_url');
             setLanguages([{ id: genId(), code: '', ratio: 100 }]);
-            setTargets([{ id: genId(), anchor_text: '', target_url: '', quantity: 1 }]);
+            setProjectInfoGroups([{
+                id: genId(),
+                sheet_name: '',
+                category: 'NULL',
+                placement_target: [{ id: genId(), anchor_text: '', target_url: '', quantity: 1 }]
+            }]);
         }
     }, [state?.success, state?.hash]);
 
@@ -128,26 +144,65 @@ export default function NewProjectPage() {
     const isValidLanguageRatio = languageRatioSum === 100;
     const allLanguagesFilled = languages.every(l => l.code.trim().length > 0);
 
-    // --- Target Row Helpers ---
-    const addTargetRow = () => {
-        setTargets([...targets, { id: genId(), anchor_text: '', target_url: '', quantity: 1 }]);
+    // --- Project Info Group Helpers ---
+    const addProjectInfoGroup = () => {
+        setProjectInfoGroups([...projectInfoGroups, {
+            id: genId(),
+            sheet_name: '',
+            category: 'NULL',
+            placement_target: [{ id: genId(), anchor_text: '', target_url: '', quantity: 1 }]
+        }]);
     };
 
-    const removeTargetRow = (idToRemove) => {
-        if (targets.length > 1) {
-            setTargets(targets.filter(t => t.id !== idToRemove));
+    const removeProjectInfoGroup = (groupId) => {
+        if (projectInfoGroups.length > 1) {
+            setProjectInfoGroups(projectInfoGroups.filter(g => g.id !== groupId));
         }
     };
 
-    const updateTarget = (id, field, value) => {
-        setTargets(targets.map(t =>
-            t.id === id ? { ...t, [field]: field === 'quantity' ? parseInt(value) || 0 : value } : t
+    const updateProjectInfoGroup = (groupId, field, value) => {
+        setProjectInfoGroups(projectInfoGroups.map(g =>
+            g.id === groupId ? { ...g, [field]: value } : g
         ));
     };
 
+    const addTargetRow = (groupId) => {
+        setProjectInfoGroups(projectInfoGroups.map(g => {
+            if (g.id === groupId) {
+                return { ...g, placement_target: [...g.placement_target, { id: genId(), anchor_text: '', target_url: '', quantity: 1 }] };
+            }
+            return g;
+        }));
+    };
+
+    const removeTargetRow = (groupId, rowId) => {
+        setProjectInfoGroups(projectInfoGroups.map(g => {
+            if (g.id === groupId && g.placement_target.length > 1) {
+                return { ...g, placement_target: g.placement_target.filter(t => t.id !== rowId) };
+            }
+            return g;
+        }));
+    };
+
+    const updateTarget = (groupId, rowId, field, value) => {
+        setProjectInfoGroups(projectInfoGroups.map(g => {
+            if (g.id === groupId) {
+                return {
+                    ...g,
+                    placement_target: g.placement_target.map(t =>
+                        t.id === rowId ? { ...t, [field]: field === 'quantity' ? parseInt(value) || 0 : value } : t
+                    )
+                };
+            }
+            return g;
+        }));
+    };
+
     const currentSum = useMemo(() => {
-        return targets.reduce((acc, row) => acc + (parseInt(row.quantity) || 0), 0);
-    }, [targets]);
+        return projectInfoGroups.reduce((acc, group) => {
+            return acc + group.placement_target.reduce((sum, row) => sum + (parseInt(row.quantity) || 0), 0);
+        }, 0);
+    }, [projectInfoGroups]);
 
     const isValidQuantity = currentSum === masterQuantity && masterQuantity > 0;
 
@@ -156,7 +211,7 @@ export default function NewProjectPage() {
 
     return (
         <div className="max-w-4xl mx-auto py-10 px-4 sm:px-6 lg:px-8 pb-24">
-            <h1 className="text-3xl font-bold text-gray-900 tracking-tight mb-2">Kickoff Project</h1>
+            <h1 className="text-4xl font-bold text-gray-900 tracking-tight mb-2">Kickoff Project</h1>
             <p className="text-sm text-gray-500 mb-8">
                 Initialize an event-sourced SEO project. Configure complex URL allocations securely.
             </p>
@@ -219,28 +274,6 @@ export default function NewProjectPage() {
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Country Code</label>
                             <input type="text" name="country" required placeholder="MY, AUS, PNG" className="block w-full border border-gray-300 rounded-md shadow-sm p-2.5 text-gray-900 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm uppercase font-mono" maxLength={3} />
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
-                            <select name="backlinks_category" required className="block w-full border border-gray-300 rounded-md shadow-sm p-2.5 text-gray-900 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm bg-white">
-                                <option value="NULL">NULL</option>
-                                <option value="PBN">PBN</option>
-                                <option value="GP">GP</option>
-                                <option value="Tier 2">Tier 2</option>
-                                <option value="Tier 2 EDU">Tier 2 EDU</option>
-                                <option value="Tier 2 GOV">Tier 2 GOV</option>
-                                <option value="EDU GP">EDU GP</option>
-                                <option value="GOV GP">GOV GP</option>
-                                <option value="Web2.0">Web2.0</option>
-                                <option value="Bookmark">Bookmark</option>
-                                <option value="Forum">Forum</option>
-                            </select>
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Sheet Name (Optional)</label>
-                            <input type="text" name="sheet_name" placeholder="Leave blank for null" className="block w-full border border-gray-300 rounded-md shadow-sm p-2.5 text-gray-900 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" />
                         </div>
 
                         <div>
@@ -469,88 +502,159 @@ export default function NewProjectPage() {
                     )}
                 </div>
 
-                {/* Placement Targets */}
+                {/* Placement Targets Nested Structures */}
                 <div className="bg-gray-50 -mx-6 sm:-mx-8 p-6 sm:p-8 border-y border-gray-200">
                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end mb-6 gap-4">
                         <div>
-                            <h2 className="text-lg font-bold text-gray-900">Placement Targets</h2>
-                            <p className="text-xs text-gray-500 mt-1">Specify unique anchor and URL combinations. Sub-quantities must match total.</p>
+                            <h2 className="text-lg font-bold text-gray-900">Placement Targets (Project Tasks)</h2>
+                            <p className="text-xs text-gray-500 mt-1">Group your target links by category and sheet origin. Sub-quantities across all groups must match Master Total.</p>
                         </div>
                         <div className={`text-sm font-bold px-4 py-2 rounded-md border flex items-center justify-center transition-colors shadow-sm ${isValidQuantity ? 'bg-green-100 text-green-800 border-green-300' : 'bg-red-50 text-red-700 border-red-200'}`}>
                             Allocated: {currentSum} / {masterQuantity}
                         </div>
                     </div>
 
-                    <div className="space-y-4">
-                        {targets.map((row, index) => (
-                            <div key={row.id} className="flex flex-col sm:flex-row gap-3 items-start sm:items-center bg-white p-4 rounded-lg border border-gray-200 shadow-sm relative group transition-all hover:border-indigo-300">
-                                <div className="hidden sm:flex text-gray-400 font-mono text-xs w-6 justify-center">#{index + 1}</div>
+                    <div className="space-y-8">
+                        {projectInfoGroups.map((group, groupIdx) => (
+                            <div key={group.id} className="bg-white rounded-xl border border-gray-200 shadow-sm relative transition-all overflow-hidden focus-within:ring-1 focus-within:ring-indigo-500">
+                                {/* Group Header */}
+                                <div className="bg-indigo-50/50 border-b border-gray-200 px-5 py-4 flex flex-col sm:flex-row sm:items-end gap-4">
+                                    <div className="flex items-center gap-2 mb-1 sm:mb-0 shrink-0">
+                                        <div className="flex items-center justify-center w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 font-bold text-xs">
+                                            {groupIdx + 1}
+                                        </div>
+                                        <h3 className="font-bold text-gray-800 text-sm">Target Group</h3>
+                                    </div>
 
-                                <div className="flex-[1.2] w-full">
-                                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5 sm:hidden">Anchor / Keyword</label>
-                                    <input
-                                        type="text"
-                                        required
-                                        placeholder="Enter target keyword"
-                                        value={row.anchor_text}
-                                        onChange={(e) => updateTarget(row.id, 'anchor_text', e.target.value)}
-                                        className="w-full border border-gray-300 rounded p-2 text-sm text-gray-900 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all placeholder:text-gray-400"
-                                    />
-                                </div>
-                                <div className="flex-[2] w-full">
-                                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5 sm:hidden">Destination URL</label>
-                                    <input
-                                        type="url"
-                                        required
-                                        placeholder="https://client-site.com/seo-page"
-                                        value={row.target_url}
-                                        onChange={(e) => updateTarget(row.id, 'target_url', e.target.value)}
-                                        className="w-full border border-gray-300 rounded p-2 text-sm text-gray-900 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all placeholder:text-gray-400"
-                                    />
-                                </div>
-                                <div className="w-full sm:w-28 relative">
-                                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5 sm:hidden">Qty</label>
-                                    <input
-                                        type="number"
-                                        required
-                                        min="1"
-                                        value={row.quantity}
-                                        onChange={(e) => updateTarget(row.id, 'quantity', e.target.value)}
-                                        className="w-full border border-gray-300 rounded p-2 text-sm text-gray-900 font-mono focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all pr-8"
-                                    />
+                                    <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-xs font-semibold text-gray-600 mb-1">Category</label>
+                                            <select
+                                                value={group.category}
+                                                onChange={(e) => updateProjectInfoGroup(group.id, 'category', e.target.value)}
+                                                className="block w-full border border-gray-300 rounded-md shadow-sm py-1.5 px-3 text-gray-900 focus:ring-indigo-500 focus:border-indigo-500 text-sm bg-white"
+                                            >
+                                                <option value="NULL">NULL</option>
+                                                <option value="PBN">PBN</option>
+                                                <option value="GP">GP</option>
+                                                <option value="Tier 2">Tier 2</option>
+                                                <option value="Tier 2 EDU">Tier 2 EDU</option>
+                                                <option value="Tier 2 GOV">Tier 2 GOV</option>
+                                                <option value="EDU GP">EDU GP</option>
+                                                <option value="GOV GP">GOV GP</option>
+                                                <option value="Web2.0">Web2.0</option>
+                                                <option value="Bookmark">Bookmark</option>
+                                                <option value="Forum">Forum</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-semibold text-gray-600 mb-1">Sheet Name (Optional)</label>
+                                            <input
+                                                type="text"
+                                                placeholder="e.g. Month 1 Priority"
+                                                value={group.sheet_name}
+                                                onChange={(e) => updateProjectInfoGroup(group.id, 'sheet_name', e.target.value)}
+                                                className="block w-full border border-gray-300 rounded-md shadow-sm py-1.5 px-3 text-gray-900 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {projectInfoGroups.length > 1 && (
+                                        <button
+                                            type="button"
+                                            onClick={() => removeProjectInfoGroup(group.id)}
+                                            className="text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md p-1.5 transition-colors self-end shrink-0"
+                                            title="Remove Project Info Group"
+                                        >
+                                            <Trash2 className="w-5 h-5" />
+                                        </button>
+                                    )}
                                 </div>
 
-                                {targets.length > 1 && (
-                                    <button
-                                        type="button"
-                                        onClick={() => removeTargetRow(row.id)}
-                                        title="Remove Target"
-                                        className="text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md p-1.5 transition-colors focus:outline-none shrink-0 self-end mb-1 sm:self-center sm:mb-0 ml-1"
-                                    >
-                                        <Trash2 className="w-5 h-5" />
-                                    </button>
-                                )}
+                                {/* Target Rows inner loop */}
+                                <div className="p-4 sm:p-5 space-y-4">
+                                    {group.placement_target.map((row, index) => (
+                                        <div key={row.id} className="flex flex-col sm:flex-row gap-3 items-start sm:items-center relative group">
+                                            <div className="hidden sm:flex text-gray-300 font-mono text-[10px] w-4 justify-center">T{index + 1}</div>
+
+                                            <div className="flex-[1.2] w-full">
+                                                <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1 sm:hidden">Anchor Text</label>
+                                                <input
+                                                    type="text"
+                                                    required
+                                                    placeholder="Target keyword"
+                                                    value={row.anchor_text}
+                                                    onChange={(e) => updateTarget(group.id, row.id, 'anchor_text', e.target.value)}
+                                                    className="w-full border border-gray-300 rounded p-2 text-sm text-gray-900 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all placeholder:text-gray-400"
+                                                />
+                                            </div>
+                                            <div className="flex-[2] w-full">
+                                                <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1 sm:hidden">Target URL</label>
+                                                <input
+                                                    type="url"
+                                                    required
+                                                    placeholder="https://client-site.com/seo-page"
+                                                    value={row.target_url}
+                                                    onChange={(e) => updateTarget(group.id, row.id, 'target_url', e.target.value)}
+                                                    className="w-full border border-gray-300 rounded p-2 text-sm text-gray-900 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all placeholder:text-gray-400"
+                                                />
+                                            </div>
+                                            <div className="w-full sm:w-24 relative">
+                                                <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1 sm:hidden">Qty</label>
+                                                <input
+                                                    type="number"
+                                                    required
+                                                    min="1"
+                                                    value={row.quantity}
+                                                    onChange={(e) => updateTarget(group.id, row.id, 'quantity', e.target.value)}
+                                                    className="w-full border border-gray-300 rounded p-2 text-sm text-gray-900 font-mono focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all pr-8"
+                                                />
+                                            </div>
+
+                                            {group.placement_target.length > 1 && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => removeTargetRow(group.id, row.id)}
+                                                    title="Remove Target Row"
+                                                    className="text-gray-300 opacity-50 hover:opacity-100 hover:text-red-500 hover:bg-red-50 rounded-md p-1.5 transition-all focus:outline-none shrink-0 self-end mb-1 sm:self-center sm:mb-0"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            )}
+                                        </div>
+                                    ))}
+
+                                    <div className="mt-2 pt-2 border-t border-gray-50 flex items-center justify-between">
+                                        <button
+                                            type="button"
+                                            onClick={() => addTargetRow(group.id)}
+                                            className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-600 hover:text-indigo-700 bg-gray-50 hover:bg-indigo-50 px-3 py-1.5 rounded-md transition-colors"
+                                        >
+                                            <Plus className="w-3.5 h-3.5" /> Add Another Target
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                         ))}
                     </div>
 
-                    <div className="mt-5 flex items-center justify-between">
+                    <div className="mt-8 pt-6 border-t border-gray-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                         <button
                             type="button"
-                            onClick={addTargetRow}
-                            className="inline-flex items-center gap-1.5 text-sm font-semibold text-indigo-700 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-4 py-2 rounded-md transition-colors border border-indigo-200"
+                            onClick={addProjectInfoGroup}
+                            className="inline-flex items-center gap-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm px-5 py-2.5 rounded-lg transition-colors border border-indigo-700"
                         >
-                            <Plus className="w-4 h-4" /> Add Another Target
+                            <Plus className="w-5 h-5" /> Add New Project Info
                         </button>
 
                         {!isValidQuantity && (
-                            <span className="text-sm font-medium text-red-600 bg-red-50 px-3 py-1 rounded-full animate-pulse">
-                                Requires {masterQuantity - currentSum > 0 ? `${masterQuantity - currentSum} more` : `${Math.abs(masterQuantity - currentSum)} less`} targets to match Total.
+                            <span className="text-sm font-medium text-red-600 bg-red-50 px-3 py-1.5 rounded-full animate-pulse shadow-sm border border-red-100">
+                                Requires {masterQuantity - currentSum > 0 ? `${masterQuantity - currentSum} more` : `${Math.abs(masterQuantity - currentSum)} less`} targets to match Total Allocation.
                             </span>
                         )}
                     </div>
 
-                    <input type="hidden" name="targets_json" value={JSON.stringify(targets)} />
+                    <input type="hidden" name="project_info_json" value={JSON.stringify(projectInfoGroups)} />
                 </div>
 
                 <div className="sm:col-span-2">

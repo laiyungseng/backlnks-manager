@@ -152,7 +152,6 @@ export async function normalizeProjectData(projectHash) {
                         id: existing.id,
                         vendor_id: targetVendorId,
                         domain_details: existing.domain_details
-                        // Notice created_at is strictly omitted here to avoid overriding existing dates.
                     };
                 } else {
                     return {
@@ -164,8 +163,7 @@ export async function normalizeProjectData(projectHash) {
                             Spam_Score: null,
                             Last_checked_at: nowIso
                         }],
-                        vendor_id: targetVendorId,
-                        created_at: createdAt || nowIso // Explicitly pass project created_at onto new domains
+                        vendor_id: targetVendorId
                     };
                 }
             });
@@ -191,8 +189,8 @@ export async function normalizeProjectData(projectHash) {
 
             // 4. Map domains explicitly for memory binding
             return new Map(allUpsertedDomains.map(d => {
-                const details = Array.isArray(d.domain_details) ? d.domain_details[0] : d.domain_details;
-                return [details.domain_url, d.id];
+                const domDetails = Array.isArray(d.domain_details) ? d.domain_details[0] : d.domain_details;
+                return [domDetails.domain_url, d.id];
             }));
         })();
 
@@ -219,6 +217,15 @@ export async function normalizeProjectData(projectHash) {
         // -------------------------------------------------------------
         const placementsToInsert = [];
 
+        // Derive arrays for dynamic properties 
+        const cats = details.backlinks_category ? [details.backlinks_category] :
+            Array.isArray(details.project_info) ? Array.from(new Set(details.project_info.map(i => i.category).filter(c => c && c !== 'NULL'))) : null;
+        const mappedCategoriesArray = (cats && cats.length > 0) ? cats : null;
+
+        const sheets = details.sheet_name ? [details.sheet_name] :
+            Array.isArray(details.project_info) ? Array.from(new Set(details.project_info.map(i => i.sheet_name).filter(Boolean))) : [];
+        const mappedSheetNameStr = sheets.length > 0 ? sheets.join(', ') : null;
+
         for (const row of rawDataArray) {
             if (row.published_url && row.published_date) {
 
@@ -237,12 +244,12 @@ export async function normalizeProjectData(projectHash) {
                     project_id: projectUUID,
                     vendor_id: targetVendorId,
                     domain_id: matchingDomainId,
-                    sheet_name: projectRow.projects?.sheet_name || null,
+                    sheet_name: mappedSheetNameStr,
                     backlinks_quantity: 1,
                     anchor_text: row.anchor_text || null,
                     target_url: row.target_url || null,
-                    language: projectRow.projects?.language || null,
-                    start_date: projectRow.projects?.created_at || null,
+                    language: primaryLanguage,
+                    start_date: details.start_date || null,
                     published_url: row.published_url,
                     published_date: row.published_date, // Mapped deliberately per user instruction. If schema has a typo, this matches it. 
                     status: resolvedStatus,
@@ -250,8 +257,8 @@ export async function normalizeProjectData(projectHash) {
                     indexed_checked_at: null,
                     last_vendor_update_at: nowIso,
                     notes: row.remark || null, // Maps the user UI 'remark' directly to DB 'notes'
-                    country: projectRow.projects?.country || null,
-                    category: projectRow.projects?.backlinks_category ? [projectRow.projects.backlinks_category] : null,
+                    country: country,
+                    category: mappedCategoriesArray,
                     vendor_token: projectHash
                 });
             }

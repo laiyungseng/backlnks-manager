@@ -104,7 +104,7 @@ export default function SettingsPage() {
         <div className="max-w-3xl mx-auto space-y-8">
             {/* Page header */}
             <div>
-                <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Settings</h1>
+                <h1 className="text-4xl font-bold text-gray-900 tracking-tight">Settings</h1>
                 <p className="mt-2 text-sm text-gray-500">
                     Manage your Supabase connection credentials. All values are encrypted before storage.
                 </p>
@@ -221,12 +221,11 @@ export default function SettingsPage() {
                     {/* Connection check strip */}
                     <div className="border-t border-gray-100 pt-5 flex items-center gap-4">
                         <div className="flex items-center gap-2.5 flex-1 min-w-0">
-                            <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
-                                connStatus === 'connected' ? 'bg-green-500 shadow-[0_0_6px_2px_rgba(34,197,94,0.4)]' :
-                                connStatus === 'failed'    ? 'bg-red-500 shadow-[0_0_6px_2px_rgba(239,68,68,0.4)]' :
-                                connStatus === 'checking'  ? 'bg-amber-400 animate-pulse' :
-                                'bg-gray-300'
-                            }`} />
+                            <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${connStatus === 'connected' ? 'bg-green-500 shadow-[0_0_6px_2px_rgba(34,197,94,0.4)]' :
+                                    connStatus === 'failed' ? 'bg-red-500 shadow-[0_0_6px_2px_rgba(239,68,68,0.4)]' :
+                                        connStatus === 'checking' ? 'bg-amber-400 animate-pulse' :
+                                            'bg-gray-300'
+                                }`} />
                             <div className="min-w-0">
                                 <p className="text-sm font-medium text-gray-700">
                                     Check connection to your Supabase

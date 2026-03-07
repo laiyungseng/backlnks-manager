@@ -19,9 +19,7 @@ export async function createProjectAction(prevState, formData) {
             country: formData.get('country'),
             language: formData.get('language'),
             languages_json: formData.get('languages_json'),
-            targets_json: formData.get('targets_json'),
-            backlinks_category: formData.get('backlinks_category'),
-            sheet_name: formData.get('sheet_name') || null,
+            project_info_json: formData.get('project_info_json'),
             quantity: formData.get('quantity'),
             remarks: formData.get('remarks') || '',
             dripfeed_enabled: formData.has('dripfeed_enabled'),
@@ -45,14 +43,31 @@ export async function createProjectAction(prevState, formData) {
         }
 
         const projectData = validatedData.data;
-        const targetsArray = projectData.targets_json;
+        const projectInfoArray = projectData.project_info_json;
         const languagesArray = projectData.languages_json;
 
-        const sumOfTargets = targetsArray.reduce((acc, row) => acc + row.quantity, 0);
+        // Flatten the required targets for the projects_hub 
+        const flattenedTargets = [];
+        let sumOfTargets = 0;
+
+        projectInfoArray.forEach(infoGroup => {
+            infoGroup.placement_target.forEach(target => {
+                sumOfTargets += target.quantity;
+                flattenedTargets.push({
+                    anchor_text: target.anchor_text || "",
+                    target_url: target.target_url || "",
+                    quantity: String(target.quantity || ""),
+                    _parent_category: infoGroup.category,
+                    _parent_sheet_name: infoGroup.sheet_name || null,
+                    created_at: new Date().toISOString()
+                });
+            });
+        });
+
         if (sumOfTargets !== projectData.quantity) {
             return {
                 success: false,
-                message: `Validation Error: Target sub-quantities (${sumOfTargets}) do not match Master Quantity (${projectData.quantity}).`
+                message: `Validation Error: Target sub-quantities (${sumOfTargets}) do not match Master Allocation Quantity (${projectData.quantity}).`
             };
         }
 
@@ -79,8 +94,7 @@ export async function createProjectAction(prevState, formData) {
                         vendor_name: projectData.vendor_name,
                         country: projectData.country.toUpperCase(),
                         "languages-ratio": languagesArray.map(l => ({ "lang-code": l.code.toUpperCase(), "ratio": l.ratio })),
-                        backlinks_category: projectData.backlinks_category,
-                        sheet_name: projectData.sheet_name || null,
+                        project_info: projectInfoArray,
                         quantity: String(projectData.quantity),
                         remarks: projectData.remarks,
                         dripfeed_enabled: projectData.dripfeed_enabled,
@@ -108,12 +122,7 @@ export async function createProjectAction(prevState, formData) {
         const projectId = projectInsertResult.id;
 
         // 5. Format Targets Array for JSONB
-        const formattedTargets = targetsArray.map(target => ({
-            anchor_text: target.anchor_text || "",
-            target_url: target.target_url || "",
-            quantity: String(target.quantity || ""), // Enforce string for quantity per spec
-            created_at: new Date().toISOString()
-        }));
+        const formattedTargets = flattenedTargets; // Flatten pass already appended the inherited metadata safely
 
         // 6. Provision projects_hub (Hash Tracker + Virtual Targets)
         const { error: projectsHubError } = await supabase

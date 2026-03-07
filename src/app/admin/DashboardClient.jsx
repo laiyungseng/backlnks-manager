@@ -114,7 +114,7 @@ export default function DashboardClient({ initialProjects }) {
         <div className="max-w-6xl mx-auto space-y-8">
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Dashboard Overview</h1>
+                    <h1 className="text-4xl font-bold text-gray-900 tracking-tight">Dashboard Overview</h1>
                     <p className="mt-2 text-sm text-gray-500">
                         Monitor active SEO projects and track vendor backlink fulfillment real-time.
                     </p>
@@ -273,16 +273,31 @@ export default function DashboardClient({ initialProjects }) {
 
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 {isEditMode ? (
-                                                    <select value={details.backlinks_category || 'NULL'} onChange={(e) => handleFieldChange(project.id, 'backlinks_category', e.target.value)} className="w-24 px-1 py-1 border border-indigo-300 bg-white rounded text-xs select-auto">
-                                                        <option value="NULL">NULL</option>
-                                                        <option value="PBN">PBN</option><option value="GP">GP</option>
-                                                        <option value="Tier 2">Tier 2</option><option value="Tier 2 EDU">Tier 2 EDU</option>
-                                                        <option value="Tier 2 GOV">Tier 2 GOV</option><option value="EDU GP">EDU GP</option>
-                                                        <option value="GOV GP">GOV GP</option><option value="Web2.0">Web2.0</option>
-                                                        <option value="Bookmark">Bookmark</option><option value="Forum">Forum</option>
-                                                    </select>
+                                                    !Array.isArray(details.project_info) ? (
+                                                        <select value={details.backlinks_category || 'NULL'} onChange={(e) => handleFieldChange(project.id, 'backlinks_category', e.target.value)} className="w-24 px-1 py-1 border border-indigo-300 bg-white rounded text-xs select-auto">
+                                                            <option value="NULL">NULL</option>
+                                                            <option value="PBN">PBN</option><option value="GP">GP</option>
+                                                            <option value="Tier 2">Tier 2</option><option value="Tier 2 EDU">Tier 2 EDU</option>
+                                                            <option value="Tier 2 GOV">Tier 2 GOV</option><option value="EDU GP">EDU GP</option>
+                                                            <option value="GOV GP">GOV GP</option><option value="Web2.0">Web2.0</option>
+                                                            <option value="Bookmark">Bookmark</option><option value="Forum">Forum</option>
+                                                        </select>
+                                                    ) : (
+                                                        <span className="text-xs text-gray-400 italic">Nested (Uneditable)</span>
+                                                    )
                                                 ) : (
-                                                    details.backlinks_category ? <span className="px-2 py-0.5 rounded-full text-xs font-medium border bg-purple-50 text-purple-700 border-purple-200">{details.backlinks_category}</span> : <span className="text-gray-400 italic text-xs">-</span>
+                                                    (() => {
+                                                        const getCategories = () => {
+                                                            if (details.backlinks_category) return details.backlinks_category;
+                                                            if (Array.isArray(details.project_info)) {
+                                                                const cats = Array.from(new Set(details.project_info.map(info => info.category).filter(c => c && c !== 'NULL')));
+                                                                return cats.length > 0 ? cats.join(', ') : null;
+                                                            }
+                                                            return null;
+                                                        };
+                                                        const displayCategory = getCategories();
+                                                        return displayCategory ? <span className="px-2 py-0.5 rounded-full text-xs font-medium border bg-purple-50 text-purple-700 border-purple-200">{displayCategory}</span> : <span className="text-gray-400 italic text-xs">-</span>;
+                                                    })()
                                                 )}
                                             </td>
 

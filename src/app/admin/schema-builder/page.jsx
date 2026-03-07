@@ -499,7 +499,7 @@ export default function SchemaBuilderPage() {
             {/* Page header */}
             <div className="flex items-start justify-between gap-4">
                 <div>
-                    <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Schema Builder</h1>
+                    <h1 className="text-4xl font-bold text-gray-900 tracking-tight">Schema Builder</h1>
                     <p className="mt-1.5 text-sm text-gray-500">
                         Design tables visually, then generate and execute SQL directly against your Supabase project.
                         <br />

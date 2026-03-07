@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import VendorLinkCopy from './VendorLinkCopy';
-import { ChevronDown, ChevronRight, Droplet, CheckCircle, Lock, Unlock } from 'lucide-react';
+import { ChevronDown, ChevronRight, Droplet, CheckCircle, Lock, Unlock, Hash, Database, Globe, Target, Zap, BarChart } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { finalizeProjectAction, toggleProjectLockAction } from './actions';
 
@@ -126,205 +126,215 @@ export default function PlacementCard({ project, representativeHash }) {
     };
 
     return (
-        <div className="bg-white rounded-xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] ring-1 ring-gray-200 overflow-hidden transform transition-all hover:-translate-y-1 hover:shadow-[0_12px_40px_rgb(0,0,0,0.08)] duration-300 group">
-            {/* Header / Vendor Control Strip */}
-            <div className="px-6 py-5 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div>
-                    <h2 className="text-xl font-bold text-gray-900">{details.project_name || 'Unnamed Project'}</h2>
-                    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5 text-xs">
-                        {localLockState ? (
-                            <div className="flex items-center gap-1 text-amber-700 font-semibold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                                <Lock className="w-3 h-3" /> Locked
-                            </div>
-                        ) : (
-                            <div className="flex items-center gap-1 text-green-700 font-semibold bg-green-50 px-2 py-0.5 rounded border border-green-200">
-                                <Unlock className="w-3 h-3" /> Editable
-                            </div>
-                        )}
-                        <div>
-                            <span className="text-gray-400 font-medium">Vendor: </span>
-                            <span className="font-semibold text-indigo-600">{details.vendor_name}</span>
+        <div className="relative bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden transition-all duration-300 group hover:shadow-2xl">
+            {/* Top Gradient Accent */}
+            <div className="h-1 w-full bg-gradient-to-r from-indigo-600 via-indigo-500 to-emerald-500" />
+
+            <div className="p-6">
+                {/* Identity Header */}
+                <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-6 mb-8">
+                    <div className="space-y-2">
+                        <div className="flex items-center flex-wrap gap-3">
+                            <h2 className="text-2xl font-bold text-slate-900">
+                                {details.project_name || 'Unnamed Project'}
+                            </h2>
+                            {/* Status Badge */}
+                            {(() => {
+                                let badgeClass = "amber-100 bg-amber-50 text-amber-700 border-amber-200";
+                                let statusText = details.status || 'IN PROGRESS';
+
+                                if (isFinalized) {
+                                    badgeClass = "emerald-100 bg-emerald-50 text-emerald-700 border-emerald-200";
+                                    statusText = "FINALIZED";
+                                } else if (details.status === 'Completed' || allFulfilled) {
+                                    badgeClass = "emerald-100 bg-emerald-50 text-emerald-700 border-emerald-200";
+                                    statusText = "COMPLETED";
+                                }
+
+                                return (
+                                    <span className={`px-2 py-0.5 rounded border text-[10px] font-black uppercase tracking-tight ${badgeClass}`}>
+                                        {statusText}
+                                    </span>
+                                );
+                            })()}
                         </div>
-                        <div>
-                            <span className="text-gray-400 font-medium">Status: </span>
-                            <span className={`font-semibold ${(isFinalized || allFulfilled) ? 'text-green-700' : 'text-yellow-700'}`}>
-                                {isFinalized ? 'Finalized' : (details.status === 'Completed' || allFulfilled) ? 'Completed' : details.status}
-                            </span>
-                        </div>
-                        {details.country && (
-                            <div>
-                                <span className="text-gray-400 font-medium">Country: </span>
-                                <span className="font-semibold text-gray-700 uppercase">{details.country}</span>
+
+                        <div className="flex flex-wrap items-center gap-4">
+                            <div className="flex items-center gap-1.5">
+                                <Hash className="w-3.5 h-3.5 text-indigo-400" />
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{project.id.split('-')[0]}</span>
                             </div>
-                        )}
-                        {formatLanguages() && (
-                            <div>
-                                <span className="text-gray-400 font-medium">Language: </span>
-                                <span className="font-semibold text-gray-700 uppercase">{formatLanguages()}</span>
+                            <div className="flex items-center gap-1.5">
+                                <Database className="w-3.5 h-3.5 text-indigo-400" />
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{details.vendor_name}</span>
                             </div>
-                        )}
-                        {details.backlinks_category && (
-                            <div>
-                                <span className="text-gray-400 font-medium">Category: </span>
-                                <span className="px-1.5 py-0.5 rounded text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200">{details.backlinks_category}</span>
-                            </div>
-                        )}
-                        {details.sheet_name && (
-                            <div>
-                                <span className="text-gray-400 font-medium">Sheet: </span>
-                                <span className="font-medium text-gray-600 italic">{details.sheet_name}</span>
-                            </div>
-                        )}
-                        {details.dripfeed_enabled && (
-                            <div className="flex items-center gap-1">
-                                <Droplet className="w-3 h-3 text-amber-600" />
-                                <span className="text-gray-400 font-medium">Dripfeed: </span>
-                                <span className="font-semibold text-amber-700">{details.urls_per_day} URLs/Day</span>
-                            </div>
-                        )}
-                        <div>
-                            <span className="text-gray-400 font-medium">Target Domain: </span>
-                            {hubTargets.length > 0 ? (
-                                hubTargets.length === 1 ? (
-                                    <a href={hubTargets[0].target_url} target="_blank" rel="noopener noreferrer" className="font-semibold text-indigo-600 hover:text-indigo-900 truncate max-w-[150px] inline-block align-bottom">
-                                        {getSafeHostname(hubTargets[0].target_url)}
-                                    </a>
-                                ) : (
-                                    <button
-                                        onClick={(e) => { e.preventDefault(); setIsCollapsed(false); }}
-                                        className="font-semibold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded text-xs hover:bg-indigo-100 transition-colors"
-                                    >
-                                        {hubTargets.length} URLs
-                                    </button>
-                                )
+                            {localLockState ? (
+                                <div className="flex items-center gap-1 text-[10px] font-black text-amber-600 uppercase tracking-widest">
+                                    <Lock className="w-3 h-3" /> Locked
+                                </div>
                             ) : (
-                                <span className="text-gray-400 italic">No Targets</span>
+                                <div className="flex items-center gap-1 text-[10px] font-black text-emerald-600 uppercase tracking-widest">
+                                    <Unlock className="w-3 h-3" /> Editable
+                                </div>
                             )}
                         </div>
-                        <div>
-                            <span className="text-gray-400 font-medium">Progress: </span>
-                            <span className="font-mono font-semibold text-gray-700">{completedLinks} / {totalLinks}</span>
-                        </div>
-                        <div>
-                            <span className="text-gray-400 font-medium">ID: </span>
-                            <span className="font-mono text-gray-400">{project.id.split('-')[0]}</span>
-                        </div>
                     </div>
-                </div>
 
-                {/* Action Center: Token & Link Generation */}
-                <div className="flex items-center gap-4 bg-white p-2 rounded-lg border border-gray-100 shadow-sm shrink-0">
-
-                    {/* Finalization Block */}
-                    {allFulfilled && !isFinalized && (
-                        <button
-                            onClick={handleFinalize}
-                            disabled={isFinalizing || !overallFulfillmentMatch}
-                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded shadow-sm disabled:opacity-50 transition-colors"
-                        >
-                            <CheckCircle className="w-4 h-4" />
-                            {isFinalizing ? 'Normalizing Data...' : 'Approve & Finalize'}
-                        </button>
-                    )}
-
-                    {isFinalized && (
-                        <div className="flex items-center gap-2">
-                            <span className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-green-700 bg-green-50 border border-green-200 rounded">
-                                <CheckCircle className="w-4 h-4" />
-                                Finalized
-                            </span>
-                            <button
-                                onClick={handleToggleLock}
-                                disabled={isToggling}
-                                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded shadow-sm transition-colors disabled:opacity-50 ${localLockState
-                                    ? 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
-                                    : 'bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100'
-                                    }`}
-                                title={localLockState ? 'Unlock for vendor editing' : 'Lock vendor editing'}
-                            >
-                                {localLockState ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
-                                {isToggling ? '...' : localLockState ? 'Locked' : 'Editable'}
-                            </button>
-                        </div>
-                    )}
-
-                    <div className="flex flex-col border-l border-gray-100 pl-4">
-                        <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Vendor Portal Link</span>
-                        <span className="text-[10px] text-gray-400 italic">(View Placement Details)</span>
-                    </div>
-                    {representativeHash ? (
+                    <div className="flex items-end gap-3">
                         <VendorLinkCopy projectHash={representativeHash} vendorName={details.vendor_name || 'unknown'} />
-                    ) : (
-                        <span className="text-sm text-red-500 italic px-2">Unlinked - No Kickoff Hash Created</span>
-                    )}
-
-                    {/* Collapse Toggle Button */}
-                    <div className="ml-2 pl-4 border-l border-gray-200">
                         <button
                             onClick={() => setIsCollapsed(!isCollapsed)}
-                            className="p-1.5 rounded-md text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                            title={isCollapsed ? "Expand Targets" : "Collapse Targets"}
+                            className={`p-2 rounded-lg border border-slate-200 transition-all shadow-sm ${!isCollapsed ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-400 hover:text-indigo-600'}`}
                         >
                             {isCollapsed ? <ChevronRight className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
                         </button>
                     </div>
                 </div>
+
+                {/* Information Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+                    {/* Region/Lang */}
+                    <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
+                        <div className="flex items-center gap-2 mb-1">
+                            <Globe className="w-3.5 h-3.5 text-indigo-500" />
+                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest underline decoration-indigo-200 underline-offset-4">Region/Language</span>
+                        </div>
+                        <p className="text-xs font-black text-slate-800 uppercase tracking-tight">
+                            {details.country || 'GLOBAL'} / {formatLanguages() || 'EN'}
+                        </p>
+                    </div>
+
+                    {/* Target Domain */}
+                    <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
+                        <div className="flex items-center gap-2 mb-1">
+                            <Target className="w-3.5 h-3.5 text-indigo-500" />
+                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest underline decoration-indigo-200 underline-offset-4">Target Domain</span>
+                        </div>
+                        <p className="text-xs font-black text-slate-800 uppercase tracking-tight truncate">
+                            {hubTargets.length > 0 ? getSafeHostname(hubTargets[0].target_url) : 'NO TARGET'}
+                        </p>
+                    </div>
+
+                    {/* Dripfeed */}
+                    <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
+                        <div className="flex items-center gap-2 mb-1">
+                            <Zap className="w-3.5 h-3.5 text-indigo-500" />
+                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest underline decoration-indigo-200 underline-offset-4">Dripfeed Status</span>
+                        </div>
+                        {details.dripfeed_enabled ? (
+                            <p className="text-xs font-black text-amber-600 uppercase tracking-tight">
+                                {details.urls_per_day} URLS/DAY
+                            </p>
+                        ) : (
+                            <p className="text-xs font-bold text-slate-400 italic">No Dripfeed</p>
+                        )}
+                    </div>
+
+                    {/* Assigned Sheet */}
+                    <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
+                        <div className="flex items-center gap-2 mb-1">
+                            <BarChart className="w-3.5 h-3.5 text-indigo-500" />
+                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest underline decoration-indigo-200 underline-offset-4">Reference Sheet</span>
+                        </div>
+                        <p className="text-xs font-bold text-slate-600 italic truncate">
+                            {(() => {
+                                const sheets = details.sheet_name ? [details.sheet_name] :
+                                    Array.isArray(details.project_info) ? Array.from(new Set(details.project_info.map(i => i.sheet_name).filter(Boolean))) : [];
+                                return sheets.length > 0 ? sheets.join(', ') : 'N/A';
+                            })()}
+                        </p>
+                    </div>
+                </div>
+
+                {/* Progress & Actions Row */}
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 pt-6 border-t border-slate-100">
+                    <div className="flex-1 w-full max-w-xl">
+                        <div className="flex items-center justify-between mb-2">
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Fulfillment Progress</span>
+                            <span className="text-xs font-black text-slate-900 italic tracking-tighter uppercase">{completedLinks} / {totalLinks} COMPLETE</span>
+                        </div>
+                        <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                            <div
+                                className={`h-full rounded-full transition-all duration-1000 bg-gradient-to-r ${isFinalized ? 'from-emerald-500 to-emerald-600' : 'from-indigo-600 to-indigo-400'}`}
+                                style={{ width: `${totalLinks > 0 ? (completedLinks / totalLinks) * 100 : 0}%` }}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                        {allFulfilled && !isFinalized && (
+                            <button
+                                onClick={handleFinalize}
+                                disabled={isFinalizing}
+                                className="inline-flex items-center gap-2 px-6 py-3 text-[11px] font-black text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-all shadow-md active:scale-95 uppercase tracking-tighter"
+                            >
+                                <CheckCircle className="w-4 h-4" />
+                                {isFinalizing ? 'NORMAILIZING...' : 'Approve & Finalize'}
+                            </button>
+                        )}
+
+                        {isFinalized && (
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={handleToggleLock}
+                                    disabled={isToggling}
+                                    className={`inline-flex items-center gap-2 px-4 py-3 text-[11px] font-black rounded-lg border transition-all shadow-sm uppercase tracking-tighter ${localLockState
+                                        ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
+                                        : 'bg-indigo-50 text-indigo-700 border-indigo-100 hover:bg-indigo-100'}`}
+                                >
+                                    {localLockState ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
+                                    {isToggling ? 'Wait...' : localLockState ? 'Locked' : 'Unlocked'}
+                                </button>
+                                <div className="inline-flex items-center gap-2 px-6 py-3 text-[11px] font-black text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg uppercase tracking-tighter">
+                                    <CheckCircle className="w-4 h-4" />
+                                    Processed
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
             </div>
 
-            {/* Nested Target Summary Table (Collapsible) */}
+            {/* Expanded Table Section */}
             {!isCollapsed && (
-                <div className="overflow-x-auto border-t border-gray-100 transition-all duration-300 ease-in-out origin-top">
-                    <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-50">
-                            <tr>
-                                <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-widest w-16">Target#</th>
-                                <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-widest">Target Domain</th>
-                                <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-widest">Anchor Text</th>
-                                <th scope="col" className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-widest">Fulfillment Progress</th>
-                            </tr>
-                        </thead>
-                        <tbody className="bg-white divide-y divide-gray-100">
-                            {liveTargetSummaries && liveTargetSummaries.length > 0 ? (
-                                liveTargetSummaries.map((target, index) => (
-                                    <tr key={target.id} className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} hover:bg-indigo-50/30 transition-colors`}>
-                                        <td className="px-6 py-4 whitespace-nowrap text-xs font-mono font-medium text-gray-400">
-                                            T-{index + 1}
-                                        </td>
-                                        <td className="px-6 py-4 text-sm font-medium text-gray-900 max-w-xs truncate" title={target.target_url}>
-                                            <a href={target.target_url} target="_blank" rel="noopener noreferrer" className="hover:text-indigo-600 transition-colors">
+                <div className="border-t border-slate-100 bg-white animate-in slide-in-from-top duration-300">
+                    <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-slate-100">
+                            <thead className="bg-slate-50">
+                                <tr>
+                                    <th className="px-6 py-4 text-left text-[11px] font-bold text-slate-500 uppercase tracking-widest">Target#</th>
+                                    <th className="px-6 py-4 text-left text-[11px] font-bold text-slate-500 uppercase tracking-widest">Domain</th>
+                                    <th className="px-6 py-4 text-left text-[11px] font-bold text-slate-500 uppercase tracking-widest">Anchor</th>
+                                    <th className="px-6 py-4 text-right text-[11px] font-bold text-slate-500 uppercase tracking-widest">Progress</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {liveTargetSummaries.map((target, index) => (
+                                    <tr key={target.id} className="hover:bg-slate-50 transition-colors">
+                                        <td className="px-6 py-4 text-[11px] font-mono text-slate-400">T-{index + 1}</td>
+                                        <td className="px-6 py-4">
+                                            <p className="text-[11px] font-black text-slate-800 uppercase tracking-tight truncate max-w-[200px]">
                                                 {getSafeHostname(target.target_url)}
-                                            </a>
+                                            </p>
                                         </td>
-                                        <td className="px-6 py-4 text-sm text-gray-500 font-mono">
-                                            {target.anchor_text}
+                                        <td className="px-6 py-4">
+                                            <p className="text-[11px] font-mono text-slate-400 truncate max-w-[200px]">
+                                                {target.anchor_text || '-'}
+                                            </p>
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-center">
-                                            <div className="flex flex-col items-center justify-center">
-                                                <span className="text-sm font-bold text-gray-700">
-                                                    {target.uploaded_count} <span className="text-gray-400 font-normal">/ {target.ordered_quantity}</span>
+                                        <td className="px-6 py-4 text-right">
+                                            <div className="flex items-center justify-end gap-2">
+                                                <span className="text-[11px] font-black text-slate-900 italic tracking-tighter">
+                                                    {target.uploaded_count}/{target.ordered_quantity}
                                                 </span>
-                                                {target.is_completed ? (
-                                                    <span className="mt-1 px-2 inline-flex text-[10px] leading-4 font-semibold rounded-sm bg-green-100 text-green-800">
-                                                        Fulfilled
-                                                    </span>
-                                                ) : (
-                                                    <span className="mt-1 px-2 inline-flex text-[10px] leading-4 font-semibold rounded-sm bg-blue-100 text-blue-800">
-                                                        Pending
-                                                    </span>
-                                                )}
+                                                <div className={`w-2 h-2 rounded-full ${target.is_completed ? 'bg-emerald-500' : 'bg-slate-200'}`} />
                                             </div>
                                         </td>
                                     </tr>
-                                ))
-                            ) : (
-                                <tr>
-                                    <td colSpan="4" className="px-6 py-12 whitespace-nowrap text-center text-gray-400 bg-gray-50/30">
-                                        <span className="block text-sm font-medium text-gray-600">No Target Links configured for this project.</span>
-                                    </td>
-                                </tr>
-                            )}
-                        </tbody>
-                    </table>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             )}
         </div>
