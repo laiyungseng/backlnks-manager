@@ -19,20 +19,13 @@ export default async function VendorCompletedPage({ params }) {
         .from('projects')
         .select(`
             id,
-            project_name,
-            vendor_name,
-            status,
-            country,
-            language,
-            languages,
-            backlinks_category,
-            quantity,
-            deadline,
+            project_details,
+            created_date,
             projects_hub ( hash, vendor_staging_data, is_locked, targets ),
             placements ( id )
         `)
-        .ilike('vendor_name', vendorName.replace(/-/g, '%'))
-        .order('created_at', { ascending: false });
+        .ilike('project_details->>vendor_name', vendorName.replace(/-/g, '%'))
+        .order('created_date', { ascending: false });
 
     if (error) {
         console.error('Vendor Completed fetch error:', error);
@@ -41,23 +34,25 @@ export default async function VendorCompletedPage({ params }) {
     // Filter to finalized/completed only
     const completedProjects = (projects || []).filter(p => {
         const hasPlacements = p.placements && p.placements.length > 0;
-        return p.status === 'Finalized' || hasPlacements;
+        const details = p.project_details?.[0] || {};
+        return details.status === 'Finalized' || hasPlacements;
     });
 
-    const formatLanguages = (project) => {
-        if (Array.isArray(project.languages) && project.languages.length > 0) {
-            return project.languages.map(l => `${l.code} (${l.ratio}%)`).join(', ');
+    const formatLanguages = (details) => {
+        const languages = details['languages-ratio'];
+        if (Array.isArray(languages) && languages.length > 0) {
+            return languages.map(l => `${l['lang-code']} (${l.ratio}%)`).join(', ');
         }
-        return project.language ? `${project.language} (100%)` : '—';
+        return details.language ? `${details.language} (100%)` : '—';
     };
 
-    const getProgress = (project) => {
+    const getProgress = (project, details) => {
         const hub = project.projects_hub?.[0] || {};
         const hubTargets = Array.isArray(hub.targets) ? hub.targets : [];
 
         const total = hubTargets.length > 0
             ? hubTargets.reduce((acc, t) => acc + (parseInt(t.quantity || '0', 10)), 0)
-            : parseInt(project.quantity || '0', 10);
+            : parseInt(details.quantity || '0', 10);
 
         return { total };
     };
@@ -74,35 +69,36 @@ export default async function VendorCompletedPage({ params }) {
             <div className="space-y-6">
                 {completedProjects.length > 0 ? (
                     completedProjects.map((project) => {
+                        const details = project.project_details?.[0] || {};
                         const hash = project.projects_hub?.[0]?.hash;
                         const isLocked = project.projects_hub?.[0]?.is_locked || false;
-                        const progress = getProgress(project);
+                        const progress = getProgress(project, details);
 
                         return (
                             <div key={project.id} className="bg-white rounded-xl shadow-sm ring-1 ring-gray-200 overflow-hidden">
                                 <div className="px-6 py-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                                     <div className="flex-1">
                                         <div className="flex items-center gap-2">
-                                            <h2 className="text-lg font-bold text-gray-900">{project.project_name}</h2>
+                                            <h2 className="text-lg font-bold text-gray-900">{details.project_name || 'Unnamed Project'}</h2>
                                             <span className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold rounded bg-green-50 text-green-700 border border-green-200">
                                                 <CheckCircle2 className="w-3 h-3" /> Finalized
                                             </span>
                                         </div>
                                         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
-                                            {project.country && (
+                                            {details.country && (
                                                 <div>
                                                     <span className="text-gray-400">Country: </span>
-                                                    <span className="font-semibold text-gray-700 uppercase">{project.country}</span>
+                                                    <span className="font-semibold text-gray-700 uppercase">{details.country}</span>
                                                 </div>
                                             )}
                                             <div>
                                                 <span className="text-gray-400">Language: </span>
-                                                <span className="font-semibold text-gray-700 uppercase">{formatLanguages(project)}</span>
+                                                <span className="font-semibold text-gray-700 uppercase">{formatLanguages(details)}</span>
                                             </div>
-                                            {project.backlinks_category && (
+                                            {details.backlinks_category && (
                                                 <div>
                                                     <span className="text-gray-400">Category: </span>
-                                                    <span className="font-semibold text-purple-700">{project.backlinks_category}</span>
+                                                    <span className="font-semibold text-purple-700">{details.backlinks_category}</span>
                                                 </div>
                                             )}
                                             <div>

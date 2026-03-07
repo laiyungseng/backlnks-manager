@@ -1,25 +1,36 @@
-import { supabase } from '@/lib/supabase';
+'use client';
+
+import { useState, useEffect } from 'react';
 import PlacementCard from './PlacementCard';
-export const revalidate = 0; // Always fresh
 
-export default async function PlacementsMonitoringPage() {
-    // 1. Fetch projects with their projects_hub data (hash, targets, staging) and placements
-    const { data: projects, error } = await supabase
-        .from('projects')
-        .select(`
-            id,
-            user,
-            created_date,
-            complete_date,
-            project_details,
-            projects_hub ( hash, vendor_staging_data, completed_at, is_locked, targets ),
-            placements ( id )
-        `)
-        .order('created_date', { ascending: false });
+export default function PlacementsMonitoringPage() {
+    const [projects, setProjects] = useState([]);
+    const [isLoading, setIsLoading] = useState(true);
 
-    if (error) {
-        console.error("Placements DB fetch error:", error);
-    }
+    useEffect(() => {
+        // Use SSE stream for real-time updates without leaking Supabase keys
+        const eventSource = new EventSource('/api/realtime/dashboard');
+
+        eventSource.addEventListener('projects', (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                console.log('[SSE] Dashboard update received');
+                setProjects(data || []);
+                setIsLoading(false);
+            } catch (err) {
+                console.error('[SSE] Parse error:', err);
+            }
+        });
+
+        eventSource.addEventListener('error', (event) => {
+            console.error('[SSE] Connection error:', event);
+            // Optionally implement reconnection logic or fallback fetch
+        });
+
+        return () => {
+            eventSource.close();
+        };
+    }, []);
 
     // Filter: Only show projects that have NOT been uploaded to the placements table yet and ARE approved
     const activeProjects = (projects || []).filter(p => {
@@ -28,12 +39,21 @@ export default async function PlacementsMonitoringPage() {
         return details.is_approved === true && details.status !== 'Finalized' && !hasPlacements;
     });
 
+    if (isLoading && projects.length === 0) {
+        return (
+            <div className="max-w-7xl mx-auto py-20 text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
+                <p className="mt-4 text-gray-500 font-medium">Connecting to live placement feed...</p>
+            </div>
+        );
+    }
+
     return (
         <div className="max-w-7xl mx-auto space-y-10 pb-20">
             <div>
                 <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Active Placements</h1>
                 <p className="mt-2 text-sm text-gray-500">
-                    High-level target fulfillment monitoring. Projects here have not yet been finalized and uploaded to the database.
+                    High-level target fulfillment monitoring. Projects here update in real-time as vendors enter data.
                 </p>
             </div>
 

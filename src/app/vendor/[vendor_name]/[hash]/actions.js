@@ -70,7 +70,17 @@ export async function saveVendorProgress(hash, payload) {
         // --- WORKFLOW 3 REWORK: STATUS CALCULATION ON VIRTUAL JSON ---
         const targetProjectId = projectList.project_id;
         if (targetProjectId) {
-            const newStatus = completedCount === totalQuantity ? 'Completed' : 'Inprogress';
+            // Recalculate based on target quantities instead of just validRows
+            const targetsData = await supabase.from('projects_hub').select('targets').eq('hash', hash).single();
+            const hubTargets = targetsData.data?.targets || [];
+
+            // Assume 1 target link per row if hubTargets unspecified
+            const totalLinksOrdered = hubTargets.length > 0
+                ? hubTargets.reduce((acc, t) => acc + (parseInt(t.quantity || '0', 10)), 0)
+                : completedCount; // Fallback to completed count if completely missing
+
+            // True completion is when uploaded valid links >= ordered quantity
+            const newStatus = completedCount >= totalLinksOrdered && totalLinksOrdered > 0 ? 'Completed' : 'Inprogress';
 
             const { data: proj } = await supabase.from('projects').select('project_details, complete_date').eq('id', targetProjectId).single();
             if (proj && proj.project_details && proj.project_details.length > 0) {
@@ -78,8 +88,11 @@ export async function saveVendorProgress(hash, payload) {
                 details[0].status = newStatus;
 
                 const dbUpdatePayload = { project_details: details };
-                if (newStatus === 'Completed' && !proj.complete_date) {
-                    dbUpdatePayload.complete_date = new Date().toISOString();
+                if (newStatus === 'Completed') {
+                    const nowIso = new Date().toISOString();
+                    if (!proj.complete_date) {
+                        dbUpdatePayload.complete_date = nowIso;
+                    }
                 }
 
                 await supabase

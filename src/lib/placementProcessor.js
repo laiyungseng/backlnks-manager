@@ -60,24 +60,26 @@ export async function normalizeProjectData(projectHash) {
         const targetVendorId = await (async () => {
             const { data: existingVendor } = await supabase
                 .from('vendors')
-                .select('id, vendor_name, created_at')
-                .eq('vendor_name', vendorName)
-                .single();
+                .select('id, vendor_details, created_at')
+                .filter('vendor_details', 'cs', `[{"vendor_name": "${vendorName}"}]`)
+                .maybeSingle();
 
             if (existingVendor) {
-                const { error: vendorUpdateErr } = await supabase
-                    .from('vendors')
-                    .update({ updated_at: nowIso })
-                    .eq('id', existingVendor.id);
-                if (vendorUpdateErr) throw new Error(`Vendors Update Error: ${vendorUpdateErr.message}`);
                 return existingVendor.id;
             } else {
                 const { data: newV, error: vendorInsertErr } = await supabase
                     .from('vendors')
                     .insert({
-                        vendor_name: vendorName,
-                        created_at: nowIso,
-                        updated_at: nowIso
+                        vendor_details: [{
+                            vendor_name: vendorName,
+                            contact: null,
+                            product_types: null,
+                            performance: null,
+                            price: null,
+                            quality: null,
+                            option_stock: null,
+                            max_discount_pct: null
+                        }]
                     })
                     .select('id')
                     .single();
@@ -109,30 +111,89 @@ export async function normalizeProjectData(projectHash) {
                 }
             }
 
-            const domainsToUpsert = Array.from(uniqueDomainsSet).map(domain => ({
-                domain_url: domain,
-                vendor_id: targetVendorId,
-                last_checked_at: nowIso
+            const uniqueDomainList = Array.from(uniqueDomainsSet);
+            if (uniqueDomainList.length === 0) return new Map();
+
+            // 1. Fetch existing domains for these URLs
+            let existingDomains = [];
+            const { data: extD, error: fetchErr } = await supabase
+                .from('domains')
+                .select('id, domain_details');
+
+            if (fetchErr) throw new Error(`Existing Domains Fetch Error: ${fetchErr.message}`);
+
+            // Filter in JS to find matching ones by hostname
+            existingDomains = (extD || []).filter(d => {
+                const details = Array.isArray(d.domain_details) ? d.domain_details[0] : d.domain_details;
+                const domainUrl = details?.domain_url || '';
+                try {
+                    // Try to compare as hostnames
+                    const dbHost = domainUrl.includes('://') ? new URL(domainUrl).hostname : domainUrl;
+                    return uniqueDomainsSet.has(dbHost);
+                } catch (e) {
+                    return uniqueDomainsSet.has(domainUrl);
+                }
+            });
+
+            const existingUrls = new Set(existingDomains.map(d => {
+                const details = Array.isArray(d.domain_details) ? d.domain_details[0] : d.domain_details;
+                return details?.domain_url;
             }));
 
-            let allUpsertedDomains = [];
-            const chunkSize = 1000;
-            for (let i = 0; i < domainsToUpsert.length; i += chunkSize) {
-                const chunk = domainsToUpsert.slice(i, i + chunkSize);
-                const { data: dData, error: domainsErr } = await supabase
-                    .from('domains')
-                    .upsert(chunk, {
-                        onConflict: 'domain_url',
-                        ignoreDuplicates: false
-                    })
-                    .select('id, domain_url');
+            // 2. Prepare ALL domains (new and existing) to be upserted to ensure vendor_id link
+            const domainsToUpsert = uniqueDomainList.map(url => {
+                const existing = (existingDomains || []).find(d => {
+                    const details = Array.isArray(d.domain_details) ? d.domain_details[0] : d.domain_details;
+                    return (details?.domain_url === url);
+                });
 
-                if (domainsErr) throw new Error(`Domains Upsert Error (Chunk ${i}): ${domainsErr.message}`);
-                allUpsertedDomains = allUpsertedDomains.concat(dData || []);
+                if (existing) {
+                    return {
+                        id: existing.id,
+                        vendor_id: targetVendorId,
+                        domain_details: existing.domain_details
+                        // Notice created_at is strictly omitted here to avoid overriding existing dates.
+                    };
+                } else {
+                    return {
+                        domain_details: [{
+                            domain_url: url,
+                            DR: null,
+                            Traffic: null,
+                            Domain_age: null,
+                            Spam_Score: null,
+                            Last_checked_at: nowIso
+                        }],
+                        vendor_id: targetVendorId,
+                        created_at: createdAt || nowIso // Explicitly pass project created_at onto new domains
+                    };
+                }
+            });
+
+            // 3. Upsert domains
+            let allUpsertedDomains = [];
+            if (domainsToUpsert.length > 0) {
+                const chunkSize = 1000;
+                for (let i = 0; i < domainsToUpsert.length; i += chunkSize) {
+                    const chunk = domainsToUpsert.slice(i, i + chunkSize);
+                    const { data: dData, error: domainsErr } = await supabase
+                        .from('domains')
+                        .upsert(chunk, { onConflict: 'id' })
+                        .select('id, domain_details');
+
+                    if (domainsErr) {
+                        console.error('Domains Upsert Error Object:', domainsErr);
+                        throw new Error(`Domains Upsert Error (Chunk ${i}): ${domainsErr.message}${domainsErr.details ? ' - ' + domainsErr.details : ''}`);
+                    }
+                    allUpsertedDomains = allUpsertedDomains.concat(dData || []);
+                }
             }
 
-            // Map domains explicitly for memory binding
-            return new Map(allUpsertedDomains.map(d => [d.domain_url, d.id]));
+            // 4. Map domains explicitly for memory binding
+            return new Map(allUpsertedDomains.map(d => {
+                const details = Array.isArray(d.domain_details) ? d.domain_details[0] : d.domain_details;
+                return [details.domain_url, d.id];
+            }));
         })();
 
         // -------------------------------------------------------------
@@ -189,8 +250,6 @@ export async function normalizeProjectData(projectHash) {
                     indexed_checked_at: null,
                     last_vendor_update_at: nowIso,
                     notes: row.remark || null, // Maps the user UI 'remark' directly to DB 'notes'
-                    created_at: nowIso,
-                    updated_at: nowIso,
                     country: projectRow.projects?.country || null,
                     category: projectRow.projects?.backlinks_category ? [projectRow.projects.backlinks_category] : null,
                     vendor_token: projectHash
@@ -211,9 +270,23 @@ export async function normalizeProjectData(projectHash) {
         // -------------------------------------------------------------
         // PRIORITY 4: FINALIZE PROJECT
         // -------------------------------------------------------------
+        // Fetch current project_details first
+        const { data: projData, error: projErr } = await supabase
+            .from('projects')
+            .select('project_details')
+            .eq('id', projectUUID)
+            .single();
+
+        if (projErr) throw new Error(`Project fetch error for finalize: ${projErr.message}`);
+
+        const projDetails = projData.project_details || [];
+        if (projDetails.length > 0) {
+            projDetails[0].status = 'Finalized';
+        }
+
         const { error: finalizeErr } = await supabase
             .from('projects')
-            .update({ status: 'Finalized' })
+            .update({ project_details: projDetails })
             .eq('id', projectUUID);
 
         if (finalizeErr) throw new Error(`Project finalize error: ${finalizeErr.message}`);

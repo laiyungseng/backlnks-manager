@@ -11,33 +11,8 @@ export default function PlacementCard({ project, representativeHash }) {
     // Default to collapsed to keep the dashboard clean
     const [isCollapsed, setIsCollapsed] = useState(true);
 
-    // Manage live data locally to trigger re-renders
-    const [localStagingData, setLocalStagingData] = useState(project.projects_hub?.[0]?.vendor_staging_data || []);
-
     const details = project.project_details?.[0] || {};
-
-    // Real-time listener for this specific project
-    useEffect(() => {
-        if (!representativeHash || !supabase) return;
-
-        const channel = supabase.channel(`placement-card-${project.id}`)
-            .on(
-                'postgres_changes',
-                { event: 'UPDATE', schema: 'public', table: 'projects_hub' },
-                (payload) => {
-                    // Only update if the hash exactly matches our project's vendor link hash
-                    if (payload.new.hash === representativeHash) {
-                        console.log(`Live update received for project ${project.id}`);
-                        setLocalStagingData(payload.new.vendor_staging_data || []);
-                    }
-                }
-            )
-            .subscribe();
-
-        return () => {
-            if (supabase) supabase.removeChannel(channel);
-        };
-    }, [project.id, representativeHash]);
+    const localStagingData = project.projects_hub?.[0]?.vendor_staging_data || [];
 
     // Live computational function to build target summaries securely
     function buildTargetSummary() {

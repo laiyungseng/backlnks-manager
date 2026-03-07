@@ -13,7 +13,10 @@ export default function DomainsManager() {
     const [isSaving, setIsSaving] = useState(false);
     const [lastSavedAt, setLastSavedAt] = useState(null);
     const [feedback, setFeedback] = useState({ type: '', message: '' });
-    const [isDirty, setIsDirty] = useState(false);
+
+    // Edit Mode & Change Tracking
+    const [isEditMode, setIsEditMode] = useState(false);
+    const [dirtyRows, setDirtyRows] = useState(new Set());
 
     // Filtering states
     const [isFilterActive, setIsFilterActive] = useState(false);
@@ -28,48 +31,51 @@ export default function DomainsManager() {
         fetchDomains();
     }, []);
 
-    // Auto-save effect
-    useEffect(() => {
-        if (!isDirty) return;
-
-        const timer = setTimeout(() => {
-            handleSave(true);
-        }, 1500);
-
-        return () => clearTimeout(timer);
-    }, [domains, isDirty]);
-
     const fetchDomains = async () => {
+        setIsLoading(true);
         const result = await getDomains();
         if (result.success) {
             setDomains(result.domains || []);
             setVendorOptions(result.vendorOptions || []);
+            setDirtyRows(new Set());
         } else {
             showFeedback('error', result.message || 'Failed to load domains');
         }
         setIsLoading(false);
     };
 
-    const handleSave = async (isAutoSave = false) => {
-        if (!isDirty) return;
-        setIsSaving(true);
-        if (!isAutoSave) setFeedback({ type: '', message: '' });
+    const handleSave = async () => {
+        if (dirtyRows.size === 0) {
+            setIsEditMode(false);
+            return;
+        }
 
-        const result = await saveDomains(domains);
+        setIsSaving(true);
+        setFeedback({ type: '', message: '' });
+
+        // Only save rows that were actually modified
+        const rowsToSave = domains.filter((_, idx) => dirtyRows.has(idx));
+        const result = await saveDomains(rowsToSave);
 
         if (result.success) {
-            if (!isAutoSave) showFeedback('success', 'Changes saved successfully.');
+            showFeedback('success', 'Changes saved successfully.');
             setLastSavedAt(new Date());
-            setIsDirty(false);
+            setDirtyRows(new Set());
+            setIsEditMode(false);
 
-            // Refresh list to grab any generated UUIDs for new records if necessary
-            if (domains.some(v => v.id && v.id.startsWith('new_'))) {
-                await fetchDomains();
-            }
+            // Refresh list to grab any generated UUIDs for new records and sync state
+            await fetchDomains();
         } else {
             showFeedback('error', result.message || 'Failed to save.');
         }
         setIsSaving(false);
+    };
+
+    const handleCancelEdit = () => {
+        if (dirtyRows.size > 0 && !confirm('Discard unsaved changes?')) return;
+        setIsEditMode(false);
+        setDirtyRows(new Set());
+        fetchDomains(); // Revert to DB state
     };
 
     const handleDeleteSelected = async () => {
@@ -77,11 +83,9 @@ export default function DomainsManager() {
         let rowsToDelete = [];
 
         if (selection?.rows) {
-            const ranges = selection.rows.toArray();
-            for (const [start, end] of ranges) {
-                for (let i = start; i < end; i++) {
-                    rowsToDelete.push(i);
-                }
+            const indices = selection.rows.toArray();
+            for (const idx of indices) {
+                rowsToDelete.push(idx);
             }
         } else if (selection?.current) {
             const { y, height } = selection.current.range;
@@ -94,8 +98,13 @@ export default function DomainsManager() {
             return showFeedback('error', 'Select rows to delete.');
         }
 
+        if (!confirm(`Are you sure you want to delete ${rowsToDelete.length} row(s)?`)) return;
+
+        // Map row indices to IDs
         const domainIdsToDelete = rowsToDelete.map(idx => filteredDomains[idx]?.id).filter(Boolean);
-        const rowsRemaining = domains.filter(d => !domainIdsToDelete.includes(d.id));
+
+        // If the user selects a new, unsaved row, just remove it from state locally
+        const rowsRemaining = domains.filter(v => !domainIdsToDelete.includes(v.id));
 
         setIsSaving(true);
         const result = await deleteDomains(domainIdsToDelete);
@@ -104,27 +113,26 @@ export default function DomainsManager() {
             setDomains(rowsRemaining);
             setSelection(undefined);
             showFeedback('success', result.message);
+            // Sync dirty rows after deletion
+            setDirtyRows(new Set());
         } else {
             showFeedback('error', result.message);
         }
         setIsSaving(false);
     };
 
-    const handleAddRow = () => {
-        const newRow = {
-            id: `new_${Date.now()}`,
-            vendor_id: null,
-            vendors: null, // joined relation mock
-            domain_url: '',
-            domain_rating: null,
-            traffic: null,
-            domain_age: null,
-            spam_score: null,
-            last_checked_at: null
-        };
-        setDomains([newRow, ...domains]);
-        setIsDirty(true);
-    };
+    // Create a blank row template
+    const createNewRow = () => ({
+        id: `new_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        vendor_id: null,
+        vendors: null,
+        domain_url: '',
+        domain_rating: null,
+        traffic: null,
+        domain_age: null,
+        spam_score: null,
+        last_checked_at: new Date().toISOString()
+    });
 
     const showFeedback = (type, message) => {
         setFeedback({ type, message });
@@ -144,16 +152,13 @@ export default function DomainsManager() {
         };
 
         return {
-            domain_name: buildUnique('domain_name'),
+            domain_url: buildUnique('domain_url'),
             vendor_id: buildUnique('vendor_id'),
-            da_score: buildUnique('da_score'),
-            dr_score: buildUnique('dr_score'),
-            traffic_monthly: buildUnique('traffic_monthly'),
-            niche: buildUnique('niche'),
-            price_usd: buildUnique('price_usd'),
-            turnaround_days: buildUnique('turnaround_days'),
-            status: buildUnique('status'),
-            remark: buildUnique('remark')
+            domain_rating: buildUnique('domain_rating'),
+            traffic: buildUnique('traffic'),
+            domain_age: buildUnique('domain_age'),
+            spam_score: buildUnique('spam_score'),
+            last_checked_at: buildUnique('last_checked_at')
         };
     }, [domains, vendorOptions]);
 
@@ -192,14 +197,25 @@ export default function DomainsManager() {
 
     const getCellContent = useCallback((cell) => {
         const [col, row] = cell;
-        const dataRow = filteredDomains[row];
-
-        if (!dataRow) {
-            return { kind: GridCellKind.Text, data: "", displayData: "", allowOverlay: false };
-        }
-
         const colDef = columns[col];
         const field = colDef.id;
+
+        // Trailing Row for new data entry
+        if (row === filteredDomains.length) {
+            return {
+                kind: GridCellKind.Text,
+                data: "",
+                displayData: "",
+                allowOverlay: true,
+                readonly: false,
+                placeholder: `+ Add ${colDef.title}`
+            };
+        }
+
+        const dataRow = filteredDomains[row];
+        if (!dataRow) {
+            return { kind: GridCellKind.Text, data: "", displayData: "", allowOverlay: false, readonly: true };
+        }
 
         if (field === 'vendor_id') {
             // Map the vendor_id UUID to vendor_name
@@ -218,9 +234,10 @@ export default function DomainsManager() {
 
             return {
                 kind: GridCellKind.Text,
-                allowOverlay: true,
+                allowOverlay: isEditMode,
                 data: displayVendor,
-                displayData: displayVendor
+                displayData: displayVendor,
+                readonly: !isEditMode
             };
         }
 
@@ -233,22 +250,17 @@ export default function DomainsManager() {
             kind: GridCellKind.Text,
             data: val,
             displayData: val,
-            allowOverlay: true,
-            contentAlign: isNumber ? 'right' : 'left'
+            allowOverlay: isEditMode,
+            contentAlign: isNumber ? 'right' : 'left',
+            readonly: !isEditMode
         };
-    }, [filteredDomains, columns, vendorOptions]);
+    }, [filteredDomains, columns, vendorOptions, isEditMode]);
 
     const onCellEdited = useCallback((cell, newValue) => {
+        if (!isEditMode) return;
         const [col, row] = cell;
-        const dataRow = filteredDomains[row];
-        if (!dataRow) return;
-
         const colDef = columns[col];
         const field = colDef.id;
-
-        const originalIdx = domains.findIndex(d => d.id === dataRow.id);
-        if (originalIdx === -1) return;
-
         let valToSet = newValue.data;
 
         // If modifying vendor relationship from custom dropdown format
@@ -267,9 +279,33 @@ export default function DomainsManager() {
             }
         }
 
+        // Detection for new row entry (trailing row)
+        if (row === filteredDomains.length) {
+            const newRow = createNewRow();
+            newRow[field] = valToSet;
+
+            setDomains(prev => {
+                const updated = [...prev, newRow];
+                setDirtyRows(d => new Set(d).add(updated.length - 1));
+                return updated;
+            });
+            return;
+        }
+
+        const dataRow = filteredDomains[row];
+        if (!dataRow) return;
+
+        const originalIdx = domains.findIndex(d => d.id === dataRow.id);
+        if (originalIdx === -1) return;
+
         setDomains(prev => {
             const newRows = [...prev];
-            let updatedRow = { ...newRows[originalIdx], [field]: valToSet };
+            // Auto-update Last Checked At when any field changes
+            let updatedRow = {
+                ...newRows[originalIdx],
+                [field]: valToSet,
+                last_checked_at: new Date().toISOString()
+            };
 
             // Update the joined object visually for grid render without server roundtrip
             if (field === 'vendor_id') {
@@ -281,12 +317,18 @@ export default function DomainsManager() {
             return newRows;
         });
 
-        setIsDirty(true);
-    }, [filteredDomains, columns, domains, vendorOptions]);
+        setDirtyRows(prev => {
+            const next = new Set(prev);
+            next.add(originalIdx);
+            return next;
+        });
+    }, [filteredDomains, columns, domains, vendorOptions, isEditMode]);
 
     const onPaste = useCallback((target, values) => {
+        if (!isEditMode) return false;
         const [x, y] = target;
         let hasChanges = false;
+        const addedDirtyIndices = new Set();
 
         setDomains(prevRows => {
             const newRows = [...prevRows];
@@ -295,10 +337,18 @@ export default function DomainsManager() {
                 const rowData = values[rIndex];
                 const targetRow = y + rIndex;
 
-                if (targetRow >= filteredDomains.length) continue;
+                let originalIdx;
 
-                const dataRow = filteredDomains[targetRow];
-                const originalIdx = newRows.findIndex(d => d.id === dataRow.id);
+                // If the paste goes beyond current rows, auto-expand
+                if (targetRow >= newRows.length) {
+                    const newRow = createNewRow();
+                    newRows.push(newRow);
+                    originalIdx = newRows.length - 1;
+                } else {
+                    const dataRow = filteredDomains[targetRow] || newRows[targetRow];
+                    originalIdx = newRows.findIndex(d => d.id === dataRow.id);
+                }
+
                 if (originalIdx === -1) continue;
 
                 let updatedRow = { ...newRows[originalIdx] };
@@ -310,7 +360,8 @@ export default function DomainsManager() {
 
                     if (targetCol >= columns.length) continue;
 
-                    const field = columns[targetCol].id;
+                    const colDef = columns[targetCol];
+                    const field = colDef.id;
 
                     if (field === 'vendor_id') {
                         const matchedVendor = vendorOptions.find(v => v.vendor_name.toLowerCase() === valToSet.toLowerCase());
@@ -329,18 +380,27 @@ export default function DomainsManager() {
                 if (rowHasChanges) {
                     newRows[originalIdx] = updatedRow;
                     hasChanges = true;
+                    addedDirtyIndices.add(originalIdx);
                 }
             }
             return newRows;
         });
 
-        if (hasChanges) setIsDirty(true);
+        if (hasChanges) {
+            setDirtyRows(prev => {
+                const next = new Set(prev);
+                addedDirtyIndices.forEach(idx => next.add(idx));
+                return next;
+            });
+        }
         return true;
-    }, [filteredDomains, columns, domains, vendorOptions]);
+    }, [filteredDomains, columns, vendorOptions, isEditMode]);
 
     const onDelete = useCallback((selection) => {
+        if (!isEditMode) return true;
         if (!selection || (!selection.current && !selection.rows && !selection.columns)) return true;
 
+        const addedDirtyIndices = new Set();
         setDomains(prevRows => {
             const newRows = [...prevRows];
             let hasChanges = false;
@@ -364,10 +424,14 @@ export default function DomainsManager() {
                         const colDef = columns[colIdx];
                         if (!colDef) continue;
 
-                        const field = colDef.id;
-                        updatedRow[field] = field === 'domain_rating' || field === 'traffic' || field === 'domain_age' || field === 'spam_score' ? null : '';
+                        // Clear the cell content based on type
+                        if (['domain_rating', 'traffic', 'domain_age', 'spam_score'].includes(colDef.id)) {
+                            updatedRow[colDef.id] = null;
+                        } else {
+                            updatedRow[colDef.id] = '';
+                        }
 
-                        if (field === 'vendor_id') {
+                        if (colDef.id === 'vendor_id') {
                             updatedRow.vendors = null;
                         }
                         rowChanged = true;
@@ -376,16 +440,24 @@ export default function DomainsManager() {
                     if (rowChanged) {
                         newRows[originalIdx] = updatedRow;
                         hasChanges = true;
+                        addedDirtyIndices.add(originalIdx);
                     }
                 }
             }
 
-            if (hasChanges) setTimeout(() => setIsDirty(true), 0);
             return newRows;
         });
 
+        if (addedDirtyIndices.size > 0) {
+            setDirtyRows(prev => {
+                const next = new Set(prev);
+                addedDirtyIndices.forEach(idx => next.add(idx));
+                return next;
+            });
+        }
+
         return true;
-    }, [filteredDomains, columns]);
+    }, [filteredDomains, columns, isEditMode]);
 
     const onKeyDown = useCallback((event) => {
         if (event.key === 'Backspace' && selection && (selection.current || selection.rows || selection.columns)) {
@@ -409,13 +481,31 @@ export default function DomainsManager() {
                     <p className="text-gray-500 text-sm mt-1">Manage all publisher domains, metrics, and map them to existing vendors.</p>
                 </div>
                 <div className="flex gap-3">
-                    <button
-                        onClick={handleAddRow}
-                        className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-md font-medium text-sm hover:bg-indigo-700 transition"
-                    >
-                        <Globe className="w-4 h-4" />
-                        Add Domain
-                    </button>
+                    {isEditMode ? (
+                        <>
+                            <button
+                                onClick={handleCancelEdit}
+                                className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-md font-medium text-sm hover:bg-gray-50 transition"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleSave}
+                                disabled={isSaving}
+                                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md font-medium text-sm hover:bg-green-700 transition disabled:opacity-50"
+                            >
+                                <Save className="w-4 h-4" />
+                                {isSaving ? 'Saving...' : 'Save Changes'}
+                            </button>
+                        </>
+                    ) : (
+                        <button
+                            onClick={() => setIsEditMode(true)}
+                            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-md font-medium text-sm hover:bg-indigo-700 transition"
+                        >
+                            Edit Mode
+                        </button>
+                    )}
                     {(selection?.rows || selection?.current) && (
                         <button
                             onClick={handleDeleteSelected}
@@ -447,22 +537,30 @@ export default function DomainsManager() {
                         {isFilterActive ? 'Filters Active' : 'Enable Filters'}
                     </button>
 
-                    <div className="flex items-center gap-2 bg-white px-4 py-2 border border-gray-200 rounded-md shadow-sm">
-                        {isSaving ? (
-                            <>
-                                <RefreshCw className="w-4 h-4 animate-spin text-indigo-500" />
-                                <span className="text-sm font-medium text-indigo-700">Auto-saving...</span>
-                            </>
-                        ) : lastSavedAt ? (
-                            <>
-                                <CheckCircle2 className="w-4 h-4 text-green-500" />
-                                <span className="text-sm font-medium text-green-700">
-                                    Saved: {lastSavedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                                </span>
-                            </>
-                        ) : (
-                            <span className="text-sm font-medium text-gray-400">All changes saved.</span>
+                    {/* Status Badge */}
+                    <div className="flex items-center gap-4">
+                        {isEditMode && (
+                            <span className="text-xs font-bold text-indigo-600 uppercase tracking-widest animate-pulse">
+                                Edit Mode Active ({dirtyRows.size} changes)
+                            </span>
                         )}
+                        <div className="flex items-center gap-2 bg-white px-4 py-2 border border-gray-200 rounded-md shadow-sm">
+                            {isSaving ? (
+                                <>
+                                    <RefreshCw className="w-4 h-4 animate-spin text-indigo-500" />
+                                    <span className="text-sm font-medium text-indigo-700">Saving...</span>
+                                </>
+                            ) : lastSavedAt ? (
+                                <>
+                                    <CheckCircle2 className="w-4 h-4 text-green-500" />
+                                    <span className="text-sm font-medium text-green-700">
+                                        Last Saved: {lastSavedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                    </span>
+                                </>
+                            ) : (
+                                <span className="text-sm font-medium text-gray-400">Database Synced</span>
+                            )}
+                        </div>
                     </div>
                 </div>
 
@@ -498,11 +596,12 @@ export default function DomainsManager() {
                 {/* Grid Content */}
                 <div className="flex-1 w-full bg-white relative z-0">
                     <DataEditor
+                        key={isEditMode}
                         width="100%"
                         height="100%"
                         getCellContent={getCellContent}
                         columns={columns}
-                        rows={filteredDomains.length}
+                        rows={filteredDomains.length + (isEditMode ? 1 : 0)}
                         onCellEdited={onCellEdited}
                         onDelete={onDelete}
                         onGridSelectionChange={setSelection}
@@ -513,7 +612,6 @@ export default function DomainsManager() {
                         smoothScrollY={true}
                         rowMarkers="both"
                         keybindings={{ search: true }}
-                        provideEditor={true} // In Glide Data Editor, custom dropdowns require this or proper cell mapping
                     />
                 </div>
                 <div className="px-6 py-3 bg-gray-50 border-t border-gray-200 text-xs font-medium text-gray-500 shrink-0">

@@ -20,22 +20,13 @@ export default async function VendorInProgressPage({ params }) {
         .from('projects')
         .select(`
             id,
-            project_name,
-            vendor_name,
-            status,
-            country,
-            language,
-            languages,
-            backlinks_category,
-            quantity,
-            deadline,
-            dripfeed_enabled,
-            urls_per_day,
+            project_details,
+            created_date,
             projects_hub ( hash, vendor_staging_data, is_locked, targets ),
             placements ( id )
         `)
-        .ilike('vendor_name', vendorName.replace(/-/g, '%'))
-        .order('created_at', { ascending: false });
+        .ilike('project_details->>vendor_name', vendorName.replace(/-/g, '%'))
+        .order('created_date', { ascending: false });
 
     if (error) {
         console.error('Vendor InProgress fetch error:', error);
@@ -44,19 +35,21 @@ export default async function VendorInProgressPage({ params }) {
     // Filter: only show non-finalized, non-completed projects
     const activeProjects = (projects || []).filter(p => {
         const hasPlacements = p.placements && p.placements.length > 0;
-        return p.status !== 'Finalized' && !hasPlacements;
+        const details = p.project_details?.[0] || {};
+        return details.status !== 'Finalized' && !hasPlacements;
     });
 
     // Helper to format language display
-    const formatLanguages = (project) => {
-        if (Array.isArray(project.languages) && project.languages.length > 0) {
-            return project.languages.map(l => `${l.code} (${l.ratio}%)`).join(', ');
+    const formatLanguages = (details) => {
+        const languages = details['languages-ratio'];
+        if (Array.isArray(languages) && languages.length > 0) {
+            return languages.map(l => `${l['lang-code']} (${l.ratio}%)`).join(', ');
         }
-        return project.language ? `${project.language} (100%)` : '—';
+        return details.language ? `${details.language} (100%)` : '—';
     };
 
     // Helper to calculate progress
-    const getProgress = (project) => {
+    const getProgress = (project, details) => {
         const hub = project.projects_hub?.[0] || {};
         const stagingData = Array.isArray(hub.vendor_staging_data) ? hub.vendor_staging_data : [];
         const hubTargets = Array.isArray(hub.targets) ? hub.targets : [];
@@ -65,7 +58,7 @@ export default async function VendorInProgressPage({ params }) {
 
         const total = hubTargets.length > 0
             ? hubTargets.reduce((acc, t) => acc + (parseInt(t.quantity || '0', 10)), 0)
-            : parseInt(project.quantity || '0', 10);
+            : parseInt(details.quantity || '0', 10);
 
         return { completed, total, percent: total > 0 ? Math.round((completed / total) * 100) : 0 };
     };
@@ -82,40 +75,41 @@ export default async function VendorInProgressPage({ params }) {
             <div className="space-y-6">
                 {activeProjects.length > 0 ? (
                     activeProjects.map((project) => {
+                        const details = project.project_details?.[0] || {};
                         const hash = project.projects_hub?.[0]?.hash;
-                        const progress = getProgress(project);
+                        const progress = getProgress(project, details);
 
                         return (
                             <div key={project.id} className="bg-white rounded-xl shadow-sm ring-1 ring-gray-200 overflow-hidden hover:shadow-md transition-shadow">
                                 <div className="px-6 py-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                                     <div className="flex-1">
-                                        <h2 className="text-lg font-bold text-gray-900">{project.project_name}</h2>
+                                        <h2 className="text-lg font-bold text-gray-900">{details.project_name || 'Unnamed Project'}</h2>
                                         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
                                             <div>
                                                 <span className="text-gray-400">Status: </span>
-                                                <span className="font-semibold text-yellow-700">{project.status}</span>
+                                                <span className="font-semibold text-yellow-700">{details.status || 'In Progress'}</span>
                                             </div>
-                                            {project.country && (
+                                            {details.country && (
                                                 <div>
                                                     <span className="text-gray-400">Country: </span>
-                                                    <span className="font-semibold text-gray-700 uppercase">{project.country}</span>
+                                                    <span className="font-semibold text-gray-700 uppercase">{details.country}</span>
                                                 </div>
                                             )}
                                             <div>
                                                 <span className="text-gray-400">Language: </span>
-                                                <span className="font-semibold text-gray-700 uppercase">{formatLanguages(project)}</span>
+                                                <span className="font-semibold text-gray-700 uppercase">{formatLanguages(details)}</span>
                                             </div>
-                                            {project.backlinks_category && (
+                                            {details.backlinks_category && (
                                                 <div>
                                                     <span className="text-gray-400">Category: </span>
-                                                    <span className="font-semibold text-purple-700">{project.backlinks_category}</span>
+                                                    <span className="font-semibold text-purple-700">{details.backlinks_category}</span>
                                                 </div>
                                             )}
-                                            {project.deadline && (
+                                            {details.deadline && (
                                                 <div className="flex items-center gap-1">
                                                     <Clock className="w-3 h-3 text-red-500" />
                                                     <span className="text-gray-400">Deadline: </span>
-                                                    <span className="font-semibold text-red-600">{new Date(project.deadline).toLocaleDateString()}</span>
+                                                    <span className="font-semibold text-red-600">{new Date(details.deadline).toLocaleDateString()}</span>
                                                 </div>
                                             )}
                                             <div>

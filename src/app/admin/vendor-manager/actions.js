@@ -14,15 +14,21 @@ export async function getVendors() {
     try {
         const { data, error } = await supabase
             .from('vendors')
-            .select('*')
-            .order('created_at', { ascending: false });
+            .select('id, vendor_details')
+            .order('id', { ascending: false });
 
         if (error) {
             console.error('Error fetching vendors:', error);
             return { success: false, message: error.message };
         }
 
-        return { success: true, vendors: data };
+        // Flatten vendor_details for the frontend if it's an array
+        const vendors = data.map(v => ({
+            id: v.id,
+            ...(Array.isArray(v.vendor_details) ? v.vendor_details[0] : (v.vendor_details || {}))
+        }));
+
+        return { success: true, vendors };
     } catch (e) {
         console.error('Unexpected error in getVendors:', e);
         return { success: false, message: 'An unexpected error occurred.' };
@@ -35,24 +41,38 @@ export async function saveVendors(rows) {
     }
 
     try {
-        const rowsToUpsert = rows.map(r => {
-            const row = {
+        const rowsToUpsert = await Promise.all(rows.map(async (r) => {
+            let existingDetails = {};
+            if (r.id && !r.id.startsWith('new_')) {
+                const { data } = await supabase.from('vendors').select('vendor_details').eq('id', r.id).maybeSingle();
+                if (data?.vendor_details) {
+                    existingDetails = Array.isArray(data.vendor_details) ? data.vendor_details[0] : data.vendor_details;
+                }
+            }
+
+            const details = {
+                ...existingDetails,
                 vendor_name: r.vendor_name,
-                contact_email: r.contact_email || null,
-                contact_phone: r.contact_phone || null,
-                website: r.website || null,
-                status: r.status || 'Active',
-                remark: r.remark || null,
+                contact: r.contact !== undefined ? r.contact : existingDetails.contact,
+                product_types: r.product_types !== undefined ? r.product_types : existingDetails.product_types,
+                performance: r.performance !== undefined ? r.performance : existingDetails.performance,
+                price: r.price !== undefined ? r.price : existingDetails.price,
+                quality: r.quality !== undefined ? r.quality : existingDetails.quality,
+                option_stock: r.option_stock !== undefined ? r.option_stock : existingDetails.option_stock,
+                max_discount_pct: r.max_discount_pct !== undefined ? r.max_discount_pct : existingDetails.max_discount_pct,
+            };
+
+            const row = {
+                vendor_details: [details]
             };
 
             if (r.id && !r.id.startsWith('new_')) {
-                row.id = r.id; // Only include valid UUIDs for existing rows
+                row.id = r.id;
             }
 
             return row;
-        });
+        }));
 
-        // Upsert allows inserting new rows and updating existing ones by unique constraint (like ID)
         const { error } = await supabase
             .from('vendors')
             .upsert(rowsToUpsert, { onConflict: 'id' });

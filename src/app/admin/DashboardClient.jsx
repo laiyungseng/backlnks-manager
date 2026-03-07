@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { Trash2, CheckCircle2 } from 'lucide-react';
 import CopyButton from './CopyButton';
@@ -15,13 +15,20 @@ export default function DashboardClient({ initialProjects }) {
     const [editedProjects, setEditedProjects] = useState([]);
     const [isSaving, setIsSaving] = useState(false);
 
+    // Track recently deleted projects so old SSE polls don't resurrect them
+    const deletedIdsRef = useRef(new Set());
+
     useEffect(() => {
         const source = new EventSource('/api/realtime/dashboard');
 
         source.addEventListener('projects', (e) => {
             try {
                 const data = JSON.parse(e.data);
-                if (Array.isArray(data)) setProjects(data);
+                if (Array.isArray(data)) {
+                    // Filter out any projects we just deleted locally to prevent flicker
+                    const filteredData = data.filter(p => !deletedIdsRef.current.has(p.id));
+                    setProjects(filteredData);
+                }
             } catch {
                 // Malformed event
             }
@@ -377,10 +384,15 @@ export default function DashboardClient({ initialProjects }) {
                                                         onClick={async (e) => {
                                                             e.preventDefault();
                                                             if (confirm("Are you sure you want to delete this project?")) {
+                                                                // Optimistic UI updates
+                                                                deletedIdsRef.current.add(project.id);
                                                                 setProjects(prev => prev.filter(p => p.id !== project.id));
+
                                                                 const res = await deleteProject(project.id);
                                                                 if (!res.success) {
                                                                     alert(`Could not delete: ${res.message}`);
+                                                                    // Revert if failed
+                                                                    deletedIdsRef.current.delete(project.id);
                                                                 }
                                                             }
                                                         }}
