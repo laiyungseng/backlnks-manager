@@ -187,6 +187,13 @@ export async function normalizeProjectData(projectHash) {
                 const resolvedStatus = placementStatusMap.get(alignmentKey) || 'published';
 
                 // Architecting exactly per the Zod baclinkSchema
+                let normalizedIndexedStatus = null;
+                if (row.indexed_status) {
+                    const l = row.indexed_status.toLowerCase().trim();
+                    if (l.includes('not')) normalizedIndexedStatus = 'page_not_indexed';
+                    else if (l.includes('index')) normalizedIndexedStatus = 'page_indexed';
+                }
+
                 placementsToInsert.push({
                     project_id: projectUUID,
                     vendor_id: targetVendorId,
@@ -199,7 +206,7 @@ export async function normalizeProjectData(projectHash) {
                     published_url: row.published_url,
                     published_date: row.published_date,
                     status: resolvedStatus,
-                    indexed_status: row.indexed_status || null,
+                    indexed_status: normalizedIndexedStatus,
                     indexed_checked_at: null,
                     last_vendor_update_at: nowIso,
                     notes: row.remark || null, // Maps the user UI 'remark' directly to DB 'notes'

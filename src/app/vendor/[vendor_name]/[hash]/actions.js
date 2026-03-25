@@ -84,16 +84,63 @@ export async function saveVendorProgress(hash, payload) {
 
             const { data: proj } = await supabase.from('projects').select('status, completed_date').eq('id', targetProjectId).single();
             if (proj) {
-                const dbUpdatePayload = { status: newStatus };
+                const isFinalized = proj.status === 'Finalized';
+                const dbUpdatePayload = {};
 
-                if (newStatus === 'Completed' && !proj.completed_date) {
-                    dbUpdatePayload.completed_date = new Date().toISOString();
+                // Only auto-update status if the project is not already Finalized
+                if (!isFinalized) {
+                    dbUpdatePayload.status = newStatus;
+                    if (newStatus === 'Completed' && !proj.completed_date) {
+                        dbUpdatePayload.completed_date = new Date().toISOString();
+                    }
                 }
 
-                await supabase
-                    .from('projects')
-                    .update(dbUpdatePayload)
-                    .eq('id', targetProjectId);
+                if (Object.keys(dbUpdatePayload).length > 0) {
+                    await supabase
+                        .from('projects')
+                        .update(dbUpdatePayload)
+                        .eq('id', targetProjectId);
+                }
+
+                // SYNC COMPLETED PLACEMENTS
+                // If the project is already finalized, Admin views rely on the `placements` table.
+                // We must sync editable fields (indexed_status, remark/notes) from Vendor Staging to Placements.
+                if (isFinalized) {
+                    console.log(`[saveVendorProgress] Project is Finalized. Syncing ${validRows.length} logic rows to placements table for hash: ${hash}`);
+                    const nowIso = new Date().toISOString();
+                    let syncSuccessCount = 0;
+                    
+                    for (const row of validRows) {
+                        if (row.published_url && row.published_url.trim() !== '') {
+                            let normalizedIndexedStatus = null;
+                            if (row.indexed_status) {
+                                const l = row.indexed_status.toLowerCase().trim();
+                                if (l.includes('not')) normalizedIndexedStatus = 'page_not_indexed';
+                                else if (l.includes('index')) normalizedIndexedStatus = 'page_indexed';
+                            }
+
+                            const { data, error } = await supabase
+                                .from('placements')
+                                .update({
+                                    indexed_status: normalizedIndexedStatus,
+                                    notes: row.remark || null,
+                                    last_vendor_update_at: nowIso
+                                })
+                                .eq('vendor_token', hash)
+                                .eq('published_url', row.published_url)
+                                .select('id');
+                            
+                            if (error) {
+                                console.error(`[saveVendorProgress] Sync Error for ${row.published_url}:`, error);
+                            } else if (!data || data.length === 0) {
+                                console.warn(`[saveVendorProgress] Sync Miss: No placement found for vendor_token=${hash} and published_url=${row.published_url}`);
+                            } else {
+                                syncSuccessCount += data.length;
+                            }
+                        }
+                    }
+                    console.log(`[saveVendorProgress] Sync Complete. Updated ${syncSuccessCount} matching placements.`);
+                }
             }
         }
 

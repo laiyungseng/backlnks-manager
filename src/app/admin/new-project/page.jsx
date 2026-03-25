@@ -72,7 +72,7 @@ export default function NewProjectPage() {
             sheet_name: '',
             category: 'NULL',
             placement_target: [
-                { id: genId(), anchor_text: '', target_url: '', quantity: 1 }
+                { id: genId(), anchor_text: '', target_url: '', ratio: 100 }
             ]
         }
     ]);
@@ -98,7 +98,7 @@ export default function NewProjectPage() {
                 id: genId(),
                 sheet_name: '',
                 category: 'NULL',
-                placement_target: [{ id: genId(), anchor_text: '', target_url: '', quantity: 1 }]
+                placement_target: [{ id: genId(), anchor_text: '', target_url: '', ratio: 100 }]
             }]);
         }
     }, [state?.success, state?.hash]);
@@ -150,7 +150,7 @@ export default function NewProjectPage() {
             id: genId(),
             sheet_name: '',
             category: 'NULL',
-            placement_target: [{ id: genId(), anchor_text: '', target_url: '', quantity: 1 }]
+            placement_target: [{ id: genId(), anchor_text: '', target_url: '', ratio: 0 }]
         }]);
     };
 
@@ -169,7 +169,7 @@ export default function NewProjectPage() {
     const addTargetRow = (groupId) => {
         setProjectInfoGroups(projectInfoGroups.map(g => {
             if (g.id === groupId) {
-                return { ...g, placement_target: [...g.placement_target, { id: genId(), anchor_text: '', target_url: '', quantity: 1 }] };
+                return { ...g, placement_target: [...g.placement_target, { id: genId(), anchor_text: '', target_url: '', ratio: 0 }] };
             }
             return g;
         }));
@@ -190,7 +190,7 @@ export default function NewProjectPage() {
                 return {
                     ...g,
                     placement_target: g.placement_target.map(t =>
-                        t.id === rowId ? { ...t, [field]: field === 'quantity' ? parseInt(value) || 0 : value } : t
+                        t.id === rowId ? { ...t, [field]: field === 'ratio' ? parseInt(value) || 0 : value } : t
                     )
                 };
             }
@@ -198,13 +198,13 @@ export default function NewProjectPage() {
         }));
     };
 
-    const currentSum = useMemo(() => {
+    const targetRatioSum = useMemo(() => {
         return projectInfoGroups.reduce((acc, group) => {
-            return acc + group.placement_target.reduce((sum, row) => sum + (parseInt(row.quantity) || 0), 0);
+            return acc + group.placement_target.reduce((sum, row) => sum + (parseInt(row.ratio) || 0), 0);
         }, 0);
     }, [projectInfoGroups]);
 
-    const isValidQuantity = currentSum === masterQuantity && masterQuantity > 0;
+    const isValidTargetRatio = targetRatioSum === 100;
 
     // Derived first language for backward compat hidden field
     const firstLanguageCode = languages[0]?.code || '';
@@ -507,10 +507,10 @@ export default function NewProjectPage() {
                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end mb-6 gap-4">
                         <div>
                             <h2 className="text-lg font-bold text-gray-900">Placement Targets (Project Tasks)</h2>
-                            <p className="text-xs text-gray-500 mt-1">Group your target links by category and sheet origin. Sub-quantities across all groups must match Master Total.</p>
+                            <p className="text-xs text-gray-500 mt-1">Group your target links by category and sheet origin. Ratios across all groups must total exactly 100%.</p>
                         </div>
-                        <div className={`text-sm font-bold px-4 py-2 rounded-md border flex items-center justify-center transition-colors shadow-sm ${isValidQuantity ? 'bg-green-100 text-green-800 border-green-300' : 'bg-red-50 text-red-700 border-red-200'}`}>
-                            Allocated: {currentSum} / {masterQuantity}
+                        <div className={`text-sm font-bold px-4 py-2 rounded-md border flex items-center justify-center transition-colors shadow-sm ${isValidTargetRatio ? 'bg-green-100 text-green-800 border-green-300' : 'bg-red-50 text-red-700 border-red-200'}`}>
+                            Total Ratio: {targetRatioSum}% {isValidTargetRatio ? '✓' : '✗'}
                         </div>
                     </div>
 
@@ -599,17 +599,25 @@ export default function NewProjectPage() {
                                                     className="w-full border border-gray-300 rounded p-2 text-sm text-gray-900 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all placeholder:text-gray-400"
                                                 />
                                             </div>
-                                            <div className="w-full sm:w-24 relative">
-                                                <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1 sm:hidden">Qty</label>
+                                            <div className="w-full sm:w-28 relative">
+                                                <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1 sm:hidden">Ratio (%)</label>
                                                 <input
                                                     type="number"
                                                     required
-                                                    min="1"
-                                                    value={row.quantity}
-                                                    onChange={(e) => updateTarget(group.id, row.id, 'quantity', e.target.value)}
-                                                    className="w-full border border-gray-300 rounded p-2 text-sm text-gray-900 font-mono focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all pr-8"
+                                                    min="0"
+                                                    max="100"
+                                                    value={row.ratio}
+                                                    onChange={(e) => updateTarget(group.id, row.id, 'ratio', e.target.value)}
+                                                    className="w-full border border-gray-300 rounded p-2 text-sm text-gray-900 font-mono focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all pr-8 text-right"
                                                 />
+                                                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-sm font-bold text-gray-400 sm:mt-0 mt-[11px]">%</span>
                                             </div>
+
+                                            {masterQuantity > 0 && (
+                                                <div className="text-xs text-indigo-600 font-semibold whitespace-nowrap w-16 text-center shrink-0" title="Calculated quantity for this target">
+                                                    = {Math.round(masterQuantity * (parseInt(row.ratio) || 0) / 100)} qty
+                                                </div>
+                                            )}
 
                                             {group.placement_target.length > 1 && (
                                                 <button
@@ -647,9 +655,9 @@ export default function NewProjectPage() {
                             <Plus className="w-5 h-5" /> Add New Project Info
                         </button>
 
-                        {!isValidQuantity && (
+                        {!isValidTargetRatio && (
                             <span className="text-sm font-medium text-red-600 bg-red-50 px-3 py-1.5 rounded-full animate-pulse shadow-sm border border-red-100">
-                                Requires {masterQuantity - currentSum > 0 ? `${masterQuantity - currentSum} more` : `${Math.abs(masterQuantity - currentSum)} less`} targets to match Total Allocation.
+                                {targetRatioSum < 100 ? `${100 - targetRatioSum}% remaining` : `${targetRatioSum - 100}% over limit`} to reach exactly 100%.
                             </span>
                         )}
                     </div>
@@ -662,7 +670,7 @@ export default function NewProjectPage() {
                     <textarea name="remarks" rows={3} placeholder="Any additional notes for this project..." className="block w-full border border-gray-300 rounded-md shadow-sm p-3 text-gray-900 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" />
                 </div>
 
-                <SubmitButton isValid={isValidQuantity && isValidLanguageRatio && allLanguagesFilled} />
+                <SubmitButton isValid={isValidTargetRatio && isValidLanguageRatio && allLanguagesFilled} />
             </form>
         </div>
     );

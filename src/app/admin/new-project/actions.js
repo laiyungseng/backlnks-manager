@@ -48,15 +48,17 @@ export async function createProjectAction(prevState, formData) {
 
         // Flatten the required targets for the projects_hub 
         const flattenedTargets = [];
-        let sumOfTargets = 0;
+        let allocatedCount = 0;
 
         projectInfoArray.forEach(infoGroup => {
             infoGroup.placement_target.forEach(target => {
-                sumOfTargets += target.quantity;
+                const absoluteQuantity = Math.round(projectData.quantity * target.ratio / 100);
+                allocatedCount += absoluteQuantity;
+                
                 flattenedTargets.push({
                     anchor_text: target.anchor_text || "",
                     target_url: target.target_url || "",
-                    quantity: String(target.quantity || ""),
+                    quantity: String(absoluteQuantity),
                     category: infoGroup.category,
                     sheet_name: infoGroup.sheet_name || null,
                     created_at: new Date().toISOString()
@@ -64,11 +66,11 @@ export async function createProjectAction(prevState, formData) {
             });
         });
 
-        if (sumOfTargets !== projectData.quantity) {
-            return {
-                success: false,
-                message: `Validation Error: Target sub-quantities (${sumOfTargets}) do not match Master Allocation Quantity (${projectData.quantity}).`
-            };
+        // Resolve rounding discrepancies (e.g. 33% * 3 = 99%)
+        const discrepancy = projectData.quantity - allocatedCount;
+        if (discrepancy !== 0 && flattenedTargets.length > 0) {
+            const adjustedQty = parseInt(flattenedTargets[0].quantity, 10) + discrepancy;
+            flattenedTargets[0].quantity = String(Math.max(0, adjustedQty));
         }
 
         // 2. Generate secure crypt-hash for Vendor allocation URL

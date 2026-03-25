@@ -73,6 +73,8 @@ export default async function VendorProjectPage({ params }) {
                         generatedRows.push({
                             id: rowId,
                             target_id: targetId,
+                            tIdx: tIdx,
+                            langIdx: langIdx,
                             target_url: target.target_url,
                             anchor_text: target.anchor_text,
                             language: lang['lang-code']?.toUpperCase() || '',
@@ -94,6 +96,8 @@ export default async function VendorProjectPage({ params }) {
                     generatedRows.push({
                         id: rowId,
                         target_id: targetId,
+                        tIdx: tIdx,
+                        langIdx: 0,
                         target_url: target.target_url,
                         anchor_text: target.anchor_text,
                         language: projectData?.language?.toUpperCase() || 'EN',
@@ -116,12 +120,12 @@ export default async function VendorProjectPage({ params }) {
             return hashA - hashB;
         });
     } else if (generatedRows.length > 0) {
-        // Group by language based on kickoff insertion order
-        const langOrder = languages.map(l => l['lang-code']?.toUpperCase());
+        // Group by Target sequence first, then language within each target
         generatedRows.sort((a, b) => {
-            const indexA = langOrder.indexOf(a.language?.toUpperCase());
-            const indexB = langOrder.indexOf(b.language?.toUpperCase());
-            return (indexA === -1 ? 999 : indexA) - (indexB === -1 ? 999 : indexB);
+            if (a.tIdx !== b.tIdx) {
+                return (a.tIdx || 0) - (b.tIdx || 0);
+            }
+            return (a.langIdx || 0) - (b.langIdx || 0);
         });
     }
 

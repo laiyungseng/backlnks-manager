@@ -84,8 +84,14 @@ export const projectFormPayloadSchema = projectSchema.omit({
             placement_target: z.array(z.object({
                 anchor_text: z.string().min(1, 'Anchor text required').describe('The exact text to be used for the hyperlink'),
                 target_url: z.string().min(1, 'Target URL is required').transform(val => /^https?:\/\//i.test(val) ? val : `https://${val}`).pipe(z.string().url('Invalid URL formatting')).describe('The destination URL the link should point to'),
-                quantity: z.coerce.number().min(1, 'Quantity must be > 0').describe('Number of links requested for this specific anchor/target pair')
+                ratio: z.coerce.number().min(0).max(100).describe('Percentage representation for this target (0-100)')
             })).min(1, 'At least one target row is required in each group')
         })).min(1, 'At least one project info group is required'))
+        .refine((groups) => {
+            const totalRatio = groups.reduce((acc, group) => {
+                return acc + group.placement_target.reduce((sum, target) => sum + target.ratio, 0);
+            }, 0);
+            return totalRatio === 100;
+        }, { message: 'The sum of all target ratios across all groups must be exactly 100%' })
         .describe('Stringified JSON array holding grouped project info arrays, each containing category, sheet name, and target rows')
 }).describe('Schema defining the API payload for creating a new project');
