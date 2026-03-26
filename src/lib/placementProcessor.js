@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { parseDomainUrl } from './utils';
 
 /**
  * Normalizes vendor staging data from the project_list table
@@ -66,10 +67,10 @@ export async function normalizeProjectData(projectHash) {
             const uniqueDomainsSet = new Set();
             for (const row of rawDataArray) {
                 if (row.published_url && row.published_date) {
-                    try {
-                        const parsedUrl = new URL(row.published_url);
-                        uniqueDomainsSet.add(parsedUrl.hostname);
-                    } catch (e) {
+                    const parsedUrl = parseDomainUrl(row.published_url);
+                    if (parsedUrl) {
+                        uniqueDomainsSet.add(parsedUrl);
+                    } else {
                         console.warn("Invalid URL skipped for domain extraction:", row.published_url);
                     }
                 }
@@ -86,31 +87,27 @@ export async function normalizeProjectData(projectHash) {
 
             if (fetchErr) throw new Error(`Existing Domains Fetch Error: ${fetchErr.message}`);
 
-            // Filter in JS to find matching ones by hostname
+            // Filter in JS to find matching ones by normalized URL
             existingDomains = (extD || []).filter(d => {
-                const domainUrl = d.domain_url || '';
-                try {
-                    // Try to compare as hostnames
-                    const dbHost = domainUrl.includes('://') ? new URL(domainUrl).hostname : domainUrl;
-                    return uniqueDomainsSet.has(dbHost);
-                } catch (e) {
-                    return uniqueDomainsSet.has(domainUrl);
-                }
+                const dbUrl = parseDomainUrl(d.domain_url);
+                return uniqueDomainsSet.has(dbUrl);
             });
 
             // 2. Prepare ALL domains (new and existing) to be upserted to ensure vendor_id link
             const domainsToUpsert = uniqueDomainList.map(url => {
-                const existing = (existingDomains || []).find(d => d.domain_url === url);
+                const normalizedUrl = parseDomainUrl(url);
+                const existing = (existingDomains || []).find(d => parseDomainUrl(d.domain_url) === normalizedUrl);
 
                 if (existing) {
                     return {
                         id: existing.id,
                         vendor_id: targetVendorId,
-                        domain_url: url
+                        domain_url: normalizedUrl
                     };
                 } else {
                     return {
-                        domain_url: url,
+                        id: crypto.randomUUID(), // Explicitly set ID to prevent 'null value in column id' constraint errors
+                        domain_url: normalizedUrl,
                         vendor_id: targetVendorId,
                         dr: null,
                         traffic: null,
@@ -178,8 +175,8 @@ export async function normalizeProjectData(projectHash) {
 
                 let matchingDomainId = null;
                 try {
-                    const hostname = new URL(row.published_url).hostname;
-                    matchingDomainId = domainMap.get(hostname) || null;
+                    const normalizedTargetUrl = parseDomainUrl(row.published_url);
+                    matchingDomainId = domainMap.get(normalizedTargetUrl) || null;
                 } catch (e) { }
 
                 // Try to resolve existing status based on alignment key: vendor_id, domain_id
