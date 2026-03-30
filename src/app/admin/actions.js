@@ -88,8 +88,9 @@ export async function updateDashboardProjects(projectsArray) {
 
     try {
         // Bulk update or individual updates
-        const updates = projectsArray.map(async p =>
-            supabase.from('projects')
+        const updates = projectsArray.map(async p => {
+            // 1. Update main projects table
+            const { error: projError } = await supabase.from('projects')
                 .update({
                     project_name: p.project_name,
                     country: p.country,
@@ -98,8 +99,26 @@ export async function updateDashboardProjects(projectsArray) {
                     price: parseFloat(p.price || 0),
                     price_type: p.price_type
                 })
-                .eq('id', p.id)
-        );
+                .eq('id', p.id);
+            
+            if (projError) throw projError;
+
+            // 2. Update category mappings if provided
+            if (p.categoryUpdates && Object.keys(p.categoryUpdates).length > 0) {
+                for (const [oldCategory, newCategory] of Object.entries(p.categoryUpdates)) {
+                    // Only update if there is a real change
+                    if (oldCategory !== newCategory && newCategory && newCategory.trim() !== '') {
+                        const { error: catError } = await supabase
+                            .from('project_targets')
+                            .update({ category: newCategory.trim() })
+                            .eq('project_id', p.id)
+                            .eq('category', oldCategory);
+                        
+                        if (catError) throw catError;
+                    }
+                }
+            }
+        });
 
         await Promise.all(updates);
 

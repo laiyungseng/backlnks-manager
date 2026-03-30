@@ -4,9 +4,9 @@ import { useState, useEffect, useRef, useTransition } from 'react';
 import Link from 'next/link';
 import { Trash2, CheckCircle2 } from 'lucide-react';
 import CopyButton from './CopyButton';
-import { deleteProject, approveProject, updateDashboardProjects } from './actions';
+import { deleteProject, approveProject, updateDashboardProjects } from '../actions';
 
-export default function DashboardClient({ initialProjects }) {
+export default function ProjectDetailsClient({ initialProjects }) {
     const [projects, setProjects] = useState(initialProjects || []);
     const [selectedTargets, setSelectedTargets] = useState(null);
 
@@ -87,6 +87,22 @@ export default function DashboardClient({ initialProjects }) {
         }));
     };
 
+    const handleCategoryChange = (projectId, oldCategory, newCategoryValue) => {
+        setEditedProjects(prev => prev.map(p => {
+            if (p.id === projectId) {
+                const currentUpdates = p.categoryUpdates || {};
+                return { 
+                    ...p, 
+                    categoryUpdates: {
+                        ...currentUpdates,
+                        [oldCategory]: newCategoryValue
+                    }
+                };
+            }
+            return p;
+        }));
+    };
+
     const handleApprove = (projectId) => {
         if (confirm("Approve this project? It will become active and available in Placements.")) {
             // Optimistic update
@@ -141,6 +157,7 @@ export default function DashboardClient({ initialProjects }) {
                         <tr>
                             <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Project ID</th>
                             <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Project Name</th>
+                            <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Category</th>
                             <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Vendor</th>
                             <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Progress</th>
                             <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Price</th>
@@ -170,6 +187,38 @@ export default function DashboardClient({ initialProjects }) {
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-slate-800">
                                         {isEditMode ? <input type="text" value={project.project_name || ''} onChange={(e) => handleFieldChange(project.id, 'project_name', e.target.value)} className="w-40 px-3 py-1.5 border border-slate-200 focus:ring-2 focus:ring-indigo-500 rounded-md font-medium text-sm outline-none" /> : project.project_name}
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap">
+                                        {(() => {
+                                            const targets = Array.isArray(project.project_targets) ? project.project_targets : [];
+                                            const uniqueCategories = [...new Set(targets.map(t => t.category).filter(c => c && c !== 'NULL'))];
+                                            
+                                            if (uniqueCategories.length === 0) {
+                                                return <span className="text-[10px] font-bold text-slate-400 italic">None</span>;
+                                            }
+
+                                            return (
+                                                <div className="flex flex-col gap-1.5">
+                                                    {uniqueCategories.map((cat, idx) => {
+                                                        const currentEditVal = project.categoryUpdates?.[cat] !== undefined ? project.categoryUpdates[cat] : cat;
+                                                        return isEditMode ? (
+                                                            <input 
+                                                                key={idx}
+                                                                type="text" 
+                                                                value={currentEditVal} 
+                                                                onChange={(e) => handleCategoryChange(project.id, cat, e.target.value)} 
+                                                                className="w-24 px-2 py-1 border border-slate-200 focus:ring-2 focus:ring-indigo-500 rounded-md font-medium text-xs outline-none" 
+                                                                placeholder={cat}
+                                                            />
+                                                        ) : (
+                                                            <span key={idx} className="px-2 py-0.5 text-[9px] font-black uppercase tracking-widest rounded bg-slate-100 text-slate-600 border border-slate-200 w-fit">
+                                                                {cat}
+                                                            </span>
+                                                        );
+                                                    })}
+                                                </div>
+                                            );
+                                        })()}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-500">
                                         {project.vendors?.vendor_name || '—'}
@@ -254,7 +303,7 @@ export default function DashboardClient({ initialProjects }) {
         <div className="max-w-screen-2xl mx-auto space-y-12">
             <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-6">
                 <div>
-                    <h1 className="text-4xl font-black text-slate-900 tracking-tight uppercase">Dashboard Overview</h1>
+                    <h1 className="text-4xl font-black text-slate-900 tracking-tight uppercase">Project Details</h1>
                     <p className="mt-2 text-sm font-medium text-slate-500">
                         Monitor active SEO projects and track vendor backlink fulfillment real-time.
                     </p>

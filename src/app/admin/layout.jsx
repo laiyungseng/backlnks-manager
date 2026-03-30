@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, PlusCircle, ClipboardList, CheckCircle2, Settings, PanelLeftClose, PanelLeftOpen, Blocks, Users, Globe } from 'lucide-react';
+import { LayoutDashboard, PlusCircle, ClipboardList, CheckCircle2, Settings, PanelLeftClose, PanelLeftOpen, Blocks, Users, Globe, List } from 'lucide-react';
 import { logoutAction } from '@/app/admin/settings/actions';
 
 export default function AdminLayout({ children }) {
@@ -19,6 +19,7 @@ export default function AdminLayout({ children }) {
 
     const navigation = [
         { name: 'Dashboard', href: '/admin', icon: LayoutDashboard },
+        { name: 'Project Details', href: '/admin/projects', icon: List },
         { name: 'Kickoff Project', href: '/admin/new-project', icon: PlusCircle },
         { name: 'Active Placements', href: '/admin/placements', icon: ClipboardList },
         { name: 'Completed Placements', href: '/admin/completed', icon: CheckCircle2 },

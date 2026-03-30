@@ -1,40 +1,46 @@
 import { supabase } from '@/lib/supabase';
-import DashboardClient from './DashboardClient';
+import DashboardLanding from './DashboardLanding';
 
 export const dynamic = 'force-dynamic';
 
-export default async function AdminDashboardPage() {
-    // Fetch recent projects from Supabase ALONG WITH their related Phase 2 Targets and Virtual Staging Data
-    const { data: projects, error } = await supabase
-        .from('projects')
+export default async function AdminMetricsPage() {
+    // 1. Fetch Placements for Index Rate & Error Rate
+    const { data: placements, error: placementsErr } = await supabase
+        .from('placements')
         .select(`
-            id, owner, created_date, completed_date,
-            project_name, country, total_quantity,
-            status, is_approved, start_date, deadline, price, price_type,
-            dripfeed_enabled, dripfeed_period, urls_per_day,
-            vendors ( vendor_name ),
-            projects_hub ( targets, vendor_staging_data ),
-            placements ( id ),
-            project_languages ( lang_code, ratio ),
-            project_targets ( category, sheet_name )
-        `)
-        .order('created_date', { ascending: false });
-
-    if (error) {
-        console.error("Dashboard DB fetch error:", JSON.stringify(error, null, 2));
+            id,
+            status,
+            indexed_status,
+            published_date,
+            created_at,
+            vendors ( vendor_name )
+        `);
+        
+    if (placementsErr) {
+        console.error("Failed to fetch placements for metrics:", placementsErr);
     }
 
-    // Helper for safe URL parsing
-    const getSafeHostname = (urlString) => {
-        if (!urlString) return 'Unknown';
-        try {
-            return new URL(urlString).hostname;
-        } catch (e) {
-            return urlString;
-        }
-    };
+    // 2. Fetch Projects for Cost and Speed metrics
+    const { data: projects, error: projectsErr } = await supabase
+        .from('projects')
+        .select(`
+            id,
+            price,
+            price_type,
+            total_quantity,
+            created_date,
+            completed_date,
+            status
+        `);
+
+    if (projectsErr) {
+        console.error("Failed to fetch projects for metrics:", projectsErr);
+    }
 
     return (
-        <DashboardClient initialProjects={projects || []} />
+        <DashboardLanding 
+            placements={placements || []} 
+            projects={projects || []} 
+        />
     );
 }
