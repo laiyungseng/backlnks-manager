@@ -87,14 +87,14 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
     ).filter(Boolean))].slice(0, 3); // Max 3 chips
 
     return (
-        <div className="grid grid-cols-12 gap-4 px-5 py-4 items-center bg-white rounded-2xl border border-slate-100 hover:border-slate-200 hover:shadow-sm transition-all relative">
+        <div className="flex flex-wrap items-center gap-3 sm:gap-4 px-4 sm:px-5 py-4 bg-white rounded-2xl border border-slate-100 hover:border-slate-200 hover:shadow-sm transition-all relative">
             {/* Project Name & Chips */}
-            <div className="col-span-3 pr-4 flex flex-col justify-center">
+            <div className="w-full md:w-auto md:flex-[1.5] min-w-[200px] pr-0 sm:pr-4 flex flex-col justify-center">
                 <div className="flex items-center gap-3 mb-2">
                     <span className="text-base font-bold text-slate-900 truncate max-w-[180px]" title={project.project_name}>
                         {project.project_name || 'Unnamed Project'}
                     </span>
-                    <span className={`px-2 py-0.5 text-[9px] font-black rounded uppercase tracking-widest ${statusStyle.bg}`}>
+                    <span className={`px-2 py-0.5 text-[9px] font-black rounded uppercase tracking-widest flex-shrink-0 ${statusStyle.bg}`}>
                         {statusStyle.label}
                     </span>
                 </div>
@@ -108,7 +108,7 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
             </div>
 
             {/* Region / Delivery */}
-            <div className="col-span-3">
+            <div className="w-1/2 sm:w-auto sm:flex-[0.8] min-w-[120px]">
                 <div className="flex flex-col gap-1.5">
                     <span className="text-[13px] font-bold text-slate-800">
                         {project.country || 'GLOBAL'} {project.project_languages?.length > 0 && `(${project.project_languages[0].lang_code})`}
@@ -120,7 +120,7 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
             </div>
 
             {/* Fulfillment */}
-            <div className="col-span-2 pr-6">
+            <div className="w-1/2 sm:w-auto sm:flex-1 min-w-[150px] pr-0 lg:pr-6">
                 <div className="flex flex-col gap-2 w-full">
                     <div className="flex items-center gap-3">
                         <span className="text-xs font-bold text-slate-700">{completedLinks}/{totalLinks}</span>
@@ -136,18 +136,18 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
             </div>
 
             {/* Portal Access */}
-            <div className="col-span-2 flex items-center gap-2">
-                <button onClick={openLink} className="flex items-center gap-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 font-bold text-[10px] uppercase tracking-widest px-3 py-2 rounded-lg transition-colors">
+            <div className="w-full sm:w-[140px] shrink-0 flex items-center gap-2 mt-2 sm:mt-0 sm:ml-auto md:ml-0">
+                <button onClick={openLink} className="flex items-center gap-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 font-bold text-[10px] uppercase tracking-widest px-3 py-2 rounded-lg transition-colors flex-1 justify-center sm:flex-none">
                     <Eye className="w-3.5 h-3.5" />
                     Open Link
                 </button>
-                <button onClick={copyLink} className="p-2 border border-slate-200 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-lg transition-colors" title="Copy Link">
+                <button onClick={copyLink} className="p-2 border border-slate-200 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-lg transition-colors shrink-0" title="Copy Link">
                     <LinkIcon className="w-3.5 h-3.5" />
                 </button>
             </div>
 
             {/* Status & Security Actions */}
-            <div className="col-span-2 flex items-center gap-2 justify-end">
+            <div className="w-full sm:w-[150px] shrink-0 flex items-center gap-2 justify-end mt-2 sm:mt-0">
                 {!isCompletedView ? (
                     // Active View
                     <>
@@ -155,14 +155,15 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
                             <button
                                 onClick={handleFinalize}
                                 disabled={isFinalizing}
-                                className="px-4 py-2 bg-emerald-50 text-emerald-600 border border-emerald-100 hover:bg-emerald-100 rounded-lg font-black text-[10px] uppercase tracking-widest transition-all shadow-sm flex items-center gap-1.5"
+                                className="px-4 py-2 bg-emerald-50 text-emerald-600 border border-emerald-100 hover:bg-emerald-100 rounded-lg font-black text-[10px] uppercase tracking-widest transition-all shadow-sm flex items-center gap-1.5 flex-1 justify-center sm:flex-none min-w-[100px]"
                             >
                                 <CheckCircle2 className="w-3.5 h-3.5" />
                                 {isFinalizing ? '...' : 'Process'}
                             </button>
                         ) : (
-                            <button className="p-2 text-slate-300 hover:text-slate-500 transition-colors">
-                                <MoreVertical className="w-5 h-5" />
+                            <button disabled className="px-4 py-2 bg-slate-50 text-slate-400 border border-slate-100 rounded-lg font-black text-[10px] uppercase tracking-widest transition-all opacity-60 flex items-center gap-1.5 flex-1 justify-center sm:flex-none min-w-[100px] cursor-not-allowed hidden sm:flex">
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                Process
                             </button>
                         )}
                     </>
@@ -172,18 +173,17 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
                         <button
                             onClick={handleToggleLock}
                             disabled={isToggling}
-                            className={`px-3 py-1.5 rounded-lg border font-black text-[9px] uppercase tracking-widest transition-all flex items-center gap-1.5 ${localLockState
-                                ? 'bg-amber-50 text-amber-700 border-amber-200'
+                            title={localLockState ? 'Locked' : 'Unlocked'}
+                            className={`p-2 rounded-lg border transition-all flex items-center justify-center shrink-0 ${localLockState
+                                ? 'bg-amber-50 text-amber-600 border-amber-200 hover:bg-amber-100'
                                 : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'}`}
                         >
-                            {localLockState ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
-                            {localLockState ? 'LOCKED' : 'UNLOCKED'}
+                            {localLockState ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
                         </button>
-                        <div className="px-3 py-1.5 bg-emerald-50 border border-emerald-100 text-emerald-700 rounded-lg font-black text-[9px] uppercase tracking-widest flex items-center gap-1.5">
-                            <CheckCircle2 className="w-3 h-3" />
-                            PROCESSED
+                        <div title="Processed" className="p-2 bg-emerald-50 border border-emerald-100 text-emerald-600 rounded-lg flex items-center justify-center shrink-0">
+                            <CheckCircle2 className="w-4 h-4" />
                         </div>
-                        <button className="p-1.5 text-slate-300 hover:text-slate-500 transition-colors ml-1">
+                        <button className="p-1.5 text-slate-300 hover:text-slate-500 transition-colors shrink-0">
                             <MoreVertical className="w-4 h-4" />
                         </button>
                     </>

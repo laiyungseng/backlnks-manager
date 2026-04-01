@@ -41,73 +41,63 @@ export default async function VendorProjectPage({ params }) {
     // Parse language distribution from normalized project_languages
     const languages = (projectData?.project_languages || []).map(l => ({ 'lang-code': l.lang_code, ratio: l.ratio }));
 
-    // Expand Target Rows with language assignment
+    // Create linear pool of languages based on precise quantities
+    const languagePool = [];
+    if (languages.length > 0) {
+        languages.forEach(lang => {
+            const qty = parseInt(lang.ratio || '0', 10);
+            for (let i = 0; i < qty; i++) {
+                languagePool.push(lang['lang-code']?.toUpperCase() || 'EN');
+            }
+        });
+    }
+
+    // Expand Target Rows with sequential linear language assignment
     let generatedRows = [];
+    let globalLangIndex = 0;
+
     if (targetsData && targetsData.length > 0) {
         targetsData.forEach((target, tIdx) => {
             const targetId = target.target_id || `idx-${tIdx}`; // Synthetic target ID fallback
             const targetQty = parseInt(target.quantity || '0', 10); // Parse string quantity from JSON
 
-            if (languages.length > 0) {
-                let remainingQty = targetQty;
-                languages.forEach((lang, langIdx) => {
-                    let langQty;
-                    if (langIdx === languages.length - 1) {
-                        langQty = remainingQty;
-                    } else {
-                        langQty = Math.round(targetQty * lang.ratio / 100);
-                        remainingQty -= langQty;
-                    }
-
-                    for (let i = 0; i < langQty; i++) {
-                        const langCode = lang['lang-code'];
-                        const rowId = `${targetId}-${langCode}-qty-${i}`;
-                        const legacyRowId = `${targetId}-qty-${generatedRows.length}`;
-                        const undefinedEraRowId = `${targetId}-undefined-qty-${i}`;
-                        const savedRow = Array.isArray(existingStagingData)
-                            ? (existingStagingData.find(st => st.id === rowId)
-                                || existingStagingData.find(st => st.id === legacyRowId)
-                                || existingStagingData.find(st => st.id === undefinedEraRowId))
-                            : null;
-
-                        generatedRows.push({
-                            id: rowId,
-                            target_id: targetId,
-                            tIdx: tIdx,
-                            langIdx: langIdx,
-                            target_url: target.target_url,
-                            anchor_text: target.anchor_text,
-                            language: lang['lang-code']?.toUpperCase() || '',
-                            domain_url: savedRow?.domain_url || '',
-                            published_url: savedRow?.published_url || '',
-                            published_date: savedRow?.published_date || '',
-                            remark: savedRow?.remark || '',
-                            indexed_status: savedRow?.indexed_status || '',
-                        });
-                    }
-                });
-            } else {
-                for (let i = 0; i < targetQty; i++) {
-                    const rowId = `${targetId}-qty-${i}`;
-                    const savedRow = Array.isArray(existingStagingData)
-                        ? existingStagingData.find(st => st.id === rowId)
-                        : null;
-
-                    generatedRows.push({
-                        id: rowId,
-                        target_id: targetId,
-                        tIdx: tIdx,
-                        langIdx: 0,
-                        target_url: target.target_url,
-                        anchor_text: target.anchor_text,
-                        language: projectData?.language?.toUpperCase() || 'EN',
-                        domain_url: savedRow?.domain_url || '',
-                        published_url: savedRow?.published_url || '',
-                        published_date: savedRow?.published_date || '',
-                        remark: savedRow?.remark || '',
-                        indexed_status: savedRow?.indexed_status || '',
-                    });
+            for (let i = 0; i < targetQty; i++) {
+                const assignedLang = languagePool.length > 0 
+                  ? (languagePool[globalLangIndex] || languagePool[languagePool.length - 1]) 
+                  : (projectData?.language?.toUpperCase() || 'EN');
+                
+                // Track language advancement
+                if (languagePool.length > 0) {
+                    globalLangIndex++;
                 }
+
+                // ID formats to retain backward compatibility with old staging data
+                const rowId = `${targetId}-${assignedLang}-qty-${i}`;
+                const legacyRowId = `${targetId}-qty-${generatedRows.length}`;
+                const legacyNoLangRowId = `${targetId}-qty-${i}`;
+                const undefinedEraRowId = `${targetId}-undefined-qty-${i}`;
+                
+                const savedRow = Array.isArray(existingStagingData)
+                    ? (existingStagingData.find(st => st.id === rowId)
+                        || existingStagingData.find(st => st.id === legacyRowId)
+                        || existingStagingData.find(st => st.id === legacyNoLangRowId)
+                        || existingStagingData.find(st => st.id === undefinedEraRowId))
+                    : null;
+
+                generatedRows.push({
+                    id: rowId,
+                    target_id: targetId,
+                    tIdx: tIdx,
+                    langIdx: languagePool.indexOf(assignedLang), // Generic grouping info
+                    target_url: target.target_url,
+                    anchor_text: target.anchor_text,
+                    language: assignedLang,
+                    domain_url: savedRow?.domain_url || '',
+                    published_url: savedRow?.published_url || '',
+                    published_date: savedRow?.published_date || '',
+                    remark: savedRow?.remark || '',
+                    indexed_status: savedRow?.indexed_status || '',
+                });
             }
         });
     }

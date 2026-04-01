@@ -9,6 +9,7 @@ import { deleteProject, approveProject, updateDashboardProjects } from '../actio
 export default function ProjectDetailsClient({ initialProjects }) {
     const [projects, setProjects] = useState(initialProjects || []);
     const [selectedTargets, setSelectedTargets] = useState(null);
+    const [projectToDelete, setProjectToDelete] = useState(null);
 
     // Edit Mode State
     const [isEditMode, setIsEditMode] = useState(false);
@@ -18,6 +19,17 @@ export default function ProjectDetailsClient({ initialProjects }) {
 
     // Track recently deleted projects so old SSE polls don't resurrect them
     const deletedIdsRef = useRef(new Set());
+
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (e.key === 'Escape') {
+                setProjectToDelete(null);
+                setSelectedTargets(null);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, []);
 
     useEffect(() => {
         const source = new EventSource('/api/realtime/dashboard');
@@ -151,19 +163,19 @@ export default function ProjectDetailsClient({ initialProjects }) {
                 </h3>
                 <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">{data.length} Items</span>
             </div>
-            <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-slate-200">
-                    <thead className="bg-white">
+            <div className="overflow-x-auto max-h-[640px] overflow-y-auto w-full border-t border-slate-100">
+                <table className="min-w-full divide-y divide-slate-200 relative">
+                    <thead className="bg-white sticky top-0 z-10 shadow-sm ring-1 ring-slate-100">
                         <tr>
-                            <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Project ID</th>
-                            <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Project Name</th>
-                            <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Category</th>
-                            <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Vendor</th>
-                            <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Progress</th>
-                            <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Price</th>
-                            <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Status</th>
-                            <th className="px-6 py-4 text-center text-[10px] font-black text-slate-400 uppercase tracking-widest">Approve</th>
-                            <th className="px-6 py-4 text-right text-[10px] font-black text-slate-400 uppercase tracking-widest">Actions</th>
+                            <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest bg-white">Project ID</th>
+                            <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest bg-white">Project Name</th>
+                            <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest bg-white">Category</th>
+                            <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest bg-white">Vendor</th>
+                            <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest bg-white">Progress</th>
+                            <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest bg-white">Price</th>
+                            <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest bg-white">Status</th>
+                            <th className="px-6 py-4 text-center text-[10px] font-black text-slate-400 uppercase tracking-widest bg-white">Approve</th>
+                            <th className="px-6 py-4 text-right text-[10px] font-black text-slate-400 uppercase tracking-widest bg-white">Actions</th>
                         </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-slate-100">
@@ -194,7 +206,15 @@ export default function ProjectDetailsClient({ initialProjects }) {
                                             const uniqueCategories = [...new Set(targets.map(t => t.category).filter(c => c && c !== 'NULL'))];
                                             
                                             if (uniqueCategories.length === 0) {
-                                                return <span className="text-[10px] font-bold text-slate-400 italic">None</span>;
+                                                return isEditMode ? (
+                                                    <input 
+                                                        type="text" 
+                                                        value={project.categoryUpdates?.['NULL'] !== undefined ? project.categoryUpdates['NULL'] : ''} 
+                                                        onChange={(e) => handleCategoryChange(project.id, 'NULL', e.target.value)} 
+                                                        className="w-24 px-2 py-1 border border-slate-200 focus:ring-2 focus:ring-indigo-500 rounded-md font-medium text-xs outline-none" 
+                                                        placeholder="Add Category"
+                                                    />
+                                                ) : <span className="text-[10px] font-bold text-slate-400 italic">None</span>;
                                             }
 
                                             return (
@@ -272,15 +292,7 @@ export default function ProjectDetailsClient({ initialProjects }) {
                                         )}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-right">
-                                        <button disabled={isEditMode} onClick={() => { 
-                                            if (confirm("Delete project?")) {
-                                                deletedIdsRef.current.add(project.id);
-                                                setProjects(prev => prev.filter(p => p.id !== project.id));
-                                                startTransition(async () => {
-                                                    await deleteProject(project.id); 
-                                                });
-                                            }
-                                        }} className="text-slate-300 hover:text-red-500 p-2 rounded-md hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100 disabled:hidden">
+                                        <button disabled={isEditMode} onClick={() => setProjectToDelete(project)} className="text-slate-800 hover:text-red-600 p-2 rounded-md hover:bg-red-50 transition-all disabled:hidden">
                                             <Trash2 className="w-4 h-4" />
                                         </button>
                                     </td>
@@ -373,6 +385,35 @@ export default function ProjectDetailsClient({ initialProjects }) {
                             <button onClick={() => setSelectedTargets(null)} className="px-6 py-2.5 text-[10px] font-black text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-all uppercase tracking-widest">
                                 Close Window
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Delete Confirmation Modal */}
+            {projectToDelete && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in duration-200 border border-slate-200">
+                        <div className="p-6">
+                            <h3 className="text-lg font-black text-slate-900 tracking-tight mb-2">Delete Project</h3>
+                            <p className="text-sm text-slate-500 mb-6 font-medium">
+                                Are you sure you want to delete <span className="font-bold text-slate-800">{projectToDelete.project_name}</span>? This action is permanent.
+                            </p>
+                            <div className="flex gap-3 justify-end">
+                                <button onClick={() => setProjectToDelete(null)} className="px-4 py-2 text-xs font-bold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all uppercase tracking-widest">
+                                    Cancel
+                                </button>
+                                <button onClick={() => {
+                                    deletedIdsRef.current.add(projectToDelete.id);
+                                    setProjects(prev => prev.filter(p => p.id !== projectToDelete.id));
+                                    startTransition(async () => {
+                                        await deleteProject(projectToDelete.id); 
+                                    });
+                                    setProjectToDelete(null);
+                                }} className="px-4 py-2 text-xs font-black text-white bg-red-500 rounded-lg hover:bg-red-600 transition-all shadow-lg shadow-red-500/20 uppercase tracking-widest">
+                                    Confirm
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

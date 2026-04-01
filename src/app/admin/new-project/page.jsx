@@ -59,12 +59,8 @@ export default function NewProjectPage() {
 
     // Language Ratio State
     const [languages, setLanguages] = useState([
-        { id: genId(), code: '', ratio: 100 }
+        { id: genId(), code: '', ratio: 1 }
     ]);
-
-    const [targets, setTargets] = useState([
-        { id: genId(), anchor_text: '', target_url: '', quantity: 1 }
-    ]); // Kept momentarily around just in case required by leftover refs, but will be removed once completely cleared
 
     const [projectInfoGroups, setProjectInfoGroups] = useState([
         {
@@ -72,10 +68,40 @@ export default function NewProjectPage() {
             sheet_name: '',
             category: 'NULL',
             placement_target: [
-                { id: genId(), anchor_text: '', target_url: '', ratio: 100 }
+                { id: genId(), anchor_text: '', target_url: '', ratio: 1 }
             ]
         }
     ]);
+
+    const rebalanceLanguages = (langs, totalQty) => {
+        if (langs.length === 0) return langs;
+        const baseQty = Math.floor(totalQty / langs.length);
+        const remainder = totalQty % langs.length;
+        return langs.map((l, idx) => ({ ...l, ratio: baseQty + (idx === 0 ? remainder : 0) }));
+    };
+
+    const rebalanceProjectInfoGroups = (groups, totalQty) => {
+        const totalRows = groups.reduce((sum, g) => sum + g.placement_target.length, 0);
+        if (totalRows === 0) return groups;
+        const baseQty = Math.floor(totalQty / totalRows);
+        const remainder = totalQty % totalRows;
+        
+        let isFirstRow = true;
+        return groups.map(g => ({
+            ...g,
+            placement_target: g.placement_target.map(t => {
+                const extra = isFirstRow ? remainder : 0;
+                isFirstRow = false;
+                return { ...t, ratio: baseQty + extra };
+            })
+        }));
+    };
+
+    // Auto-rebalance when masterQuantity changes
+    useEffect(() => {
+        setLanguages(prev => rebalanceLanguages(prev, masterQuantity));
+        setProjectInfoGroups(prev => rebalanceProjectInfoGroups(prev, masterQuantity));
+    }, [masterQuantity]);
 
     useEffect(() => {
         if (state?.success && state?.hash) {
@@ -93,12 +119,12 @@ export default function NewProjectPage() {
             setRandomizeLanguages(false);
             setPrice(0);
             setPriceType('per_url');
-            setLanguages([{ id: genId(), code: '', ratio: 100 }]);
+            setLanguages([{ id: genId(), code: '', ratio: 1 }]);
             setProjectInfoGroups([{
                 id: genId(),
                 sheet_name: '',
                 category: 'NULL',
-                placement_target: [{ id: genId(), anchor_text: '', target_url: '', ratio: 100 }]
+                placement_target: [{ id: genId(), anchor_text: '', target_url: '', ratio: 1 }]
             }]);
         }
     }, [state?.success, state?.hash]);
@@ -117,17 +143,14 @@ export default function NewProjectPage() {
 
     // --- Language Ratio Helpers ---
     const addLanguage = () => {
-        setLanguages([...languages, { id: genId(), code: '', ratio: 0 }]);
+        const newLangs = [...languages, { id: genId(), code: '', ratio: 0 }];
+        setLanguages(rebalanceLanguages(newLangs, masterQuantity));
     };
 
     const removeLanguage = (idToRemove) => {
         if (languages.length > 1) {
             const remaining = languages.filter(l => l.id !== idToRemove);
-            // If only 1 left, auto-set to 100%
-            if (remaining.length === 1) {
-                remaining[0].ratio = 100;
-            }
-            setLanguages(remaining);
+            setLanguages(rebalanceLanguages(remaining, masterQuantity));
         }
     };
 
@@ -141,22 +164,24 @@ export default function NewProjectPage() {
         return languages.reduce((sum, l) => sum + (parseInt(l.ratio) || 0), 0);
     }, [languages]);
 
-    const isValidLanguageRatio = languageRatioSum === 100;
+    const isValidLanguageRatio = languageRatioSum === masterQuantity;
     const allLanguagesFilled = languages.every(l => l.code.trim().length > 0);
 
     // --- Project Info Group Helpers ---
     const addProjectInfoGroup = () => {
-        setProjectInfoGroups([...projectInfoGroups, {
+        const newGroups = [...projectInfoGroups, {
             id: genId(),
             sheet_name: '',
             category: 'NULL',
             placement_target: [{ id: genId(), anchor_text: '', target_url: '', ratio: 0 }]
-        }]);
+        }];
+        setProjectInfoGroups(rebalanceProjectInfoGroups(newGroups, masterQuantity));
     };
 
     const removeProjectInfoGroup = (groupId) => {
         if (projectInfoGroups.length > 1) {
-            setProjectInfoGroups(projectInfoGroups.filter(g => g.id !== groupId));
+            const newGroups = projectInfoGroups.filter(g => g.id !== groupId);
+            setProjectInfoGroups(rebalanceProjectInfoGroups(newGroups, masterQuantity));
         }
     };
 
@@ -167,21 +192,23 @@ export default function NewProjectPage() {
     };
 
     const addTargetRow = (groupId) => {
-        setProjectInfoGroups(projectInfoGroups.map(g => {
+        const newGroups = projectInfoGroups.map(g => {
             if (g.id === groupId) {
                 return { ...g, placement_target: [...g.placement_target, { id: genId(), anchor_text: '', target_url: '', ratio: 0 }] };
             }
             return g;
-        }));
+        });
+        setProjectInfoGroups(rebalanceProjectInfoGroups(newGroups, masterQuantity));
     };
 
     const removeTargetRow = (groupId, rowId) => {
-        setProjectInfoGroups(projectInfoGroups.map(g => {
+        const newGroups = projectInfoGroups.map(g => {
             if (g.id === groupId && g.placement_target.length > 1) {
                 return { ...g, placement_target: g.placement_target.filter(t => t.id !== rowId) };
             }
             return g;
-        }));
+        });
+        setProjectInfoGroups(rebalanceProjectInfoGroups(newGroups, masterQuantity));
     };
 
     const updateTarget = (groupId, rowId, field, value) => {
@@ -204,7 +231,26 @@ export default function NewProjectPage() {
         }, 0);
     }, [projectInfoGroups]);
 
-    const isValidTargetRatio = targetRatioSum === 100;
+    const isValidTargetRatio = targetRatioSum === masterQuantity;
+
+    const allCategoriesSelected = useMemo(() => {
+        return projectInfoGroups.every(g => g.category !== 'NULL');
+    }, [projectInfoGroups]);
+
+    // URL Validation (mega888gaya catch)
+    const checkInvalidUrlFormat = (urlStr) => {
+        if (!urlStr) return false;
+        try {
+            const urlObj = new URL(/^https?:\/\//i.test(urlStr) ? urlStr : `https://${urlStr}`);
+            return !urlObj.hostname.includes('.');
+        } catch(e) {
+            return true;
+        }
+    };
+
+    const hasInvalidUrls = useMemo(() => {
+        return projectInfoGroups.some(g => g.placement_target.some(t => checkInvalidUrlFormat(t.target_url)));
+    }, [projectInfoGroups]);
 
     // Derived first language for backward compat hidden field
     const firstLanguageCode = languages[0]?.code || '';
@@ -350,10 +396,10 @@ export default function NewProjectPage() {
                                 <Languages className="w-5 h-5 text-indigo-600" />
                                 Language Distribution
                             </h2>
-                            <p className="text-xs text-gray-500 mt-1">Specify content languages and their quantity ratio. Must total 100%.</p>
+                            <p className="text-xs text-gray-500 mt-1">Specify content languages and their distinct quantities. Must total {masterQuantity} units.</p>
                         </div>
                         <div className={`text-sm font-bold px-4 py-2 rounded-md border flex items-center justify-center transition-colors shadow-sm ${isValidLanguageRatio ? 'bg-green-100 text-green-800 border-green-300' : 'bg-red-50 text-red-700 border-red-200'}`}>
-                            Total: {languageRatioSum}% {isValidLanguageRatio ? '✓' : '✗'}
+                            Subtotal: {languageRatioSum} qty {isValidLanguageRatio ? '✓' : '✗'}
                         </div>
                     </div>
 
@@ -377,20 +423,12 @@ export default function NewProjectPage() {
                                     <input
                                         type="number"
                                         min="0"
-                                        max="100"
                                         value={lang.ratio}
                                         onChange={(e) => updateLanguage(lang.id, 'ratio', e.target.value)}
-                                        readOnly={languages.length === 1}
-                                        className={`w-full border border-gray-300 rounded p-2 text-sm font-mono text-right pr-7 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all ${languages.length === 1 ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : 'text-gray-900'}`}
+                                        className="w-full border border-gray-300 rounded p-2 text-sm font-mono text-right pr-9 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all text-gray-900"
                                     />
-                                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-sm font-bold text-gray-400">%</span>
+                                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-gray-400">qty</span>
                                 </div>
-
-                                {lang.code && masterQuantity > 0 && (
-                                    <div className="text-xs text-indigo-600 font-semibold whitespace-nowrap w-16 text-center" title="Calculated quantity for this language">
-                                        = {Math.round(masterQuantity * lang.ratio / 100)} qty
-                                    </div>
-                                )}
 
                                 {languages.length > 1 && (
                                     <button
@@ -417,7 +455,7 @@ export default function NewProjectPage() {
 
                         {!isValidLanguageRatio && (
                             <span className="text-sm font-medium text-red-600 bg-red-50 px-3 py-1 rounded-full animate-pulse">
-                                {languageRatioSum < 100 ? `${100 - languageRatioSum}% remaining` : `${languageRatioSum - 100}% over limit`}
+                                {languageRatioSum < masterQuantity ? `${masterQuantity - languageRatioSum} qty remaining` : `${languageRatioSum - masterQuantity} qty over limit`}
                             </span>
                         )}
 
@@ -507,10 +545,10 @@ export default function NewProjectPage() {
                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end mb-6 gap-4">
                         <div>
                             <h2 className="text-lg font-bold text-gray-900">Placement Targets (Project Tasks)</h2>
-                            <p className="text-xs text-gray-500 mt-1">Group your target links by category and sheet origin. Ratios across all groups must total exactly 100%.</p>
+                            <p className="text-xs text-gray-500 mt-1">Group your target links by category and sheet origin. Quantities across all groups must exactly total the Master Quantity ({masterQuantity}).</p>
                         </div>
                         <div className={`text-sm font-bold px-4 py-2 rounded-md border flex items-center justify-center transition-colors shadow-sm ${isValidTargetRatio ? 'bg-green-100 text-green-800 border-green-300' : 'bg-red-50 text-red-700 border-red-200'}`}>
-                            Total Ratio: {targetRatioSum}% {isValidTargetRatio ? '✓' : '✗'}
+                            Subtotal: {targetRatioSum} qty {isValidTargetRatio ? '✓' : '✗'}
                         </div>
                     </div>
 
@@ -596,28 +634,24 @@ export default function NewProjectPage() {
                                                     placeholder="https://client-site.com/seo-page"
                                                     value={row.target_url}
                                                     onChange={(e) => updateTarget(group.id, row.id, 'target_url', e.target.value)}
-                                                    className="w-full border border-gray-300 rounded p-2 text-sm text-gray-900 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all placeholder:text-gray-400"
+                                                    className={`w-full border rounded p-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all placeholder:text-gray-400 ${checkInvalidUrlFormat(row.target_url) ? 'border-red-500 text-red-900 bg-red-50 focus:ring-red-500' : 'border-gray-300 text-gray-900'}`}
                                                 />
+                                                {checkInvalidUrlFormat(row.target_url) && (
+                                                    <span className="absolute -bottom-4 left-[2.5rem] sm:left-[35%] text-[10px] font-bold text-red-600">Invalid URL Format (Requires Top Level Domain like .com)</span>
+                                                )}
                                             </div>
                                             <div className="w-full sm:w-28 relative">
-                                                <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1 sm:hidden">Ratio (%)</label>
+                                                <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1 sm:hidden">Quantity</label>
                                                 <input
                                                     type="number"
                                                     required
                                                     min="0"
-                                                    max="100"
                                                     value={row.ratio}
                                                     onChange={(e) => updateTarget(group.id, row.id, 'ratio', e.target.value)}
-                                                    className="w-full border border-gray-300 rounded p-2 text-sm text-gray-900 font-mono focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all pr-8 text-right"
+                                                    className="w-full border border-gray-300 rounded p-2 text-sm text-gray-900 font-mono focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all pr-9 text-right"
                                                 />
-                                                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-sm font-bold text-gray-400 sm:mt-0 mt-[11px]">%</span>
+                                                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-gray-400 sm:mt-0 mt-[11px]">qty</span>
                                             </div>
-
-                                            {masterQuantity > 0 && (
-                                                <div className="text-xs text-indigo-600 font-semibold whitespace-nowrap w-16 text-center shrink-0" title="Calculated quantity for this target">
-                                                    = {Math.round(masterQuantity * (parseInt(row.ratio) || 0) / 100)} qty
-                                                </div>
-                                            )}
 
                                             {group.placement_target.length > 1 && (
                                                 <button
@@ -657,7 +691,12 @@ export default function NewProjectPage() {
 
                         {!isValidTargetRatio && (
                             <span className="text-sm font-medium text-red-600 bg-red-50 px-3 py-1.5 rounded-full animate-pulse shadow-sm border border-red-100">
-                                {targetRatioSum < 100 ? `${100 - targetRatioSum}% remaining` : `${targetRatioSum - 100}% over limit`} to reach exactly 100%.
+                                {targetRatioSum < masterQuantity ? `${masterQuantity - targetRatioSum} qty remaining` : `${targetRatioSum - masterQuantity} qty over limit`} to reach exactly {masterQuantity}.
+                            </span>
+                        )}
+                        {isValidTargetRatio && !allCategoriesSelected && (
+                            <span className="text-sm font-medium text-red-600 bg-red-50 px-3 py-1.5 rounded-full animate-pulse shadow-sm border border-red-100">
+                                Please ensure all Target Groups have a Category selected.
                             </span>
                         )}
                     </div>
@@ -670,7 +709,7 @@ export default function NewProjectPage() {
                     <textarea name="remarks" rows={3} placeholder="Any additional notes for this project..." className="block w-full border border-gray-300 rounded-md shadow-sm p-3 text-gray-900 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" />
                 </div>
 
-                <SubmitButton isValid={isValidTargetRatio && isValidLanguageRatio && allLanguagesFilled} />
+                <SubmitButton isValid={isValidTargetRatio && isValidLanguageRatio && allLanguagesFilled && !hasInvalidUrls && allCategoriesSelected} />
             </form>
         </div>
     );

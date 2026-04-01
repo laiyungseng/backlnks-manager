@@ -4,7 +4,7 @@ export const projectLanguageSchema = z.object({
     id: z.number().int().optional().describe('SERIAL; PRIMARY KEY; Unique ID for the language ratio'),
     project_id: z.string().uuid().describe('UUID; FOREIGN KEY (project_id) REFERENCES projects(id); NOT NULL; Reference to the parent project'),
     lang_code: z.string().min(1, 'Language code required').max(5).describe('VARCHAR(5); NOT NULL; Language ISO code (e.g., EN, DE, FR)'),
-    ratio: z.coerce.number().min(0).max(100).describe('INTEGER; NOT NULL; Percentage representation for this language (0-100)')
+    ratio: z.coerce.number().min(0).describe('INTEGER; NOT NULL; Absolute quantity representation for this language')
 }).describe('Schema defining the project_languages child table');
 
 export const projectTargetSchema = z.object({
@@ -66,10 +66,9 @@ export const projectFormPayloadSchema = projectSchema.omit({
         })
         .pipe(z.array(z.object({
             code: z.string().min(1, 'Language code required').max(5).describe('Language ISO code (e.g., EN, DE, FR)'),
-            ratio: z.coerce.number().min(0).max(100).describe('Percentage representation for this language (0-100)')
-        })).min(1, 'At least one language is required').describe('Array of target languages with their requested percentage distributions'))
-        .refine((langs) => langs.reduce((sum, l) => sum + l.ratio, 0) === 100, { message: 'Language ratios must sum to exactly 100%' })
-        .describe('Stringified JSON array representing multiple language targets and their ratios'),
+            ratio: z.coerce.number().min(0).describe('Absolute quantity representation for this language')
+        })).min(1, 'At least one language is required').describe('Array of target languages with their requested exact quantities'))
+        .describe('Stringified JSON array representing multiple language targets and their quantities'),
     project_info_json: z.string()
         .min(1, 'Project Info blocks are required')
         .transform((str, ctx) => {
@@ -84,14 +83,28 @@ export const projectFormPayloadSchema = projectSchema.omit({
             placement_target: z.array(z.object({
                 anchor_text: z.string().min(1, 'Anchor text required').describe('The exact text to be used for the hyperlink'),
                 target_url: z.string().min(1, 'Target URL is required').transform(val => /^https?:\/\//i.test(val) ? val : `https://${val}`).pipe(z.string().url('Invalid URL formatting')).describe('The destination URL the link should point to'),
-                ratio: z.coerce.number().min(0).max(100).describe('Percentage representation for this target (0-100)')
+                ratio: z.coerce.number().min(0).describe('Absolute quantity representation for this target')
             })).min(1, 'At least one target row is required in each group')
         })).min(1, 'At least one project info group is required'))
-        .refine((groups) => {
-            const totalRatio = groups.reduce((acc, group) => {
-                return acc + group.placement_target.reduce((sum, target) => sum + target.ratio, 0);
-            }, 0);
-            return totalRatio === 100;
-        }, { message: 'The sum of all target ratios across all groups must be exactly 100%' })
         .describe('Stringified JSON array holding grouped project info arrays, each containing category, sheet name, and target rows')
+}).superRefine((data, ctx) => {
+    const langSum = data.languages_json.reduce((sum, l) => sum + l.ratio, 0);
+    if (langSum !== data.quantity) {
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Language quantities must sum to exactly ${data.quantity} (currently ${langSum})`,
+            path: ['languages_json']
+        });
+    }
+
+    const targetSum = data.project_info_json.reduce((acc, group) => {
+        return acc + group.placement_target.reduce((sum, target) => sum + target.ratio, 0);
+    }, 0);
+    if (targetSum !== data.quantity) {
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Target quantities must sum to exactly ${data.quantity} (currently ${targetSum})`,
+            path: ['project_info_json']
+        });
+    }
 }).describe('Schema defining the API payload for creating a new project');

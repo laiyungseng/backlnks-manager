@@ -52,7 +52,7 @@ export async function createProjectAction(prevState, formData) {
 
         projectInfoArray.forEach(infoGroup => {
             infoGroup.placement_target.forEach(target => {
-                const absoluteQuantity = Math.round(projectData.quantity * target.ratio / 100);
+                const absoluteQuantity = parseInt(target.ratio || 0, 10);
                 allocatedCount += absoluteQuantity;
                 
                 flattenedTargets.push({
@@ -65,13 +65,6 @@ export async function createProjectAction(prevState, formData) {
                 });
             });
         });
-
-        // Resolve rounding discrepancies (e.g. 33% * 3 = 99%)
-        const discrepancy = projectData.quantity - allocatedCount;
-        if (discrepancy !== 0 && flattenedTargets.length > 0) {
-            const adjustedQty = parseInt(flattenedTargets[0].quantity, 10) + discrepancy;
-            flattenedTargets[0].quantity = String(Math.max(0, adjustedQty));
-        }
 
         // 2. Generate secure crypt-hash for Vendor allocation URL
         const rawString = `${projectData.project_name}-${Date.now()}-${Math.random()}`;

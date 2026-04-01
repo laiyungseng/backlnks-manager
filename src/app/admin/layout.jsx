@@ -32,16 +32,17 @@ export default function AdminLayout({ children }) {
     return (
         <div className="min-h-screen bg-slate-50 flex font-sans">
             {/* Sidebar */}
-            <div className={`bg-slate-900 flex-shrink-0 flex-col hidden md:flex transition-all duration-300 ease-in-out sticky top-0 h-screen ${isCollapsed ? 'w-[68px]' : 'w-64'}`}>
+            <div className={`bg-slate-900 flex-shrink-0 flex-col hidden md:flex transition-all duration-300 ease-in-out sticky top-0 h-screen overflow-x-hidden ${isCollapsed ? 'w-[68px]' : 'w-64'}`}>
                 {/* Header */}
-                <div className="h-16 flex items-center px-4 border-b border-slate-800 justify-between shrink-0">
+                <div className={`h-16 flex items-center border-b border-slate-800 shrink-0 ${isCollapsed ? 'px-2 justify-between' : 'px-4 justify-between'}`}>
                     <div className="flex items-center gap-2 overflow-hidden">
-                        <span className="bg-indigo-600 w-8 h-8 rounded-md flex items-center justify-center text-sm flex-shrink-0 font-black text-white">DF</span>
+                        <span className={`bg-indigo-600 rounded-md flex items-center justify-center flex-shrink-0 font-black text-white ${isCollapsed ? 'w-6 h-6 text-xs' : 'w-8 h-8 text-sm'}`}>DF</span>
                         {!isCollapsed && <h1 className="text-xl font-black text-white tracking-widest whitespace-nowrap uppercase">Drive-Future</h1>}
                     </div>
                     <button 
                         onClick={() => setIsCollapsed(!isCollapsed)}
-                        className="text-slate-400 hover:text-white p-1 rounded-md hover:bg-slate-800 transition-colors shrink-0"
+                        className="text-slate-400 hover:text-white p-1 rounded-md hover:bg-slate-800 transition-colors shrink-0 flex items-center justify-center"
+                        title={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
                     >
                         {isCollapsed ? <PanelLeftOpen className="w-5 h-5" /> : <PanelLeftClose className="w-5 h-5" />}
                     </button>
