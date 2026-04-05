@@ -1,14 +1,11 @@
 'use server';
 
-import { supabase } from '@/lib/supabase';
+import { getServerSupabase } from '@/lib/supabase-server';
 import { projectFormPayloadSchema } from '@/schemas/projectSchema';
 import crypto from 'crypto';
 
 export async function createProjectAction(prevState, formData) {
-    if (!supabase) {
-        return { success: false, message: 'Database connection not configured.' };
-    }
-
+    const supabase = getServerSupabase();
     try {
         const rawData = {
             project_name: formData.get('project_name'),

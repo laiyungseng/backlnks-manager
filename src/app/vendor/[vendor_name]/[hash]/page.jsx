@@ -1,10 +1,11 @@
-import { supabase } from '@/lib/supabase';
+import { getServerSupabase } from '@/lib/supabase-server';
 import { redirect } from 'next/navigation';
 import VendorForm from './VendorForm';
 
 export const dynamic = 'force-dynamic';
 
 export default async function VendorProjectPage({ params }) {
+    const supabase = getServerSupabase();
     const resolvedParams = await params;
     const hash = resolvedParams?.hash;
     const vendorNameParam = resolvedParams?.vendor_name;

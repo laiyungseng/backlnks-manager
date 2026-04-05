@@ -34,11 +34,9 @@ export async function GET() {
         // Add foreign key constraint examples for Phase 3
         sqlOutput += `-- To apply this, copy and run in your Supabase SQL Editor.\n`;
 
-        return new NextResponse(sqlOutput, {
-            headers: { 'Content-Type': 'text/plain' }
-        });
+        return NextResponse.json({ success: true, sql: sqlOutput });
 
     } catch (error) {
-        return new NextResponse(`Error generating SQL: ${error.message}`, { status: 500 });
+        return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 }

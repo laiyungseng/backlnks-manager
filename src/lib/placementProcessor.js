@@ -1,4 +1,5 @@
-import { supabase } from './supabase';
+import { randomUUID } from 'crypto';
+import { getServerSupabase } from './supabase-server';
 import { parseDomainUrl } from './utils';
 
 /**
@@ -9,6 +10,7 @@ import { parseDomainUrl } from './utils';
  * @returns {object} - Success status and processed counts
  */
 export async function normalizeProjectData(projectHash) {
+    const supabase = getServerSupabase();
     try {
         // 1. Fetch the overarching project and unverified vendor data
         const { data: rawProjectsHub, error: fetchError } = await supabase
@@ -106,7 +108,7 @@ export async function normalizeProjectData(projectHash) {
                     };
                 } else {
                     return {
-                        id: crypto.randomUUID(), // Explicitly set ID to prevent 'null value in column id' constraint errors
+                        id: randomUUID(), // Explicitly set ID to prevent 'null value in column id' constraint errors
                         domain_url: normalizedUrl,
                         vendor_id: targetVendorId,
                         dr: null,

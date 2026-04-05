@@ -1,8 +1,9 @@
-import { supabase } from '@/lib/supabase';
+import { getServerSupabase } from '@/lib/supabase-server';
 import CompletedDashboardClient from './CompletedDashboardClient';
 export const revalidate = 0; // Always fresh
 
 export default async function CompletedPlacementsPage() {
+    const supabase = getServerSupabase();
     const { data: projects, error } = await supabase
         .from('projects')
         .select(`

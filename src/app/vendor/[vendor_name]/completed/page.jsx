@@ -1,10 +1,11 @@
-import { supabase } from '@/lib/supabase';
+import { getServerSupabase } from '@/lib/supabase-server';
 import Link from 'next/link';
 import { Lock, ExternalLink, CheckCircle2 } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
 
 export default async function VendorCompletedPage({ params }) {
+    const supabase = getServerSupabase();
     const resolvedParams = await params;
     const vendorName = resolvedParams?.vendor_name;
 

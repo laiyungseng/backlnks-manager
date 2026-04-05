@@ -1,16 +1,10 @@
 'use server';
 
-import { createClient } from '@supabase/supabase-js';
+import { getServerSupabase } from '@/lib/supabase-server';
 import { vendorSchema } from '../../../schemas/vendorSchema';
 
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_ANON_KEY;
-const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
-
 export async function getVendors() {
-    if (!supabase) {
-        return { success: false, message: 'Database client not initialized. Check your environment variables.' };
-    }
+    const supabase = getServerSupabase();
 
     try {
         const { data, error } = await supabase
@@ -48,10 +42,7 @@ export async function getVendors() {
 }
 
 export async function saveVendors(rows) {
-    if (!supabase) {
-        return { success: false, message: 'Database client not initialized.' };
-    }
-
+    const supabase = getServerSupabase();
     try {
         const rowsToUpsert = await Promise.all(rows.map(async (r) => {
             let existingRecord = {};
@@ -121,10 +112,7 @@ export async function saveVendors(rows) {
 }
 
 export async function deleteVendors(rowIds) {
-    if (!supabase) {
-        return { success: false, message: 'Database client not initialized.' };
-    }
-
+    const supabase = getServerSupabase();
     try {
         const validIds = rowIds.filter(id => id && !id.startsWith('new_'));
 
@@ -162,10 +150,7 @@ export async function deleteVendors(rowIds) {
 }
 
 export async function getLinkedDomains(vendorIds) {
-    if (!supabase) {
-        return { success: false, message: 'Database client not initialized.' };
-    }
-
+    const supabase = getServerSupabase();
     try {
         const validIds = vendorIds.filter(id => id && !id.startsWith('new_'));
         if (validIds.length === 0) return { success: true, domains: [] };

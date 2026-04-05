@@ -10,7 +10,10 @@ const ENCODING = 'hex';
  * technically SHA256 is used for key derivation, AES-256-GCM for the cipher.
  */
 function getKey() {
-    const secret = process.env.ENCRYPTION_SECRET || 'df-app-internal-secret-v1';
+    const secret = process.env.ENCRYPTION_SECRET;
+    if (!secret) {
+        throw new Error('ENCRYPTION_SECRET environment variable is not set. Set it in your deployment environment.');
+    }
     return crypto.createHash('sha256').update(String(secret)).digest();
 }
 

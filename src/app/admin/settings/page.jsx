@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Database, Save, Eye, EyeOff, CheckCircle2, AlertCircle, Loader2, Wifi, WifiOff } from 'lucide-react';
-import { saveApiCredentialAction, getApiCredentialStatusAction, checkConnectionAction } from './actions';
+import { Database, Save, Eye, EyeOff, CheckCircle2, AlertCircle, Loader2, Wifi, WifiOff, Lock } from 'lucide-react';
+import { saveApiCredentialAction, getApiCredentialStatusAction, checkConnectionAction, changePasswordAction } from './actions';
 
 export default function SettingsPage() {
     // Form inputs
@@ -20,22 +20,21 @@ export default function SettingsPage() {
     const [isLoadingExisting, setIsLoadingExisting] = useState(true);
 
     // Connection check state
-    const [connStatus, setConnStatus] = useState('idle'); // 'idle' | 'checking' | 'connected' | 'failed'
+    const [connStatus, setConnStatus] = useState('idle');
     const [connMessage, setConnMessage] = useState('');
     const [isCheckingConn, setIsCheckingConn] = useState(false);
 
-    function getAdminUserId() {
-        const session = JSON.parse(localStorage.getItem('df_admin_session') || '{}');
-        return session?.user?.id || null;
-    }
+    // Password change state
+    const [currentPw, setCurrentPw] = useState('');
+    const [newPw, setNewPw] = useState('');
+    const [isChangingPw, setIsChangingPw] = useState(false);
+    const [pwStatus, setPwStatus] = useState(null);
+    const [pwMessage, setPwMessage] = useState('');
 
-    // Load existing masked credentials on mount
     useEffect(() => {
         async function load() {
-            const adminUserId = getAdminUserId();
-            if (!adminUserId) { setIsLoadingExisting(false); return; }
             try {
-                const result = await getApiCredentialStatusAction(adminUserId);
+                const result = await getApiCredentialStatusAction();
                 if (result.exists) setExisting(result);
             } catch (e) {
                 console.error('Failed to load credentials:', e);
@@ -55,16 +54,12 @@ export default function SettingsPage() {
         setConnMessage('');
 
         try {
-            const adminUserId = getAdminUserId();
-            const result = await saveApiCredentialAction(adminUserId, {
-                supabase_url: url,
-                supabase_anon_key: anonKey,
-            });
+            const result = await saveApiCredentialAction({ supabase_url: url, supabase_anon_key: anonKey });
 
             if (result.success) {
                 setSaveStatus('success');
                 setSaveMessage('Credentials encrypted and saved successfully.');
-                const refreshed = await getApiCredentialStatusAction(adminUserId);
+                const refreshed = await getApiCredentialStatusAction();
                 if (refreshed.exists) setExisting(refreshed);
                 setUrl('');
                 setAnonKey('');
@@ -86,8 +81,7 @@ export default function SettingsPage() {
         setConnStatus('checking');
         setConnMessage('');
         try {
-            const adminUserId = getAdminUserId();
-            const result = await checkConnectionAction(adminUserId);
+            const result = await checkConnectionAction();
             setConnStatus(result.success ? 'connected' : 'failed');
             setConnMessage(result.message);
         } catch (e) {
@@ -98,11 +92,35 @@ export default function SettingsPage() {
         }
     }
 
+    async function handleChangePassword(e) {
+        e.preventDefault();
+        setIsChangingPw(true);
+        setPwStatus(null);
+        setPwMessage('');
+        try {
+            const result = await changePasswordAction(currentPw, newPw);
+            if (result.success) {
+                setPwStatus('success');
+                setPwMessage('Password updated successfully.');
+                setCurrentPw('');
+                setNewPw('');
+                setTimeout(() => setPwStatus(null), 5000);
+            } else {
+                setPwStatus('error');
+                setPwMessage(result.message);
+            }
+        } catch (e) {
+            setPwStatus('error');
+            setPwMessage(e.message);
+        } finally {
+            setIsChangingPw(false);
+        }
+    }
+
     const hasInput = url.trim() || anonKey.trim();
 
     return (
         <div className="max-w-3xl mx-auto space-y-8">
-            {/* Page header */}
             <div>
                 <h1 className="text-4xl font-bold text-gray-900 tracking-tight">Settings</h1>
                 <p className="mt-2 text-sm text-gray-500">
@@ -112,7 +130,6 @@ export default function SettingsPage() {
 
             {/* Credentials card */}
             <div className="bg-white rounded-xl shadow-sm ring-1 ring-gray-200 overflow-hidden">
-                {/* Card header */}
                 <div className="px-6 py-5 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
                     <div className="flex items-center gap-3">
                         <div className="p-2 bg-indigo-100 rounded-lg">
@@ -128,7 +145,6 @@ export default function SettingsPage() {
                 </div>
 
                 <div className="p-6 space-y-6">
-                    {/* Existing masked values */}
                     {!isLoadingExisting && existing && (
                         <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
                             <p className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest mb-3">
@@ -148,7 +164,6 @@ export default function SettingsPage() {
                     )}
 
                     <form onSubmit={handleSave} className="space-y-5">
-                        {/* Supabase URL */}
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1.5">
                                 Supabase Project URL
@@ -160,16 +175,11 @@ export default function SettingsPage() {
                                 placeholder="https://your-project-id.supabase.co"
                                 className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm font-mono text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-shadow"
                             />
-                            <p className="mt-1 text-xs text-gray-400">
-                                Project Settings → API → Project URL
-                            </p>
+                            <p className="mt-1 text-xs text-gray-400">Project Settings → API → Project URL</p>
                         </div>
 
-                        {/* Publishable key */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                                Publishable Key
-                            </label>
+                            <label className="block text-sm font-medium text-gray-700 mb-1.5">Publishable Key</label>
                             <div className="relative">
                                 <input
                                     type={showAnonKey ? 'text' : 'password'}
@@ -191,7 +201,6 @@ export default function SettingsPage() {
                             </p>
                         </div>
 
-                        {/* Save status */}
                         {saveStatus === 'success' && (
                             <div className="flex items-center gap-2 px-4 py-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800">
                                 <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0" />
@@ -205,7 +214,6 @@ export default function SettingsPage() {
                             </div>
                         )}
 
-                        {/* Save button */}
                         <div className="flex justify-end pt-1">
                             <button
                                 type="submit"
@@ -218,18 +226,15 @@ export default function SettingsPage() {
                         </div>
                     </form>
 
-                    {/* Connection check strip */}
                     <div className="border-t border-gray-100 pt-5 flex items-center gap-4">
                         <div className="flex items-center gap-2.5 flex-1 min-w-0">
                             <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${connStatus === 'connected' ? 'bg-green-500 shadow-[0_0_6px_2px_rgba(34,197,94,0.4)]' :
-                                    connStatus === 'failed' ? 'bg-red-500 shadow-[0_0_6px_2px_rgba(239,68,68,0.4)]' :
-                                        connStatus === 'checking' ? 'bg-amber-400 animate-pulse' :
-                                            'bg-gray-300'
+                                connStatus === 'failed' ? 'bg-red-500 shadow-[0_0_6px_2px_rgba(239,68,68,0.4)]' :
+                                    connStatus === 'checking' ? 'bg-amber-400 animate-pulse' :
+                                        'bg-gray-300'
                                 }`} />
                             <div className="min-w-0">
-                                <p className="text-sm font-medium text-gray-700">
-                                    Check connection to your Supabase
-                                </p>
+                                <p className="text-sm font-medium text-gray-700">Check connection to your Supabase</p>
                                 {connMessage && (
                                     <p className={`text-xs mt-0.5 ${connStatus === 'connected' ? 'text-green-600' : 'text-red-500'}`}>
                                         {connMessage}
@@ -258,12 +263,72 @@ export default function SettingsPage() {
                 </div>
             </div>
 
-            {/* Important note */}
+            {/* Password change card */}
+            <div className="bg-white rounded-xl shadow-sm ring-1 ring-gray-200 overflow-hidden">
+                <div className="px-6 py-5 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-amber-100 rounded-lg">
+                            <Lock className="w-5 h-5 text-amber-600" />
+                        </div>
+                        <div>
+                            <h2 className="text-lg font-semibold text-gray-900">Change Password</h2>
+                            <p className="text-xs text-gray-500 mt-0.5">Passwords are hashed with bcrypt before storage.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <form onSubmit={handleChangePassword} className="p-6 space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Current Password</label>
+                        <input
+                            type="password"
+                            value={currentPw}
+                            onChange={(e) => setCurrentPw(e.target.value)}
+                            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">New Password</label>
+                        <input
+                            type="password"
+                            value={newPw}
+                            onChange={(e) => setNewPw(e.target.value)}
+                            placeholder="Minimum 12 characters"
+                            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                        />
+                    </div>
+
+                    {pwStatus === 'success' && (
+                        <div className="flex items-center gap-2 px-4 py-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800">
+                            <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0" />
+                            <span>{pwMessage}</span>
+                        </div>
+                    )}
+                    {pwStatus === 'error' && (
+                        <div className="flex items-center gap-2 px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
+                            <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0" />
+                            <span>{pwMessage}</span>
+                        </div>
+                    )}
+
+                    <div className="flex justify-end pt-1">
+                        <button
+                            type="submit"
+                            disabled={isChangingPw || !currentPw || !newPw}
+                            className="inline-flex items-center gap-2 px-5 py-2.5 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                        >
+                            {isChangingPw ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
+                            {isChangingPw ? 'Updating...' : 'Update Password'}
+                        </button>
+                    </div>
+                </form>
+            </div>
+
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
                 <div className="flex items-start gap-2.5">
                     <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
                     <p className="text-sm text-amber-800 font-medium">
-                        Do not show your API credentials to other people.
+                        Do not share your API credentials or admin password.
                     </p>
                 </div>
             </div>

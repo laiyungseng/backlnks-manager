@@ -1,12 +1,12 @@
 'use server';
 
-import { supabase } from '@/lib/supabase';
+import { getServerSupabase } from '@/lib/supabase-server';
 import { revalidatePath } from 'next/cache';
 
 export async function deleteProject(projectId) {
     if (!projectId) return { success: false, message: 'Project ID is missing.' };
-    if (!supabase) return { success: false, message: 'Database connection not configured.' };
 
+    const supabase = getServerSupabase();
     try {
         // 0.5 Delete from project_languages and project_targets
         const { error: langError } = await supabase.from('project_languages').delete().eq('project_id', projectId);
@@ -61,8 +61,8 @@ export async function deleteProject(projectId) {
 
 export async function approveProject(projectId) {
     if (!projectId) return { success: false, message: 'Project ID is missing.' };
-    if (!supabase) return { success: false, message: 'Database connection not configured.' };
 
+    const supabase = getServerSupabase();
     try {
         const { error } = await supabase
             .from('projects')
@@ -84,8 +84,8 @@ export async function approveProject(projectId) {
 
 export async function updateDashboardProjects(projectsArray) {
     if (!Array.isArray(projectsArray) || projectsArray.length === 0) return { success: true };
-    if (!supabase) return { success: false, message: 'Database connection not configured.' };
 
+    const supabase = getServerSupabase();
     try {
         // Bulk update or individual updates
         const updates = projectsArray.map(async p => {

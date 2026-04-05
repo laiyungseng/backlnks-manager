@@ -22,19 +22,10 @@ export default function LoginPage() {
 
         setIsLoading(true);
 
-        // Verify credentials securely on the server
         const res = await verifyLoginAction(username.trim(), password.trim());
 
         if (res.success) {
-            // Store successful session locally for client-side speed
-            localStorage.setItem('df_admin_session', JSON.stringify({
-                user: { id: res.user.id, username: res.user.username },
-                loggedInAt: new Date().toISOString()
-            }));
-
-            // Set a cookie so Middleware can protect routes on the server
-            document.cookie = `df_admin_session_active=true; path=/; max-age=${60 * 60 * 24}; SameSite=Strict`;
-
+            // Session cookie is set by the server action — no client-side cookie or localStorage
             router.push('/admin');
         } else {
             setError(res.message);

@@ -1,7 +1,7 @@
 'use server';
 
 import { normalizeProjectData } from '@/lib/placementProcessor';
-import { supabase } from '@/lib/supabase';
+import { getServerSupabase } from '@/lib/supabase-server';
 import { revalidatePath } from 'next/cache';
 
 export async function finalizeProjectAction(projectHash) {
@@ -22,10 +22,8 @@ export async function toggleProjectLockAction(projectHash, newLockState) {
     if (!projectHash) {
         return { success: false, message: 'Invalid project reference.' };
     }
-    if (!supabase) {
-        return { success: false, message: 'Database connection not configured.' };
-    }
 
+    const supabase = getServerSupabase();
     const { error } = await supabase
         .from('projects_hub')
         .update({ is_locked: newLockState })

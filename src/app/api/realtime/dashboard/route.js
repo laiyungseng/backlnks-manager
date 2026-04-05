@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { getServerSupabase } from '@/lib/supabase-server';
 
 /**
  * GET /api/realtime/dashboard
@@ -20,10 +20,11 @@ export const runtime = 'nodejs';
 const POLL_INTERVAL_MS = 4000;
 
 function buildSupabase() {
-    const url = process.env.SUPABASE_URL;
-    const key = process.env.SUPABASE_ANON_KEY;
-    if (!url || !key) return null;
-    return createClient(url, key);
+    try {
+        return getServerSupabase();
+    } catch {
+        return null;
+    }
 }
 
 async function fetchProjects(supabase) {
@@ -35,7 +36,7 @@ async function fetchProjects(supabase) {
             status, is_approved, start_date, deadline, price, price_type,
             dripfeed_enabled, dripfeed_period, urls_per_day,
             vendors ( vendor_name ),
-            projects_hub ( hash, targets, vendor_staging_data ),
+            projects_hub ( hash, targets, is_locked, vendor_staging_data ),
             placements ( id ),
             project_languages ( lang_code, ratio ),
             project_targets ( category, sheet_name )

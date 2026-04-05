@@ -1,9 +1,10 @@
-import { supabase } from '@/lib/supabase';
+import { getServerSupabase } from '@/lib/supabase-server';
 import ProjectDetailsClient from './ProjectDetailsClient';
 
 export const dynamic = 'force-dynamic';
 
 export default async function AdminProjectDetailsPage() {
+    const supabase = getServerSupabase();
     // Fetch recent projects from Supabase ALONG WITH their related Phase 2 Targets and Virtual Staging Data
     const { data: projects, error } = await supabase
         .from('projects')

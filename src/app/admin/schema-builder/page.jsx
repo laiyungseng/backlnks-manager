@@ -114,9 +114,7 @@ function CredentialModal({ onClose, onExecute }) {
 
     useEffect(() => {
         async function check() {
-            const session = JSON.parse(localStorage.getItem('df_admin_session') || '{}');
-            const adminUserId = session?.user?.id;
-            const res = await getCredentialStatusAction(adminUserId);
+            const res = await getCredentialStatusAction();
             setStatus(res);
         }
         check();
@@ -489,9 +487,7 @@ export default function SchemaBuilderPage() {
     }
 
     async function handleExecute() {
-        const session = JSON.parse(localStorage.getItem('df_admin_session') || '{}');
-        const adminUserId = session?.user?.id;
-        return await executeSupabaseSQLAction(adminUserId, sql);
+        return await executeSupabaseSQLAction(sql);
     }
 
     return (

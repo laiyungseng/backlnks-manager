@@ -1,24 +1,32 @@
 'use server';
 
-import { supabase } from '@/lib/supabase';
+import { getSession } from '@/lib/session';
+import { getServerSupabase } from '@/lib/supabase-server';
 import { decryptCredential } from '@/lib/crypto';
+import { writeAuditLog } from '@/lib/auditLog';
+
+async function requireAdmin() {
+    const session = await getSession();
+    if (!session?.id) throw new Error('Unauthorized');
+    return session;
+}
 
 /**
  * Returns whether credentials exist, with masked previews.
- * Called by the credential modal before executing SQL.
  */
-export async function getCredentialStatusAction(adminUserId) {
-    if (!adminUserId || !supabase) return { exists: false };
-
-    const { data, error } = await supabase
-        .from('admin_users')
-        .select('user_api_credential')
-        .eq('id', adminUserId)
-        .single();
-
-    if (error || !data?.user_api_credential) return { exists: false };
-
+export async function getCredentialStatusAction() {
     try {
+        const session = await requireAdmin();
+        const supabase = getServerSupabase();
+
+        const { data, error } = await supabase
+            .from('admin_users')
+            .select('user_api_credential')
+            .eq('id', session.id)
+            .single();
+
+        if (error || !data?.user_api_credential) return { exists: false };
+
         const cred = JSON.parse(data.user_api_credential);
         const decryptedKey = decryptCredential(cred.supabase_published_key);
         const maskKey = (val) => val ? `${val.substring(0, 8)}${'•'.repeat(20)}` : '';
@@ -37,22 +45,20 @@ export async function getCredentialStatusAction(adminUserId) {
  * Reads credentials from DB, decrypts the publishable key, and executes
  * the provided SQL against the user's Supabase project.
  */
-export async function executeSupabaseSQLAction(adminUserId, sql) {
-    if (!adminUserId) return { success: false, message: 'Session expired. Please log in again.' };
+export async function executeSupabaseSQLAction(sql) {
+    const session = await requireAdmin();
     if (!sql?.trim()) return { success: false, message: 'No SQL to execute.' };
-    if (!supabase) return { success: false, message: 'Database connection not configured.' };
+
+    const supabase = getServerSupabase();
 
     const { data, error } = await supabase
         .from('admin_users')
         .select('user_api_credential')
-        .eq('id', adminUserId)
+        .eq('id', session.id)
         .single();
 
     if (error || !data?.user_api_credential) {
-        return {
-            success: false,
-            message: 'No credentials found. Please configure them in Settings.',
-        };
+        return { success: false, message: 'No credentials found. Please configure them in Settings.' };
     }
 
     let url, key;
@@ -82,6 +88,13 @@ export async function executeSupabaseSQLAction(adminUserId, sql) {
                 || `API responded with HTTP ${response.status}`;
             return { success: false, message: msg };
         }
+
+        await writeAuditLog(supabase, {
+            action: 'sql_execute',
+            actor: session.username,
+            actorId: session.id,
+            detail: `SQL executed (${sql.length} chars)`,
+        });
 
         return { success: true, message: 'SQL executed successfully. Tables have been created in your Supabase project.' };
     } catch (e) {

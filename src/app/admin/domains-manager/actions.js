@@ -1,18 +1,11 @@
 'use server';
 
-import { createClient } from '@supabase/supabase-js';
+import { getServerSupabase } from '@/lib/supabase-server';
 import { domainSchema } from '../../../schemas/domainSchema';
 import { parseDomainUrl, parseMetric } from '../../../lib/utils';
 
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_ANON_KEY;
-const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
-
 export async function getDomains() {
-    if (!supabase) {
-        return { success: false, message: 'Database client not initialized.' };
-    }
-
+    const supabase = getServerSupabase();
     try {
         const { data, error } = await supabase
             .from('domains')
@@ -64,10 +57,7 @@ export async function getDomains() {
 }
 
 export async function saveDomains(rows) {
-    if (!supabase) {
-        return { success: false, message: 'Database client not initialized.' };
-    }
-
+    const supabase = getServerSupabase();
     try {
         const rowsToUpsert = await Promise.all(rows.map(async (r) => {
             let existingRecord = {};
@@ -137,10 +127,7 @@ export async function saveDomains(rows) {
 }
 
 export async function deleteDomains(rowIds) {
-    if (!supabase) {
-        return { success: false, message: 'Database client not initialized.' };
-    }
-
+    const supabase = getServerSupabase();
     try {
         const validIds = rowIds.filter(id => id && !id.startsWith('new_'));
 
@@ -166,10 +153,7 @@ export async function deleteDomains(rowIds) {
 }
 
 export async function uploadDomainMetrics(rows) {
-    if (!supabase) {
-        return { success: false, message: 'Database client not initialized.' };
-    }
-
+    const supabase = getServerSupabase();
     try {
         if (!Array.isArray(rows) || rows.length === 0) {
             return { success: false, message: 'No valid rows provided for upload.' };

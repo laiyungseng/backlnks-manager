@@ -1,9 +1,10 @@
-import { supabase } from '@/lib/supabase';
+import { getServerSupabase } from '@/lib/supabase-server';
 import { redirect } from 'next/navigation';
 
 export const dynamic = 'force-dynamic';
 
 export default async function VendorRootDispatcher({ params }) {
+    const supabase = getServerSupabase();
     const resolvedParams = await params;
     const pathParam = resolvedParams?.vendor_name;
 

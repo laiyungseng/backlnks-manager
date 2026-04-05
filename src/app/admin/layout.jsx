@@ -12,7 +12,6 @@ export default function AdminLayout({ children }) {
     const [isCollapsed, setIsCollapsed] = useState(false);
 
     const handleSignOut = async () => {
-        localStorage.removeItem('df_admin_session');
         await logoutAction();
         router.push('/login');
     };
