@@ -11,6 +11,11 @@ export default function ProjectDetailsClient({ initialProjects }) {
     const [selectedTargets, setSelectedTargets] = useState(null);
     const [projectToDelete, setProjectToDelete] = useState(null);
 
+    const [isCollapsed, setIsCollapsed] = useState({
+        active: false,
+        completed: false
+    });
+
     // Edit Mode State
     const [isEditMode, setIsEditMode] = useState(false);
     const [editedProjects, setEditedProjects] = useState([]);
@@ -141,28 +146,42 @@ export default function ProjectDetailsClient({ initialProjects }) {
     };
 
     const displayProjects = isEditMode ? editedProjects : projects;
-    // Split projects into two groups
+    
+    // Split projects into three groups
+    const pendingProjects = displayProjects.filter(p => !p.is_approved);
+
     const activeProjects = displayProjects.filter(p => {
+        if (!p.is_approved) return false;
         const hasPlacements = p.placements && p.placements.length > 0;
         const isFinalized = p.status === 'Finalized' || hasPlacements;
         return !isFinalized;
     });
 
     const completedProjects = displayProjects.filter(p => {
+        if (!p.is_approved) return false;
         const hasPlacements = p.placements && p.placements.length > 0;
         const isFinalized = p.status === 'Finalized' || hasPlacements;
         return isFinalized;
     });
 
-    const renderProjectTable = (title, data, isEdit = false) => (
-        <div className="bg-white shadow-soft rounded-xl border border-slate-200 overflow-hidden mb-12">
-            <div className="px-6 py-5 border-b border-slate-100 bg-white flex items-center justify-between">
+    const renderProjectTable = (title, data, isEdit = false, collapsed = false, onToggleCollapse = null) => (
+        <div className="bg-white shadow-soft rounded-xl border border-slate-200 overflow-hidden w-full">
+            <div 
+                className={`px-6 py-5 border-b border-slate-100 bg-white flex items-center justify-between ${onToggleCollapse ? 'cursor-pointer hover:bg-slate-50' : ''}`}
+                onClick={onToggleCollapse}
+            >
                 <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
                     {title}
                     {isEdit && <span className="text-indigo-600 text-[10px] font-black uppercase tracking-widest animate-pulse">(Edit Mode)</span>}
                 </h3>
-                <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">{data.length} Items</span>
+                <div className="flex items-center gap-3">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">{data.length} Items</span>
+                    {onToggleCollapse && (
+                        <span className="text-slate-400 px-2 font-bold">{collapsed ? '▼' : '▲'}</span>
+                    )}
+                </div>
             </div>
+            {!collapsed && (
             <div className="overflow-x-auto max-h-[640px] overflow-y-auto w-full border-t border-slate-100">
                 <table className="min-w-full divide-y divide-slate-200 relative">
                     <thead className="bg-white sticky top-0 z-10 shadow-sm ring-1 ring-slate-100">
@@ -308,6 +327,7 @@ export default function ProjectDetailsClient({ initialProjects }) {
                     </tbody>
                 </table>
             </div>
+            )}
         </div>
     );
 
@@ -356,8 +376,19 @@ export default function ProjectDetailsClient({ initialProjects }) {
                 ))}
             </div>
 
-            {renderProjectTable("Active & In-Process", activeProjects, isEditMode)}
-            {renderProjectTable("Recently Completed & Finalized", completedProjects, false)}
+            {/* Layout Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+                {/* Left Area (Active and Complete) */}
+                <div className="lg:col-span-2 flex flex-col gap-6">
+                    {renderProjectTable("Active & In-Process", activeProjects, isEditMode, isCollapsed.active, () => setIsCollapsed(prev => ({...prev, active: !prev.active})))}
+                    {renderProjectTable("Recently Completed & Finalized", completedProjects, false, isCollapsed.completed, () => setIsCollapsed(prev => ({...prev, completed: !prev.completed})))}
+                </div>
+
+                {/* Right Area (Pending Approval) */}
+                <div className="lg:col-span-1 flex flex-col gap-6 lg:border-l border-slate-200 lg:pl-6">
+                    {renderProjectTable("Pending Payment / Approval", pendingProjects, isEditMode)}
+                </div>
+            </div>
 
             {/* Target Modal with Indigo styling */}
             {selectedTargets && (

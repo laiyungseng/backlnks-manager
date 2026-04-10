@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Eye, Link as LinkIcon, MoreVertical, CheckCircle2, Lock, Unlock } from 'lucide-react';
 import { finalizeProjectAction, toggleProjectLockAction } from './actions';
+import CopyButton from '../projects/CopyButton';
 
 export default function PlacementProjectRow({ project, isCompletedView }) {
     const router = useRouter();
@@ -90,10 +91,21 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
         <div className="flex flex-wrap items-center gap-3 sm:gap-4 px-4 sm:px-5 py-4 bg-white rounded-2xl border border-slate-100 hover:border-slate-200 hover:shadow-sm transition-all relative">
             {/* Project Name & Chips */}
             <div className="w-full md:w-auto md:flex-[1.5] min-w-[200px] pr-0 sm:pr-4 flex flex-col justify-center">
-                <div className="flex items-center gap-3 mb-2">
+                <div className="flex flex-wrap items-center gap-3 mb-2">
+                    <div className="group flex items-center pr-2 border-r border-slate-200">
+                        <span className="text-xs font-mono text-slate-500 cursor-help" title={project.id}>
+                            {project.id?.substring(0, 6)}...
+                        </span>
+                        <CopyButton textToCopy={project.id} />
+                    </div>
                     <span className="text-base font-bold text-slate-900 truncate max-w-[180px]" title={project.project_name}>
                         {project.project_name || 'Unnamed Project'}
                     </span>
+                    {project.created_date && (
+                        <span className="text-xs font-semibold text-slate-400">
+                            Started: {new Date(project.created_date).toLocaleDateString()}
+                        </span>
+                    )}
                     <span className={`px-2 py-0.5 text-[9px] font-black rounded uppercase tracking-widest flex-shrink-0 ${statusStyle.bg}`}>
                         {statusStyle.label}
                     </span>

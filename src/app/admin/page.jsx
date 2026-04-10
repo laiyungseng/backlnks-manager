@@ -28,14 +28,26 @@ export default async function AdminMetricsPage() {
             total_quantity,
             created_date,
             completed_date,
-            status
+            status,
+            vendors ( vendor_name )
         `);
 
+    // 3. Fetch Vendors for Employ Status table
+    const { data: vendors, error: vendorsErr } = await supabase
+        .from('vendors')
+        .select(`
+            id,
+            vendor_name,
+            employ_status,
+            performance,
+            remark
+        `);
 
     return (
         <DashboardLanding
             placements={placements || []}
             projects={projects || []}
+            vendors={vendors || []}
         />
     );
 }

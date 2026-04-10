@@ -17,20 +17,57 @@ export async function getVendors() {
             return { success: false, message: error.message };
         }
 
+        // Fetch projects to compute total price per vendor
+        const { data: projectsData } = await supabase
+            .from('projects')
+            .select('vendor_id, price, total_quantity, price_type');
+
+        // Fetch placements to compute product types
+        const { data: placementsData } = await supabase
+            .from('placements')
+            .select('vendor_id, category');
+
         // Map data checking normalized columns first, fallback to JSONB legacy if necessary
         const vendors = data.map(v => {
             const legacyDetails = (Array.isArray(v.vendor_details) ? v.vendor_details[0] : v.vendor_details) || {};
+
+            let dynamicPrice = 0;
+            if (projectsData) {
+                projectsData.forEach(p => {
+                    if (p.vendor_id === v.id) {
+                        const pr = parseFloat(p.price) || 0;
+                        if (p.price_type === 'package') dynamicPrice += pr;
+                        else dynamicPrice += pr * (parseInt(p.total_quantity || 1, 10));
+                    }
+                });
+            }
+
+            let productTypesSet = new Set();
+            if (placementsData) {
+                placementsData.forEach(pl => {
+                    if (pl.vendor_id === v.id && pl.category) {
+                        if (Array.isArray(pl.category)) {
+                            pl.category.forEach(c => productTypesSet.add(c));
+                        } else {
+                            productTypesSet.add(pl.category);
+                        }
+                    }
+                });
+            }
+            let dynamicProductTypes = Array.from(productTypesSet).join(', ');
 
             return {
                 id: v.id,
                 vendor_name: v.vendor_name || legacyDetails.vendor_name || 'Missing Name',
                 contact: v.contact || legacyDetails.contact || '',
-                product_types: v.product_types || legacyDetails.product_types || '',
+                product_types: dynamicProductTypes || '',
                 performance: v.performance !== null ? v.performance : (legacyDetails.performance || 0),
-                price: v.price !== null ? v.price : (legacyDetails.price || 0),
+                price: dynamicPrice || 0,
                 quality: v.quality !== null ? v.quality : (legacyDetails.quality || 0),
                 option_stock: v.option_stock !== null ? v.option_stock : (legacyDetails.option_stock || false),
-                max_discount_pct: v.max_discount_pct !== null ? v.max_discount_pct : (legacyDetails.max_discount_pct || 0)
+                max_discount_pct: v.max_discount_pct !== null ? v.max_discount_pct : (legacyDetails.max_discount_pct || 0),
+                employ_status: v.employ_status || 'continue',
+                remark: v.remark || ''
             };
         });
 
@@ -64,6 +101,8 @@ export async function saveVendors(rows) {
                 quality: r.quality !== undefined ? r.quality : existingRecord.quality,
                 option_stock: r.option_stock !== undefined ? r.option_stock : existingRecord.option_stock,
                 max_discount_pct: r.max_discount_pct !== undefined ? r.max_discount_pct : existingRecord.max_discount_pct,
+                employ_status: r.employ_status !== undefined ? r.employ_status : existingRecord.employ_status,
+                remark: r.remark !== undefined ? r.remark : existingRecord.remark,
             };
 
             const parsedResult = vendorSchema.safeParse(mergedPayload);
@@ -84,6 +123,8 @@ export async function saveVendors(rows) {
                 quality: details.quality,
                 option_stock: details.option_stock,
                 max_discount_pct: details.max_discount_pct,
+                employ_status: details.employ_status,
+                remark: details.remark,
                 // Keep keeping legacy blob alive for other old views just in case for now
                 vendor_details: [details]
             };

@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { getVendors, saveVendors, deleteVendors, getLinkedDomains } from './actions';
 import { DataEditor, GridCellKind, CompactSelection } from '@glideapps/glide-data-grid';
+import { DropdownCellType, DropdownCell } from "@glideapps/glide-data-grid-cells";
 import '@glideapps/glide-data-grid/dist/index.css';
 import { Filter, UserPlus, Save, RefreshCw, Trash2, CheckCircle2 } from 'lucide-react';
 
@@ -215,9 +216,11 @@ export default function VendorManager() {
         { title: "Vendor Name", id: "vendor_name", width: 220 },
         { title: "Contact", id: "contact", width: 200 },
         { title: "Product Types", id: "product_types", width: 180 },
-        { title: "Performance", id: "performance", width: 180 },
-        { title: "Price", id: "price", width: 120 },
-        { title: "Quality", id: "quality", width: 120 },
+        { title: "Performance (1-5)", id: "performance", width: 150 },
+        { title: "Quality (1-5)", id: "quality", width: 130 },
+        { title: "Employ Status", id: "employ_status", width: 140 },
+        { title: "Total Price / Spent", id: "price", width: 160 },
+        { title: "Remark", id: "remark", width: 200 },
         { title: "Option Stock", id: "option_stock", width: 150 },
         { title: "Max Discount %", id: "max_discount_pct", width: 150 }
     ], []);
@@ -243,14 +246,35 @@ export default function VendorManager() {
             return { kind: GridCellKind.Text, data: "", displayData: "", allowOverlay: false, readonly: true };
         }
 
-        const val = dataRow[colDef.id] || "";
+        const val = dataRow[colDef.id] === null || dataRow[colDef.id] === undefined ? "" : String(dataRow[colDef.id]);
+        
+        const isDerivedReadOnly = colDef.id === 'product_types' || colDef.id === 'price';
+
+        if (colDef.id === 'employ_status') {
+            const allowedValues = ["continue", "discontinue"];
+            return {
+                kind: GridCellKind.Custom,
+                allowOverlay: isEditMode,
+                readonly: !isEditMode,
+                copyData: val,
+                data: {
+                    kind: "dropdown-cell",
+                    allowedValues: allowedValues,
+                    value: val || "continue",
+                },
+                themeOverride: {
+                    textDark: val === 'continue' ? '#059669' : (val === 'discontinue' ? '#dc2626' : undefined),
+                    bgCell: val === 'continue' ? '#d1fae5' : (val === 'discontinue' ? '#fee2e2' : undefined),
+                }
+            };
+        }
 
         return {
             kind: GridCellKind.Text,
             data: val,
             displayData: val,
-            allowOverlay: isEditMode,
-            readonly: !isEditMode
+            allowOverlay: isEditMode && !isDerivedReadOnly,
+            readonly: !isEditMode || isDerivedReadOnly
         };
     }, [filteredVendors, columns, isEditMode]);
 
@@ -259,7 +283,27 @@ export default function VendorManager() {
         const [col, row] = cell;
         const colDef = columns[col];
         const field = colDef.id;
-        const valToSet = newValue.data;
+
+        // Derived fields cannot be edited
+        if (field === 'product_types' || field === 'price') return;
+
+        let valToSet;
+        if (newValue.kind === GridCellKind.Custom && newValue.data.kind === "dropdown-cell") {
+            valToSet = newValue.data.value;
+        } else {
+            valToSet = newValue.data !== undefined ? newValue.data : "";
+        }
+
+        // Clamp Performance and Quality to 1-5
+        if (field === 'performance' || field === 'quality') {
+            let num = parseInt(valToSet, 10);
+            if (isNaN(num)) num = valToSet;
+            else {
+                if (num < 1) num = 1;
+                if (num > 5) num = 5;
+            }
+            valToSet = num.toString();
+        }
 
         // Detection for new row entry (trailing row)
         if (row === filteredVendors.length) {
@@ -598,6 +642,7 @@ export default function VendorManager() {
                         smoothScrollX={true}
                         smoothScrollY={true}
                         rowMarkers="both"
+                        customRenderers={[DropdownCell]}
                     />
                 </div>
                 <div className="px-6 py-3 bg-gray-50 border-t border-gray-200 text-xs font-medium text-gray-500 shrink-0">

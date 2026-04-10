@@ -10,5 +10,7 @@ export const vendorSchema = z.object({
     quality: z.coerce.number().min(0).max(10).nullable().optional().describe('NUMERIC; Internal content quality rating (0-10)'),
     option_stock: z.coerce.number().min(0).nullable().optional().describe('INTEGER; Inventory or available capacity'),
     max_discount_pct: z.coerce.number().min(0).max(100).nullable().optional().describe('NUMERIC; Maximum negotiated discount percentage allowed (0-100)'),
+    employ_status: z.string().nullable().optional().describe('TEXT; continue or discontinue'),
+    remark: z.string().nullable().optional().describe('TEXT; Additional notes about vendor'),
     created_at: z.string().optional().describe('TIMESTAMPTZ; DEFAULT now(); Timestamp of creation')
 }).describe('Schema representing the complete flattened structure in the vendors table');
