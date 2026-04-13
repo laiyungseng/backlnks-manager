@@ -12,8 +12,9 @@ export default function ProjectDetailsClient({ initialProjects }) {
     const [projectToDelete, setProjectToDelete] = useState(null);
 
     const [isCollapsed, setIsCollapsed] = useState({
+        pending: true,
         active: false,
-        completed: false
+        completed: true
     });
 
     // Edit Mode State
@@ -377,16 +378,16 @@ export default function ProjectDetailsClient({ initialProjects }) {
             </div>
 
             {/* Layout Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-                {/* Left Area (Active and Complete) */}
-                <div className="lg:col-span-2 flex flex-col gap-6">
-                    {renderProjectTable("Active & In-Process", activeProjects, isEditMode, isCollapsed.active, () => setIsCollapsed(prev => ({...prev, active: !prev.active})))}
-                    {renderProjectTable("Recently Completed & Finalized", completedProjects, false, isCollapsed.completed, () => setIsCollapsed(prev => ({...prev, completed: !prev.completed})))}
+            <div className="flex flex-col gap-8 items-start w-full">
+                {/* Pending Approval / Payment */}
+                <div className="w-full flex flex-col gap-6">
+                    {renderProjectTable("Pending Payment / Approval", pendingProjects, isEditMode, isCollapsed.pending, () => setIsCollapsed(prev => ({...prev, pending: !prev.pending})))}
                 </div>
 
-                {/* Right Area (Pending Approval) */}
-                <div className="lg:col-span-1 flex flex-col gap-6 lg:border-l border-slate-200 lg:pl-6">
-                    {renderProjectTable("Pending Payment / Approval", pendingProjects, isEditMode)}
+                {/* Active and Complete */}
+                <div className="w-full flex flex-col gap-6">
+                    {renderProjectTable("Active & In-Process", activeProjects, isEditMode, isCollapsed.active, () => setIsCollapsed(prev => ({...prev, active: !prev.active})))}
+                    {renderProjectTable("Recently Completed & Finalized", completedProjects, false, isCollapsed.completed, () => setIsCollapsed(prev => ({...prev, completed: !prev.completed})))}
                 </div>
             </div>
 

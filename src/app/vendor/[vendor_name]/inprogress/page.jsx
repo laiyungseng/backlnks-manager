@@ -2,6 +2,8 @@ import { getServerSupabase } from '@/lib/supabase-server';
 import Link from 'next/link';
 import { ExternalLink, Clock, CheckCircle2 } from 'lucide-react';
 
+import CurrentProjectIndicator from './CurrentProjectIndicator';
+
 export const dynamic = 'force-dynamic';
 
 export default async function VendorInProgressPage({ params }) {
@@ -74,8 +76,9 @@ export default async function VendorInProgressPage({ params }) {
     };
 
     return (
-        <div className="max-w-6xl mx-auto px-6 py-8 pb-20">
-            <div className="mb-8">
+        <div className="max-w-6xl mx-auto px-6 py-8 pb-20 relative">
+            <CurrentProjectIndicator vendorName={vendorName} activeProjects={activeProjects} />
+            <div className="mb-8 pr-40">
                 <h1 className="text-3xl font-bold text-gray-900 tracking-tight">In Progress Projects</h1>
                 <p className="mt-2 text-sm text-gray-500">
                     All active assignments for <span className="font-semibold text-indigo-600">{displayName}</span>

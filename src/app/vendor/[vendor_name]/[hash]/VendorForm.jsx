@@ -163,15 +163,18 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
     const filteredRows = useMemo(() => {
         if (!isFilterActive) return rows;
         return rows.filter(r => {
-            const matchTarget = !filters.target_url || r.target_url === filters.target_url;
-            const matchAnchor = !filters.anchor_text || r.anchor_text === filters.anchor_text;
-            const matchPublished = !filters.published_url || r.published_url === filters.published_url;
+            const matchFilter = (fieldValue, filterValue) => {
+                const val = fieldValue || '';
+                if (!filterValue) return true;
+                if (filterValue === '__BLANK__') return val.trim() === '';
+                return val === filterValue;
+            };
 
-            const rRemark = r.remark || '';
-            const matchRemark = !filters.remark || rRemark === filters.remark;
-
-            const rIndexStatus = r.indexed_status || '';
-            const matchIndexStatus = !filters.indexed_status || rIndexStatus === filters.indexed_status;
+            const matchTarget = matchFilter(r.target_url, filters.target_url);
+            const matchAnchor = matchFilter(r.anchor_text, filters.anchor_text);
+            const matchPublished = matchFilter(r.published_url, filters.published_url);
+            const matchRemark = matchFilter(r.remark, filters.remark);
+            const matchIndexStatus = matchFilter(r.indexed_status, filters.indexed_status);
 
             return matchTarget && matchAnchor && matchPublished && matchRemark && matchIndexStatus;
         });
@@ -716,6 +719,7 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
                                 className="px-3 py-2 bg-white border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-shadow"
                             >
                                 <option value="">All Targets</option>
+                                <option value="__BLANK__">(Blank)</option>
                                 {uniqueOptions.target_url.map((val, i) => (
                                     <option key={i} value={val}>{val}</option>
                                 ))}
@@ -729,6 +733,7 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
                                 className="px-3 py-2 bg-white border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-shadow"
                             >
                                 <option value="">All Anchors</option>
+                                <option value="__BLANK__">(Blank)</option>
                                 {uniqueOptions.anchor_text.map((val, i) => (
                                     <option key={i} value={val}>{val}</option>
                                 ))}
@@ -742,6 +747,7 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
                                 className="px-3 py-2 bg-amber-50/50 border border-amber-300 rounded-md focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-amber-900 outline-none transition-shadow"
                             >
                                 <option value="">All Remarks</option>
+                                <option value="__BLANK__">(Blank)</option>
                                 {uniqueOptions.remark.map((val, i) => (
                                     <option key={i} value={val}>{val}</option>
                                 ))}
@@ -755,6 +761,7 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
                                 className="px-3 py-2 bg-indigo-50/50 border border-indigo-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-indigo-900 outline-none transition-shadow"
                             >
                                 <option value="">All Published URLs</option>
+                                <option value="__BLANK__">(Blank)</option>
                                 {uniqueOptions.published_url.map((val, i) => (
                                     <option key={i} value={val}>{val}</option>
                                 ))}
@@ -768,6 +775,7 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
                                 className="px-3 py-2 bg-emerald-50/50 border border-emerald-300 rounded-md focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-emerald-900 outline-none transition-shadow"
                             >
                                 <option value="">All Statuses</option>
+                                <option value="__BLANK__">(Blank)</option>
                                 {uniqueOptions.indexed_status.map((val, i) => (
                                     <option key={i} value={val}>{val}</option>
                                 ))}

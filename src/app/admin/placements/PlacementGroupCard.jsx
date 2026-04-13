@@ -53,7 +53,8 @@ export default function PlacementGroupCard({ group, isCompletedView }) {
             {!isCollapsed && (
                 <div className="bg-slate-50/80 border-t border-slate-100 pb-2 shadow-inner">
                     <div className="flex flex-wrap items-center gap-3 sm:gap-4 px-[40px] sm:px-[44px] py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-200">
-                        <div className="w-full md:w-auto md:flex-[1.5] min-w-[200px] pr-0 sm:pr-4">Project Name</div>
+                        <div className="w-[120px] shrink-0">Project ID</div>
+                        <div className="w-full md:w-auto md:flex-[1.5] min-w-[150px] pr-0 sm:pr-4">Project Name</div>
                         <div className="w-1/2 sm:w-auto sm:flex-[0.8] min-w-[120px]">Region / Delivery</div>
                         <div className="w-1/2 sm:w-auto sm:flex-1 min-w-[150px] pr-0 lg:pr-6">Fulfillment</div>
                         <div className="w-full sm:w-[140px] shrink-0 flex items-center mt-2 sm:mt-0 sm:ml-auto md:ml-0">Portal Access</div>
