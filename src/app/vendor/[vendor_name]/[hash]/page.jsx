@@ -32,9 +32,11 @@ export default async function VendorProjectPage({ params }) {
     // Fetch Core Project Context
     const { data: projectData } = await supabase
         .from('projects')
-        .select('project_name, deadline, dripfeed_enabled, dripfeed_period, urls_per_day, url_entry_enabled, language, randomize_languages, project_languages ( lang_code, ratio )')
+        .select('project_name, status, deadline, dripfeed_enabled, dripfeed_period, urls_per_day, url_entry_enabled, language, randomize_languages, project_languages ( lang_code, ratio )')
         .eq('id', projectId)
         .single();
+
+    const isFinalized = projectData?.status === 'Finalized';
 
     // Parse targets from JSONB Hub
     const targetsData = Array.isArray(projectsHub.targets) ? projectsHub.targets : [];
@@ -98,6 +100,7 @@ export default async function VendorProjectPage({ params }) {
                     published_date: savedRow?.published_date || '',
                     remark: savedRow?.remark || '',
                     indexed_status: savedRow?.indexed_status || '',
+                    indexed_datetime: savedRow?.indexed_datetime || '',
                 });
             }
         });
@@ -142,6 +145,7 @@ export default async function VendorProjectPage({ params }) {
                     dripfeedPeriod={projectData?.dripfeed_period}
                     urlsPerDay={projectData?.urls_per_day}
                     isLocked={isLocked}
+                    isFinalized={isFinalized}
                     urlEntryEnabled={projectData?.url_entry_enabled ?? true}
                 />
             </main>
