@@ -3,6 +3,7 @@
 import { getServerSupabase } from '@/lib/supabase-server';
 import { vendorRateLimiter } from '@/lib/rateLimiter';
 import { writeAuditLog } from '@/lib/auditLog';
+import { setVendorSessionCookie } from '@/lib/session';
 import { z } from 'zod';
 
 const vendorPayloadSchema = z.array(z.object({
@@ -18,6 +19,36 @@ const vendorPayloadSchema = z.array(z.object({
     indexed_status: z.string().optional().or(z.literal('')),
     indexed_datetime: z.string().optional().or(z.literal(''))
 }));
+
+/**
+ * Called from VendorSessionSetter client component on hash page mount.
+ * Validates the hash, resolves vendor_id, sets a signed vendor session cookie.
+ */
+export async function establishVendorSession(hash) {
+    let supabase;
+    try { supabase = getServerSupabase(); } catch { return { success: false }; }
+
+    if (!hash || typeof hash !== 'string') return { success: false };
+
+    const { data: hub } = await supabase
+        .from('projects_hub')
+        .select('project_id')
+        .eq('hash', hash)
+        .single();
+
+    if (!hub?.project_id) return { success: false };
+
+    const { data: project } = await supabase
+        .from('projects')
+        .select('vendor_id')
+        .eq('id', hub.project_id)
+        .single();
+
+    if (!project?.vendor_id) return { success: false };
+
+    await setVendorSessionCookie(project.vendor_id);
+    return { success: true };
+}
 
 export async function saveVendorProgress(hash, payload) {
     let supabase;
@@ -87,7 +118,7 @@ export async function saveVendorProgress(hash, payload) {
         await writeAuditLog(supabase, {
             action: 'vendor_save',
             targetId: projectList.project_id,
-            detail: `hash=${hash} rows=${validRows.length} completed=${completedCount}`,
+            detail: `rows=${validRows.length} completed=${completedCount}`,
         });
 
         // --- STATUS CALCULATION ---
@@ -203,6 +234,13 @@ export async function syncFinalizedIndexStatus(hash, payload) {
             return { success: false, message: 'Project context lost. Sync Rejected.' };
         }
 
+        // Validate payload with Zod before any DB writes
+        const validatedSync = vendorPayloadSchema.safeParse(payload);
+        if (!validatedSync.success) {
+            return { success: false, message: 'Validation Error: Invalid payload format.' };
+        }
+        const validSyncRows = validatedSync.data;
+
         // This action is for finalized projects — validates against project status, not is_locked
         // (Admin may have unlocked the hub row to allow edits, but the project itself remains Finalized)
         const { data: projectData } = await supabase
@@ -219,7 +257,7 @@ export async function syncFinalizedIndexStatus(hash, payload) {
         let syncSuccessCount = 0;
         const errors = [];
 
-        for (const row of payload) {
+        for (const row of validSyncRows) {
             if (!row.published_url || row.published_url.trim() === '') continue;
 
             let normalizedIndexedStatus = null;
@@ -252,7 +290,7 @@ export async function syncFinalizedIndexStatus(hash, payload) {
         await writeAuditLog(supabase, {
             action: 'vendor_finalized_sync',
             targetId: projectList.project_id,
-            detail: `hash=${hash} synced=${syncSuccessCount} errors=${errors.length}`,
+            detail: `synced=${syncSuccessCount} errors=${errors.length}`,
         });
 
         if (errors.length > 0) {

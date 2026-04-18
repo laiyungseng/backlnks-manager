@@ -1,9 +1,17 @@
 'use server';
 
 import { getServerSupabase } from '@/lib/supabase-server';
+import { getSession } from '@/lib/session';
 import { vendorSchema } from '../../../schemas/vendorSchema';
 
+async function requireAdmin() {
+    const session = await getSession();
+    if (!session?.id) throw new Error('Unauthorized');
+    return session;
+}
+
 export async function getVendors() {
+    try { await requireAdmin(); } catch { return { success: false, message: 'Unauthorized.' }; }
     const supabase = getServerSupabase();
 
     try {
@@ -79,6 +87,7 @@ export async function getVendors() {
 }
 
 export async function saveVendors(rows) {
+    try { await requireAdmin(); } catch { return { success: false, message: 'Unauthorized.' }; }
     const supabase = getServerSupabase();
     try {
         const rowsToUpsert = await Promise.all(rows.map(async (r) => {
@@ -153,6 +162,7 @@ export async function saveVendors(rows) {
 }
 
 export async function deleteVendors(rowIds) {
+    try { await requireAdmin(); } catch { return { success: false, message: 'Unauthorized.' }; }
     const supabase = getServerSupabase();
     try {
         const validIds = rowIds.filter(id => id && !id.startsWith('new_'));
@@ -191,6 +201,7 @@ export async function deleteVendors(rowIds) {
 }
 
 export async function getLinkedDomains(vendorIds) {
+    try { await requireAdmin(); } catch { return { success: false, message: 'Unauthorized.' }; }
     const supabase = getServerSupabase();
     try {
         const validIds = vendorIds.filter(id => id && !id.startsWith('new_'));

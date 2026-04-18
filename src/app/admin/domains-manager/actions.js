@@ -1,10 +1,18 @@
 'use server';
 
 import { getServerSupabase } from '@/lib/supabase-server';
+import { getSession } from '@/lib/session';
 import { domainSchema } from '../../../schemas/domainSchema';
 import { parseDomainUrl, parseMetric } from '../../../lib/utils';
 
+async function requireAdmin() {
+    const session = await getSession();
+    if (!session?.id) throw new Error('Unauthorized');
+    return session;
+}
+
 export async function getDomains() {
+    try { await requireAdmin(); } catch { return { success: false, message: 'Unauthorized.' }; }
     const supabase = getServerSupabase();
     try {
         const { data, error } = await supabase
@@ -57,6 +65,7 @@ export async function getDomains() {
 }
 
 export async function saveDomains(rows) {
+    try { await requireAdmin(); } catch { return { success: false, message: 'Unauthorized.' }; }
     const supabase = getServerSupabase();
     try {
         const rowsToUpsert = await Promise.all(rows.map(async (r) => {
@@ -127,6 +136,7 @@ export async function saveDomains(rows) {
 }
 
 export async function deleteDomains(rowIds) {
+    try { await requireAdmin(); } catch { return { success: false, message: 'Unauthorized.' }; }
     const supabase = getServerSupabase();
     try {
         const validIds = rowIds.filter(id => id && !id.startsWith('new_'));
@@ -153,6 +163,7 @@ export async function deleteDomains(rowIds) {
 }
 
 export async function uploadDomainMetrics(rows) {
+    try { await requireAdmin(); } catch { return { success: false, message: 'Unauthorized.' }; }
     const supabase = getServerSupabase();
     try {
         if (!Array.isArray(rows) || rows.length === 0) {

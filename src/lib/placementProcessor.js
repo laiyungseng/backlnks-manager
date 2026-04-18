@@ -85,11 +85,12 @@ export async function normalizeProjectData(projectHash) {
             let existingDomains = [];
             const { data: extD, error: fetchErr } = await supabase
                 .from('domains')
-                .select('id, domain_url');
+                .select('id, domain_url')
+                .in('domain_url', uniqueDomainList);
 
             if (fetchErr) throw new Error(`Existing Domains Fetch Error: ${fetchErr.message}`);
 
-            // Filter in JS to find matching ones by normalized URL
+            // Secondary JS filter handles any non-normalized values still in DB
             existingDomains = (extD || []).filter(d => {
                 const dbUrl = parseDomainUrl(d.domain_url);
                 return uniqueDomainsSet.has(dbUrl);

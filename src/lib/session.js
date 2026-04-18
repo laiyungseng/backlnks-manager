@@ -109,3 +109,33 @@ export async function clearSessionCookie() {
     const cookieStore = await cookies();
     cookieStore.delete(COOKIE_NAME);
 }
+
+// ---------------------------------------------------------------------------
+// Vendor session — scoped cookie set when a vendor validates their project hash
+// ---------------------------------------------------------------------------
+
+const VENDOR_COOKIE_NAME = 'df_vendor_session';
+const VENDOR_SESSION_TTL_SECONDS = 60 * 60 * 8; // 8 hours
+
+export async function setVendorSessionCookie(vendorId) {
+    const token = await createSessionToken({ vendorId, expiresAt: Date.now() + VENDOR_SESSION_TTL_SECONDS * 1000 });
+    const cookieStore = await cookies();
+    cookieStore.set(VENDOR_COOKIE_NAME, token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        path: '/vendor',
+        maxAge: VENDOR_SESSION_TTL_SECONDS,
+    });
+}
+
+export async function getVendorSession() {
+    const cookieStore = await cookies();
+    const token = cookieStore.get(VENDOR_COOKIE_NAME)?.value;
+    return verifySessionToken(token);
+}
+
+export async function clearVendorSessionCookie() {
+    const cookieStore = await cookies();
+    cookieStore.delete(VENDOR_COOKIE_NAME);
+}

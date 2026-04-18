@@ -1,9 +1,17 @@
 'use server';
 
 import { getServerSupabase } from '@/lib/supabase-server';
+import { getSession } from '@/lib/session';
 import { revalidatePath } from 'next/cache';
 
+async function requireAdmin() {
+    const session = await getSession();
+    if (!session?.id) throw new Error('Unauthorized');
+    return session;
+}
+
 export async function deleteProject(projectId) {
+    try { await requireAdmin(); } catch { return { success: false, message: 'Unauthorized.' }; }
     if (!projectId) return { success: false, message: 'Project ID is missing.' };
 
     const supabase = getServerSupabase();
@@ -60,6 +68,7 @@ export async function deleteProject(projectId) {
 }
 
 export async function approveProject(projectId) {
+    try { await requireAdmin(); } catch { return { success: false, message: 'Unauthorized.' }; }
     if (!projectId) return { success: false, message: 'Project ID is missing.' };
 
     const supabase = getServerSupabase();
@@ -83,6 +92,7 @@ export async function approveProject(projectId) {
 }
 
 export async function updateDashboardProjects(projectsArray) {
+    try { await requireAdmin(); } catch { return { success: false, message: 'Unauthorized.' }; }
     if (!Array.isArray(projectsArray) || projectsArray.length === 0) return { success: true };
 
     const supabase = getServerSupabase();

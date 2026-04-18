@@ -1,10 +1,18 @@
 'use server';
 
 import { getServerSupabase } from '@/lib/supabase-server';
+import { getSession } from '@/lib/session';
 import { projectFormPayloadSchema } from '@/schemas/projectSchema';
 import crypto from 'crypto';
 
+async function requireAdmin() {
+    const session = await getSession();
+    if (!session?.id) throw new Error('Unauthorized');
+    return session;
+}
+
 export async function createProjectAction(prevState, formData) {
+    try { await requireAdmin(); } catch { return { success: false, message: 'Unauthorized.' }; }
     const supabase = getServerSupabase();
     try {
         const rawData = {
@@ -63,9 +71,8 @@ export async function createProjectAction(prevState, formData) {
             });
         });
 
-        // 2. Generate secure crypt-hash for Vendor allocation URL
-        const rawString = `${projectData.project_name}-${Date.now()}-${Math.random()}`;
-        const projectHash = crypto.createHash('sha256').update(rawString).digest('hex');
+        // 2. Generate cryptographically random token for Vendor allocation URL
+        const projectHash = crypto.randomBytes(32).toString('hex');
 
         // 3. Generate vendor_name slug for URL
         const vendorSlug = projectData.vendor_name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');

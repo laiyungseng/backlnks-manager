@@ -54,7 +54,7 @@ export default function VendorLoginPage() {
                             type="text"
                             value={vendorName}
                             onChange={(e) => setVendorName(e.target.value)}
-                            placeholder="e.g. UnitedSEO"
+                            placeholder="Enter your vendor name"
                             className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-colors"
                             disabled={isLoading}
                         />
