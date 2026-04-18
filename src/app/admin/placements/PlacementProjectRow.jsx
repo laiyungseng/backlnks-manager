@@ -88,7 +88,7 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
     ).filter(Boolean))].slice(0, 3); // Max 3 chips
 
     return (
-        <div className="flex flex-wrap items-center gap-3 sm:gap-4 px-4 sm:px-5 py-4 bg-white rounded-2xl border border-slate-100 hover:border-slate-200 hover:shadow-sm transition-all relative">
+        <div className="group flex flex-wrap items-center gap-3 sm:gap-4 px-4 sm:px-5 py-4 bg-white rounded-2xl border border-slate-100 hover:border-slate-200 hover:shadow-sm transition-all relative">
             {/* Project ID */}
             <div className="w-[120px] shrink-0 flex items-center gap-1 border-r border-slate-200 md:mr-4 pr-2">
                 <span className="text-xs font-mono text-slate-500 cursor-help" title={project.id}>

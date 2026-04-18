@@ -206,7 +206,7 @@ export async function normalizeProjectData(projectHash) {
                     published_date: row.published_date,
                     status: resolvedStatus,
                     indexed_status: normalizedIndexedStatus,
-                    indexed_checked_at: null,
+                    indexed_checked_at: row.indexed_datetime || null,
                     last_vendor_update_at: nowIso,
                     notes: row.remark || null, // Maps the user UI 'remark' directly to DB 'notes'
                     country: country,

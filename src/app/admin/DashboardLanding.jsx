@@ -75,7 +75,7 @@ export default function DashboardLanding({ placements = [], projects = [], vendo
                 indexationMap[vName].indexed += 1;
             }
         });
-        const indexationData = Object.values(indexationMap).sort((a,b) => b.total - a.total).slice(0, 10);
+        const indexationData = Object.values(indexationMap).sort((a,b) => b.total - a.total);
 
         // 2. Vendor Speed (using placements published_date vs created_at)
         const speedMap = {};
@@ -115,7 +115,7 @@ export default function DashboardLanding({ placements = [], projects = [], vendo
             if (!priceMap[vName]) priceMap[vName] = { vendor: vName, totalCost: 0 };
             priceMap[vName].totalCost += cost;
         });
-        const priceData = Object.values(priceMap).sort((a,b) => b.totalCost - a.totalCost).slice(0, 10);
+        const priceData = Object.values(priceMap).sort((a,b) => b.totalCost - a.totalCost);
 
         return { indexationData, speedData, priceData };
     }, [placements, projects]);
@@ -190,9 +190,9 @@ export default function DashboardLanding({ placements = [], projects = [], vendo
                     <div className="flex-1 w-full h-full min-h-[250px]">
                         {chartData.indexationData.length > 0 ? (
                             <ResponsiveContainer width="100%" height="100%">
-                                <ComposedChart data={chartData.indexationData}>
+                                <ComposedChart data={chartData.indexationData} margin={{ bottom: 40 }}>
                                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                    <XAxis dataKey="vendor" style={{ fontSize: '10px', fontWeight: 'bold', fill: '#94a3b8' }} tick={{ width: 80 }} />
+                                    <XAxis dataKey="vendor" style={{ fontSize: '10px', fontWeight: 'bold', fill: '#94a3b8' }} interval={0} angle={-45} textAnchor="end" height={60} />
                                     <YAxis style={{ fontSize: '10px', fontWeight: 'bold', fill: '#94a3b8' }} />
                                     <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} cursor={{ fill: 'transparent' }} />
                                     <Legend wrapperStyle={{ fontSize: '12px', fontWeight: 'bold' }} />
@@ -217,9 +217,9 @@ export default function DashboardLanding({ placements = [], projects = [], vendo
                     <div className="flex-1 w-full h-full min-h-[250px]">
                         {chartData.speedData.length > 0 ? (
                             <ResponsiveContainer width="100%" height="100%">
-                                <BarChart data={chartData.speedData}>
+                                <BarChart data={chartData.speedData} margin={{ bottom: 40 }}>
                                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                    <XAxis dataKey="vendor" style={{ fontSize: '10px', fontWeight: 'bold', fill: '#94a3b8' }} tick={{ width: 80 }} />
+                                    <XAxis dataKey="vendor" style={{ fontSize: '10px', fontWeight: 'bold', fill: '#94a3b8' }} interval={0} angle={-45} textAnchor="end" height={60} />
                                     <YAxis style={{ fontSize: '10px', fontWeight: 'bold', fill: '#94a3b8' }} />
                                     <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} cursor={{ fill: 'transparent' }} />
                                     <Legend wrapperStyle={{ fontSize: '12px', fontWeight: 'bold' }} />

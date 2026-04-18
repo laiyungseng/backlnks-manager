@@ -15,7 +15,8 @@ const vendorPayloadSchema = z.array(z.object({
     published_url: z.string().url('Published URL must be a valid link').or(z.literal('')),
     published_date: z.string().or(z.literal('')),
     remark: z.string().optional().or(z.literal('')),
-    indexed_status: z.string().optional().or(z.literal(''))
+    indexed_status: z.string().optional().or(z.literal('')),
+    indexed_datetime: z.string().optional().or(z.literal(''))
 }));
 
 export async function saveVendorProgress(hash, payload) {
@@ -125,39 +126,41 @@ export async function saveVendorProgress(hash, payload) {
                     await supabase.from('projects').update(dbUpdatePayload).eq('id', targetProjectId);
                 }
 
-                // SYNC COMPLETED PLACEMENTS
+                // SYNC TO PLACEMENTS: if Finalized, write indexed_status directly to placements table
+                // This handles the case where the admin has unlocked the project for vendor edits
                 if (isFinalized) {
                     const nowIso = new Date().toISOString();
                     let syncSuccessCount = 0;
 
                     for (const row of validRows) {
-                        if (row.published_url && row.published_url.trim() !== '') {
-                            let normalizedIndexedStatus = null;
-                            if (row.indexed_status) {
-                                const l = row.indexed_status.toLowerCase().trim();
-                                if (l.includes('not')) normalizedIndexedStatus = 'page_not_indexed';
-                                else if (l.includes('index')) normalizedIndexedStatus = 'page_indexed';
-                            }
+                        if (!row.published_url || row.published_url.trim() === '') continue;
 
-                            const { data, error } = await supabase
-                                .from('placements')
-                                .update({
-                                    indexed_status: normalizedIndexedStatus,
-                                    notes: row.remark || null,
-                                    last_vendor_update_at: nowIso
-                                })
-                                .eq('vendor_token', hash)
-                                .eq('published_url', row.published_url)
-                                .select('id');
+                        let normalizedIndexedStatus = null;
+                        if (row.indexed_status) {
+                            const l = row.indexed_status.toLowerCase().trim();
+                            if (l.includes('not')) normalizedIndexedStatus = 'page_not_indexed';
+                            else if (l.includes('index')) normalizedIndexedStatus = 'page_indexed';
+                        }
 
-                            if (error) {
-                                console.error(`[saveVendorProgress] Sync Error for ${row.published_url}:`, error);
-                            } else if (data?.length) {
-                                syncSuccessCount += data.length;
-                            }
+                        const { data: syncData, error: syncError } = await supabase
+                            .from('placements')
+                            .update({
+                                indexed_status: normalizedIndexedStatus,
+                                indexed_checked_at: row.indexed_datetime || null,
+                                notes: row.remark || null,
+                                last_vendor_update_at: nowIso
+                            })
+                            .eq('vendor_token', hash)
+                            .eq('published_url', row.published_url)
+                            .select('id');
+
+                        if (syncError) {
+                            console.error(`[saveVendorProgress] Sync Error for ${row.published_url}:`, syncError);
+                        } else if (syncData?.length) {
+                            syncSuccessCount += syncData.length;
                         }
                     }
-                    console.log(`[saveVendorProgress] Sync Complete. Updated ${syncSuccessCount} matching placements.`);
+                    console.log(`[saveVendorProgress] Finalized sync complete. Updated ${syncSuccessCount} placements.`);
                 }
             }
         }
@@ -167,6 +170,100 @@ export async function saveVendorProgress(hash, payload) {
     } catch (e) {
         console.error("Vendor Action Critical Error:", e);
         return { success: false, message: 'An unexpected server error occurred during JSON serialization.' };
+    }
+}
+
+/**
+ * syncFinalizedIndexStatus — Bypasses the lock check intentionally.
+ * Called ONLY when the project is finalized/locked and the vendor is
+ * updating indexed_status or remarks on already-committed placements.
+ * Does NOT touch projects_hub staging data — writes directly to `placements`.
+ */
+export async function syncFinalizedIndexStatus(hash, payload) {
+    let supabase;
+    try {
+        supabase = getServerSupabase();
+    } catch {
+        return { success: false, message: 'Database connection not configured.' };
+    }
+
+    try {
+        if (!hash || typeof hash !== 'string') {
+            return { success: false, message: 'Unauthorized Request: Missing Security Hash' };
+        }
+
+        // Verify the project exists and IS finalized (lock must be true)
+        const { data: projectList, error: checkError } = await supabase
+            .from('projects_hub')
+            .select('id, project_id, is_locked')
+            .eq('hash', hash)
+            .single();
+
+        if (checkError || !projectList) {
+            return { success: false, message: 'Project context lost. Sync Rejected.' };
+        }
+
+        // This action is for finalized projects — validates against project status, not is_locked
+        // (Admin may have unlocked the hub row to allow edits, but the project itself remains Finalized)
+        const { data: projectData } = await supabase
+            .from('projects')
+            .select('status')
+            .eq('id', projectList.project_id)
+            .single();
+
+        if (!projectData || projectData.status !== 'Finalized') {
+            return { success: false, message: 'Project is not finalized. Use the standard save instead.' };
+        }
+
+        const nowIso = new Date().toISOString();
+        let syncSuccessCount = 0;
+        const errors = [];
+
+        for (const row of payload) {
+            if (!row.published_url || row.published_url.trim() === '') continue;
+
+            let normalizedIndexedStatus = null;
+            if (row.indexed_status) {
+                const l = row.indexed_status.toLowerCase().trim();
+                if (l.includes('not')) normalizedIndexedStatus = 'page_not_indexed';
+                else if (l.includes('index')) normalizedIndexedStatus = 'page_indexed';
+            }
+
+            const { data, error } = await supabase
+                .from('placements')
+                .update({
+                    indexed_status: normalizedIndexedStatus,
+                    indexed_checked_at: row.indexed_datetime || null,
+                    notes: row.remark || null,
+                    last_vendor_update_at: nowIso
+                })
+                .eq('vendor_token', hash)
+                .eq('published_url', row.published_url)
+                .select('id');
+
+            if (error) {
+                console.error(`[syncFinalizedIndexStatus] Error for ${row.published_url}:`, error);
+                errors.push(row.published_url);
+            } else if (data?.length) {
+                syncSuccessCount += data.length;
+            }
+        }
+
+        await writeAuditLog(supabase, {
+            action: 'vendor_finalized_sync',
+            targetId: projectList.project_id,
+            detail: `hash=${hash} synced=${syncSuccessCount} errors=${errors.length}`,
+        });
+
+        if (errors.length > 0) {
+            return { success: false, message: `Sync partially failed for ${errors.length} row(s). Please retry.` };
+        }
+
+        return { success: true, message: `Indexed status synced for ${syncSuccessCount} placement(s).` };
+
+    } catch (e) {
+        console.error("syncFinalizedIndexStatus Critical Error:", e);
+        return { success: false, message: 'An unexpected server error occurred.' };
     }
 }
 

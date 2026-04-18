@@ -1,13 +1,13 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { saveVendorProgress, toggleUrlEntryMode } from './actions';
+import { saveVendorProgress, syncFinalizedIndexStatus, toggleUrlEntryMode } from './actions';
 import { parseDomainUrl } from '../../../../lib/utils';
 import { CheckCircle2, FileSpreadsheet, RefreshCw, Filter, ChevronDown, ChevronRight, Calendar, Lock, Unlock, Link, PlusCircle } from 'lucide-react';
 import { DataEditor, GridCellKind } from '@glideapps/glide-data-grid';
 import '@glideapps/glide-data-grid/dist/index.css';
 
-export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, dripfeedPeriod, urlsPerDay, isLocked = false, urlEntryEnabled = true }) {
+export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, dripfeedPeriod, urlsPerDay, isLocked = false, isFinalized = false, urlEntryEnabled = true }) {
     const [rows, setRows] = useState(initialRows || []);
     const [isSaving, setIsSaving] = useState(false);
     const [lastSavedAt, setLastSavedAt] = useState(null);
@@ -32,16 +32,8 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
         };
     }, [rows]);
 
-    // Auto-save effect
-    useEffect(() => {
-        if (!isDirty) return;
-
-        const timer = setTimeout(() => {
-            handleSaveProgress(true);
-        }, 1000);
-
-        return () => clearTimeout(timer);
-    }, [rows, isDirty]);
+    // Auto-save effect — placed AFTER handleSaveProgress definition below
+    // (see the useEffect at line ~130 which references handleSaveProgress via useCallback)
 
     // Dripfeed specific metrics
     const [urlsSubmittedToday, setUrlsSubmittedToday] = useState(0);
@@ -65,26 +57,47 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
         return now.toISOString().replace('T', ' ').substring(0, 19);
     };
 
-    const handleSaveProgress = async (isAutoSave = false) => {
+    const handleSaveProgress = useCallback(async (isAutoSave = false) => {
         setIsSaving(true);
         if (!isAutoSave) setFeedback({ type: '', message: '' });
 
-        if (isLocked) return; // Prevent saving when locked
-
-        const rowsToUpdate = rows.map(r => ({
-            id: r.id,
-            target_id: r.target_id,
-            target_url: r.target_url,
-            anchor_text: r.anchor_text,
-            language: r.language || '',
-            domain_url: r.domain_url || '',
-            published_url: r.published_url || '',
-            published_date: r.published_date || '',
-            remark: r.remark || '',
-            indexed_status: r.indexed_status || ''
-        }));
-
         try {
+            // --- PATH A: Locked finalized project --- sync index status directly to placements (bypass staging)
+            if (isLocked && isFinalized) {
+                const rowsToSync = rows.map(r => ({
+                    published_url: r.published_url || '',
+                    indexed_status: r.indexed_status || '',
+                    indexed_datetime: r.indexed_datetime || '',
+                    remark: r.remark || '',
+                }));
+
+                const result = await syncFinalizedIndexStatus(projectHash, rowsToSync);
+                if (result.success) {
+                    if (!isAutoSave) setFeedback({ type: 'success', message: result.message });
+                    setLastSavedAt(new Date());
+                    setIsDirty(false);
+                } else {
+                    setFeedback({ type: 'error', message: result.message });
+                }
+                return;
+            }
+
+            // --- PATH B: In-progress OR admin-unlocked finalized project ---
+            // saveVendorProgress handles the finalized sync internally when project.status === 'Finalized'
+            const rowsToUpdate = rows.map(r => ({
+                id: r.id,
+                target_id: r.target_id,
+                target_url: r.target_url,
+                anchor_text: r.anchor_text,
+                language: r.language || '',
+                domain_url: r.domain_url || '',
+                published_url: r.published_url || '',
+                published_date: r.published_date || '',
+                remark: r.remark || '',
+                indexed_status: r.indexed_status || '',
+                indexed_datetime: r.indexed_datetime || ''
+            }));
+
             const result = await saveVendorProgress(projectHash, rowsToUpdate);
 
             if (result.success) {
@@ -102,7 +115,17 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
                 setTimeout(() => setFeedback({ type: '', message: '' }), 4000);
             }
         }
-    };
+    }, [rows, isLocked, isFinalized, projectHash, feedback.type]);
+
+    // Auto-save effect — defined AFTER handleSaveProgress so the closure is always fresh
+    useEffect(() => {
+        if (!isDirty) return;
+        const timer = setTimeout(() => {
+            handleSaveProgress(true);
+        }, 1000);
+        return () => clearTimeout(timer);
+    }, [rows, isDirty, handleSaveProgress]);
+
 
     const handleToggleUrlEntry = async () => {
         if (isLocked) return;
@@ -203,7 +226,8 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
         { title: "Remark", id: "remark", width: 150 },
         { title: "Published URL", id: "published_url", width: 300 },
         { title: "Published Date", id: "published_date", width: 180 },
-        { title: "Index Status", id: "indexed_status", width: 180 }
+        { title: "Index Status", id: "indexed_status", width: 180 },
+        { title: "Index Checked At", id: "indexed_datetime", width: 200 }
     ], []);
 
     const getCellContent = useCallback((cell) => {
@@ -289,6 +313,26 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
                     allowOverlay: !isLocked,
                     readonly: isLocked
                 };
+            case "indexed_datetime": {
+                const raw = dataRow.indexed_datetime || "";
+                let display = "";
+                if (raw) {
+                    try {
+                        display = new Date(raw).toLocaleString(undefined, {
+                            year: 'numeric', month: '2-digit', day: '2-digit',
+                            hour: '2-digit', minute: '2-digit', second: '2-digit',
+                            hour12: false
+                        });
+                    } catch { display = raw; }
+                }
+                return {
+                    kind: GridCellKind.Text,
+                    data: display,
+                    displayData: display,
+                    allowOverlay: true,
+                    readonly: true
+                };
+            }
             default:
                 return {
                     kind: GridCellKind.Text,
@@ -347,6 +391,17 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
                 }
             }
 
+            // AUTO-LOGIC: indexed_status → auto-capture indexed_datetime
+            if (field === 'indexed_status') {
+                if (valToSet && valToSet.trim() !== '') {
+                    // Refresh datetime each time status is set/changed
+                    updatedRow.indexed_datetime = new Date().toISOString();
+                } else {
+                    // Clear datetime when status is cleared
+                    updatedRow.indexed_datetime = '';
+                }
+            }
+
             newRows[originalIdx] = updatedRow;
             return newRows;
         });
@@ -400,7 +455,7 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
                         updatedRow[field] = finalVal;
                         rowHasChanges = true;
 
-                        // Apply Auto-logic
+                        // Apply Auto-logic for published_url
                         if (field === 'published_url') {
                             if (valToSet && valToSet.trim() !== '') {
                                 if (!updatedRow.published_date) {
@@ -414,6 +469,15 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
                                 if (!localUrlEntryEnabled) {
                                     updatedRow.domain_url = '';
                                 }
+                            }
+                        }
+
+                        // Auto-logic for indexed_status → capture datetime
+                        if (field === 'indexed_status') {
+                            if (valToSet && valToSet.trim() !== '') {
+                                updatedRow.indexed_datetime = new Date().toISOString();
+                            } else {
+                                updatedRow.indexed_datetime = '';
                             }
                         }
                     }
@@ -478,6 +542,11 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
                                 if (!localUrlEntryEnabled) {
                                     updatedRow.domain_url = '';
                                 }
+                            }
+
+                            // Clear indexed_datetime when indexed_status is deleted
+                            if (field === 'indexed_status') {
+                                updatedRow.indexed_datetime = '';
                             }
                         }
                     }
