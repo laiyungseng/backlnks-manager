@@ -3,7 +3,7 @@
 import { getServerSupabase } from '@/lib/supabase-server';
 import { vendorRateLimiter } from '@/lib/rateLimiter';
 import { writeAuditLog } from '@/lib/auditLog';
-import { setVendorSessionCookie } from '@/lib/session';
+import { setVendorSessionCookie, getVendorSession, verifyVendorSession } from '@/lib/session';
 import { z } from 'zod';
 
 const vendorPayloadSchema = z.array(z.object({
@@ -46,7 +46,13 @@ export async function establishVendorSession(hash) {
 
     if (!project?.vendor_id) return { success: false };
 
-    await setVendorSessionCookie(project.vendor_id);
+    const { data: vendor } = await supabase
+        .from('vendors')
+        .select('session_version')
+        .eq('id', project.vendor_id)
+        .maybeSingle();
+
+    await setVendorSessionCookie(project.vendor_id, vendor?.session_version ?? 1);
     return { success: true };
 }
 
@@ -61,6 +67,12 @@ export async function saveVendorProgress(hash, payload) {
     try {
         if (!hash || typeof hash !== 'string') {
             return { success: false, message: 'Unauthorized Request: Missing Security Hash' };
+        }
+
+        // Session guard — verify cookie + DB session_version (revocation check)
+        const session = await verifyVendorSession(supabase);
+        if (!session?.vendorId) {
+            return { success: false, message: 'Unauthorized: No active vendor session.' };
         }
 
         // Rate-limit per vendor hash
@@ -79,7 +91,7 @@ export async function saveVendorProgress(hash, payload) {
         // Verify the project exists for this hash AND check lock status
         const { data: projectList, error: checkError } = await supabase
             .from('projects_hub')
-            .select('id, project_id, is_locked')
+            .select('id, project_id, is_locked, projects(vendor_id)')
             .eq('hash', hash)
             .single();
 
@@ -87,20 +99,37 @@ export async function saveVendorProgress(hash, payload) {
             return { success: false, message: 'Project context lost. Save Rejected.' };
         }
 
+        // Verify session vendor matches the project's vendor
+        if (projectList.projects?.vendor_id !== session.vendorId) {
+            return { success: false, message: 'Unauthorized: Session does not match project vendor.' };
+        }
+
         // Server-side lock enforcement — UI lock is not enough
         if (projectList.is_locked) {
             return { success: false, message: 'This project has been locked and can no longer be edited.' };
         }
 
-        // Optimization 1: Track strict completed_at timing
-        const totalQuantity = validRows.length;
         const completedCount = validRows.filter(p =>
             p.published_url && p.published_url.trim().length > 0 &&
             p.published_date && p.published_date.trim().length > 0
         ).length;
 
+        // --- STATUS CALCULATION ---
+        const targetProjectId = projectList.project_id;
+
+        // Fetch authoritative total from project_targets (used for both completed_at and status)
+        const { data: targetsData } = await supabase
+            .from('project_targets')
+            .select('quantity_requested')
+            .eq('project_id', targetProjectId);
+
+        const hubTargets = targetsData || [];
+        const totalLinksOrdered = hubTargets.length > 0
+            ? hubTargets.reduce((acc, t) => acc + (t.quantity_requested || 0), 0)
+            : validRows.length;
+
         const updatePayload = { vendor_staging_data: validRows };
-        if (completedCount === totalQuantity && totalQuantity > 0) {
+        if (completedCount >= totalLinksOrdered && totalLinksOrdered > 0) {
             updatePayload.completed_at = new Date().toISOString();
         }
 
@@ -121,19 +150,7 @@ export async function saveVendorProgress(hash, payload) {
             detail: `rows=${validRows.length} completed=${completedCount}`,
         });
 
-        // --- STATUS CALCULATION ---
-        const targetProjectId = projectList.project_id;
         if (targetProjectId) {
-            const { data: targetsData } = await supabase
-                .from('project_targets')
-                .select('quantity_requested')
-                .eq('project_id', targetProjectId);
-
-            const hubTargets = targetsData || [];
-            const totalLinksOrdered = hubTargets.length > 0
-                ? hubTargets.reduce((acc, t) => acc + (t.quantity_requested || 0), 0)
-                : completedCount;
-
             const newStatus = completedCount >= totalLinksOrdered && totalLinksOrdered > 0 ? 'Completed' : 'Inprogress';
 
             const { data: proj } = await supabase
@@ -223,15 +240,26 @@ export async function syncFinalizedIndexStatus(hash, payload) {
             return { success: false, message: 'Unauthorized Request: Missing Security Hash' };
         }
 
+        // Session guard — verify cookie + DB session_version (revocation check)
+        const session = await verifyVendorSession(supabase);
+        if (!session?.vendorId) {
+            return { success: false, message: 'Unauthorized: No active vendor session.' };
+        }
+
         // Verify the project exists and IS finalized (lock must be true)
         const { data: projectList, error: checkError } = await supabase
             .from('projects_hub')
-            .select('id, project_id, is_locked')
+            .select('id, project_id, is_locked, projects(vendor_id)')
             .eq('hash', hash)
             .single();
 
         if (checkError || !projectList) {
             return { success: false, message: 'Project context lost. Sync Rejected.' };
+        }
+
+        // Verify session vendor matches the project's vendor
+        if (projectList.projects?.vendor_id !== session.vendorId) {
+            return { success: false, message: 'Unauthorized: Session does not match project vendor.' };
         }
 
         // Validate payload with Zod before any DB writes
@@ -318,14 +346,25 @@ export async function toggleUrlEntryMode(hash, isEnabled) {
             return { success: false, message: 'Unauthorized Request: Missing Security Hash' };
         }
 
+        // Session guard — verify cookie + DB session_version (revocation check)
+        const session = await verifyVendorSession(supabase);
+        if (!session?.vendorId) {
+            return { success: false, message: 'Unauthorized: No active vendor session.' };
+        }
+
         const { data: projectList, error: checkError } = await supabase
             .from('projects_hub')
-            .select('project_id, is_locked')
+            .select('project_id, is_locked, projects(vendor_id)')
             .eq('hash', hash)
             .single();
 
         if (checkError || !projectList) {
             return { success: false, message: 'Project context lost. Action Rejected.' };
+        }
+
+        // Verify session vendor matches the project's vendor
+        if (projectList.projects?.vendor_id !== session.vendorId) {
+            return { success: false, message: 'Unauthorized: Session does not match project vendor.' };
         }
 
         if (projectList.is_locked) {

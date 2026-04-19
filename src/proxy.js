@@ -5,7 +5,7 @@ export async function proxy(request) {
     const { pathname } = request.nextUrl;
 
     const isAdminRoute = pathname.startsWith('/admin');
-    const isSensitiveApi = pathname.startsWith('/api/settings') || pathname.startsWith('/api/realtime/dashboard');
+    const isSensitiveApi = pathname.startsWith('/api/settings') || pathname.startsWith('/api/realtime/dashboard') || pathname.startsWith('/api/schema-sql');
 
     if (isAdminRoute || isSensitiveApi) {
         const sessionCookie = request.cookies.get('df_admin_session');
@@ -32,5 +32,5 @@ export async function proxy(request) {
 }
 
 export const config = {
-    matcher: ['/admin/:path*', '/api/settings/:path*', '/api/realtime/dashboard'],
+    matcher: ['/admin/:path*', '/api/settings/:path*', '/api/realtime/dashboard', '/api/schema-sql'],
 };

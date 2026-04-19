@@ -141,8 +141,10 @@ export async function createProjectAction(prevState, formData) {
 
         const projectId = projectInsertResult.id;
 
-        // Helper: roll back the project row if a child insert fails
+        // Helper: delete child rows first (FK constraint), then the project row
         const rollbackProject = async () => {
+            await supabase.from('project_languages').delete().eq('project_id', projectId);
+            await supabase.from('project_targets').delete().eq('project_id', projectId);
             await supabase.from('projects').delete().eq('id', projectId);
         };
 
@@ -191,6 +193,7 @@ export async function createProjectAction(prevState, formData) {
 
         if (projectsHubError) {
             console.error('Projects Hub Insert Error:', projectsHubError);
+            await rollbackProject();
             return { success: false, message: 'Project mapped, but failed to mint secure Vendor Hub.' };
         }
 

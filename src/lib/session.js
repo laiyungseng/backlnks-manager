@@ -117,8 +117,8 @@ export async function clearSessionCookie() {
 const VENDOR_COOKIE_NAME = 'df_vendor_session';
 const VENDOR_SESSION_TTL_SECONDS = 60 * 60 * 8; // 8 hours
 
-export async function setVendorSessionCookie(vendorId) {
-    const token = await createSessionToken({ vendorId, expiresAt: Date.now() + VENDOR_SESSION_TTL_SECONDS * 1000 });
+export async function setVendorSessionCookie(vendorId, sessionVersion = 1) {
+    const token = await createSessionToken({ vendorId, sessionVersion, expiresAt: Date.now() + VENDOR_SESSION_TTL_SECONDS * 1000 });
     const cookieStore = await cookies();
     cookieStore.set(VENDOR_COOKIE_NAME, token, {
         httpOnly: true,
@@ -133,6 +133,24 @@ export async function getVendorSession() {
     const cookieStore = await cookies();
     const token = cookieStore.get(VENDOR_COOKIE_NAME)?.value;
     return verifySessionToken(token);
+}
+
+/**
+ * Cross-checks the vendor cookie's session_version against the DB.
+ * Returns session payload if valid, null if revoked or absent.
+ */
+export async function verifyVendorSession(supabase) {
+    const session = await getVendorSession();
+    if (!session?.vendorId) return null;
+
+    const { data: vendor } = await supabase
+        .from('vendors')
+        .select('session_version')
+        .eq('id', session.vendorId)
+        .maybeSingle();
+
+    if (!vendor || vendor.session_version !== (session.sessionVersion ?? 1)) return null;
+    return session;
 }
 
 export async function clearVendorSessionCookie() {

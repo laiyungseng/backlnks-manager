@@ -2,17 +2,19 @@
 
 import { useState } from 'react';
 import { vendorLogin } from './actions';
-import { ArrowRight, Building2, AlertCircle } from 'lucide-react';
+import { ArrowRight, Building2, AlertCircle, Link as LinkIcon } from 'lucide-react';
 
 export default function VendorLoginPage() {
     const [vendorName, setVendorName] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
+    const [inviteUrl, setInviteUrl] = useState(null);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError(null);
-        
+        setInviteUrl(null);
+
         if (!vendorName.trim()) {
             setError('Please enter your company name.');
             return;
@@ -20,12 +22,15 @@ export default function VendorLoginPage() {
 
         setIsLoading(true);
         const result = await vendorLogin(vendorName.trim());
-        
+
         if (!result.success) {
             setError(result.message);
             setIsLoading(false);
+            return;
         }
-        // If successful, the server action handles the redirect.
+
+        setInviteUrl(result.inviteUrl);
+        setIsLoading(false);
     };
 
     return (
@@ -36,7 +41,7 @@ export default function VendorLoginPage() {
                         <Building2 className="w-8 h-8" />
                     </div>
                 </div>
-                
+
                 <h1 className="text-2xl font-black text-center text-slate-800 tracking-tight mb-2 uppercase">
                     Vendor Portal
                 </h1>
@@ -76,6 +81,24 @@ export default function VendorLoginPage() {
                         {!isLoading && <ArrowRight className="w-4 h-4" />}
                     </button>
                 </form>
+
+                {inviteUrl && (
+                    <div className="mt-6 p-4 bg-indigo-50 border border-indigo-100 rounded-xl space-y-2">
+                        <p className="text-xs font-black text-indigo-600 uppercase tracking-widest">
+                            Your Access Link
+                        </p>
+                        <p className="text-xs text-slate-500 font-medium">
+                            Click the link below to enter your portal. This link expires in 7 days and can only be used once.
+                        </p>
+                        <a
+                            href={inviteUrl}
+                            className="flex items-center gap-2 mt-2 text-sm font-bold text-indigo-700 hover:text-indigo-900 underline underline-offset-2 break-all"
+                        >
+                            <LinkIcon className="w-4 h-4 shrink-0" />
+                            {typeof window !== 'undefined' ? `${window.location.origin}${inviteUrl}` : inviteUrl}
+                        </a>
+                    </div>
+                )}
             </div>
         </div>
     );
