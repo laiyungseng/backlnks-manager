@@ -17,10 +17,7 @@ export default function CompletedDashboardClient({ projects }) {
             ? hubTargets.reduce((acc, t) => acc + (parseInt(t.quantity || '0', 10)), 0)
             : (p.total_quantity || 0);
             
-        const stagingData = hub.vendor_staging_data || [];
-        const completedLinks = Array.isArray(stagingData) 
-            ? stagingData.filter(s => s.published_url && s.published_url.trim().length > 0).length 
-            : 0;
+        const completedLinks = hub.completed_count ?? 0;
 
         globalOrdered += totalLinks;
         globalFulfilled += completedLinks;

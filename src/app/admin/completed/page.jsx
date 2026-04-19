@@ -28,11 +28,16 @@ export default async function CompletedPlacementsPage() {
 
     if (error) console.error("Completed Placements DB fetch error:", error);
 
-    const completedProjects = (projects || []).filter(p => {
-        const hasPlacements = p.placements && p.placements.length > 0;
-        const isFinalized = p.status === 'Finalized';
-        return isFinalized || hasPlacements;
-    });
+    const completedProjects = (projects || [])
+        .filter(p => p.status === 'Finalized' || (p.placements && p.placements.length > 0))
+        .map(p => {
+            const hub = p.projects_hub?.[0];
+            if (!hub) return p;
+            const staging = Array.isArray(hub.vendor_staging_data) ? hub.vendor_staging_data : [];
+            const completed_count = staging.filter(s => s.published_url && s.published_url.trim().length > 0).length;
+            const { vendor_staging_data: _dropped, ...hubWithoutBlob } = hub;
+            return { ...p, projects_hub: [{ ...hubWithoutBlob, completed_count }] };
+        });
 
     return <CompletedDashboardClient projects={completedProjects} />;
 }

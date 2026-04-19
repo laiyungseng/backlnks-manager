@@ -202,9 +202,8 @@ export default function ProjectDetailsClient({ initialProjects }) {
                         {data.length > 0 ? data.map((project) => {
                             const hub = project.projects_hub?.[0] || {};
                             const hubTargets = Array.isArray(hub.targets) ? hub.targets : [];
-                            const stagingData = Array.isArray(hub.vendor_staging_data) ? hub.vendor_staging_data : [];
                             const totalLinks = hubTargets.length > 0 ? hubTargets.reduce((acc, t) => acc + (parseInt(t.quantity || '0', 10)), 0) : (project.total_quantity || 0);
-                            const completedLinks = stagingData.filter(p => p.published_url && p.published_url.trim().length > 0).length;
+                            const completedLinks = hub.completed_count ?? 0;
                             const progressPercent = totalLinks > 0 ? Math.round((completedLinks / totalLinks) * 100) : 0;
 
                             return (

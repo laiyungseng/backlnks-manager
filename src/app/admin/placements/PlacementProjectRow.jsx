@@ -9,17 +9,15 @@ import CopyButton from '../projects/CopyButton';
 export default function PlacementProjectRow({ project, isCompletedView }) {
     const router = useRouter();
     const representativeHash = project.projects_hub?.[0]?.hash;
-    const localStagingData = project.projects_hub?.[0]?.vendor_staging_data || [];
-    
+
     // Parse Targets
     const hub = project.projects_hub?.[0] || {};
     const hubTargets = Array.isArray(hub.targets) ? hub.targets : [];
     const totalLinks = hubTargets.length > 0
         ? hubTargets.reduce((acc, t) => acc + (parseInt(t.quantity || '0', 10)), 0)
         : (project.total_quantity || 0);
-        
-    const stagingData = localStagingData || [];
-    const completedLinks = Array.isArray(stagingData) ? stagingData.filter(p => p.published_url && p.published_url.trim().length > 0).length : 0;
+
+    const completedLinks = hub.completed_count ?? 0;
     
     const percentage = totalLinks > 0 ? Math.round((completedLinks / totalLinks) * 100) : 0;
     const allFulfilled = completedLinks === totalLinks && totalLinks > 0;

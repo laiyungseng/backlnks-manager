@@ -17,7 +17,7 @@ import { getServerSupabase } from '@/lib/supabase-server';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-const POLL_INTERVAL_MS = 4000;
+const POLL_INTERVAL_MS = 10000;
 
 function buildSupabase() {
     try {
@@ -47,7 +47,19 @@ async function fetchProjects(supabase) {
         console.error('[SSE] Dashboard fetch error:', error.message);
         return null;
     }
-    return data;
+
+    // Compute completed_count server-side and strip the raw blob from the wire
+    return data.map(project => {
+        const hub = project.projects_hub?.[0];
+        if (!hub) return project;
+        const staging = Array.isArray(hub.vendor_staging_data) ? hub.vendor_staging_data : [];
+        const completed_count = staging.filter(s => s.published_url && s.published_url.trim().length > 0).length;
+        const { vendor_staging_data: _dropped, ...hubWithoutBlob } = hub;
+        return {
+            ...project,
+            projects_hub: [{ ...hubWithoutBlob, completed_count }],
+        };
+    });
 }
 
 export async function GET() {
@@ -83,7 +95,11 @@ export async function GET() {
 
             // Initial fetch
             const initial = await fetchProjects(supabase);
-            if (initial !== null) send('projects', initial);
+            let lastHash = null;
+            if (initial !== null) {
+                lastHash = JSON.stringify(initial);
+                send('projects', initial);
+            }
 
             // Polling loop
             while (true) {
@@ -98,6 +114,9 @@ export async function GET() {
 
                 const data = await fetchProjects(supabase);
                 if (data !== null) {
+                    const hash = JSON.stringify(data);
+                    if (hash === lastHash) continue; // Nothing changed — skip push
+                    lastHash = hash;
                     try {
                         send('projects', data);
                     } catch {
