@@ -10,6 +10,7 @@ function genId() {
     });
 }
 import { createProjectAction } from './actions';
+import { getCategories } from '../categories/actions';
 import { useFormStatus } from 'react-dom';
 import { Plus, Trash2, Languages } from 'lucide-react';
 
@@ -48,6 +49,12 @@ export default function NewProjectPage() {
     const [dripfeedPeriod, setDripfeedPeriod] = useState('');
     const [urlsPerDay, setUrlsPerDay] = useState('');
     const [manualOverride, setManualOverride] = useState(false);
+
+    // Dynamic categories from DB
+    const [categories, setCategories] = useState([]);
+    useEffect(() => {
+        getCategories().then(res => { if (res.success) setCategories(res.categories); });
+    }, []);
 
     // Performance Toggles
     const [urlEntryEnabled, setUrlEntryEnabled] = useState(false);
@@ -572,17 +579,11 @@ export default function NewProjectPage() {
                                                 onChange={(e) => updateProjectInfoGroup(group.id, 'category', e.target.value)}
                                                 className="block w-full border border-gray-300 rounded-md shadow-sm py-1.5 px-3 text-gray-900 focus:ring-indigo-500 focus:border-indigo-500 text-sm bg-white"
                                             >
-                                                <option value="NULL">NULL</option>
-                                                <option value="PBN">PBN</option>
-                                                <option value="GP">GP</option>
-                                                <option value="Tier 2">Tier 2</option>
-                                                <option value="Tier 2 EDU">Tier 2 EDU</option>
-                                                <option value="Tier 2 GOV">Tier 2 GOV</option>
-                                                <option value="EDU GP">EDU GP</option>
-                                                <option value="GOV GP">GOV GP</option>
-                                                <option value="Web2.0">Web2.0</option>
-                                                <option value="Bookmark">Bookmark</option>
-                                                <option value="Forum">Forum</option>
+                                                {categories.length === 0 ? (
+                                                    <option value={group.category}>{group.category || 'Loading…'}</option>
+                                                ) : categories.map(cat => (
+                                                    <option key={cat.id} value={cat.name}>{cat.name}</option>
+                                                ))}
                                             </select>
                                         </div>
                                         <div>

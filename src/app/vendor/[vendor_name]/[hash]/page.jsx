@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import VendorForm from './VendorForm';
 import VendorSessionSetter from './VendorSessionSetter';
 import VendorSidebar from './VendorSidebar';
+import { writeAuditLog } from '@/lib/auditLog';
 
 export const dynamic = 'force-dynamic';
 
@@ -50,6 +51,16 @@ export default async function VendorProjectPage({ params }) {
             redirect('/unauthorized');
         }
         vendorUuid = vendorMatch.id;
+    }
+
+    // Log vendor page view (non-blocking)
+    if (vendorUuid) {
+        void writeAuditLog(supabase, {
+            action: 'vendor_project_view',
+            actorId: vendorUuid,
+            targetId: projectId,
+            detail: `hash=${hash}`,
+        });
     }
 
     // Fetch sibling projects for this vendor (for sidebar project switcher)

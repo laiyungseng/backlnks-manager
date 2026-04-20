@@ -98,7 +98,7 @@ export async function saveVendorProgress(hash, payload) {
         // Verify the project exists for this hash AND check lock status
         const { data: projectList, error: checkError } = await supabase
             .from('projects_hub')
-            .select('id, project_id, is_locked, projects(vendor_id)')
+            .select('id, project_id, is_locked, vendor_staging_data, projects(vendor_id)')
             .eq('hash', hash)
             .single();
 
@@ -114,6 +114,35 @@ export async function saveVendorProgress(hash, payload) {
         // Server-side lock enforcement — UI lock is not enough
         if (projectList.is_locked) {
             return { success: false, message: 'This project has been locked and can no longer be edited.' };
+        }
+
+        // --- DELETION DIFF TRACKING ---
+        const oldStaging = Array.isArray(projectList.vendor_staging_data) ? projectList.vendor_staging_data : [];
+        const trackedFields = ['published_url', 'published_date', 'domain_url', 'remark', 'indexed_status', 'indexed_datetime'];
+        const deletions = [];
+
+        for (const newRow of validRows) {
+            const oldRow = oldStaging.find(o => o.id === newRow.id);
+            if (!oldRow) continue;
+            for (const field of trackedFields) {
+                const oldVal = oldRow[field];
+                const newVal = newRow[field];
+                const wasSet = oldVal !== undefined && oldVal !== null && String(oldVal).trim() !== '';
+                const nowEmpty = !newVal || String(newVal).trim() === '';
+                if (wasSet && nowEmpty) {
+                    deletions.push({ rowId: newRow.id, field, oldValue: String(oldVal).slice(0, 200) });
+                }
+            }
+        }
+
+        if (deletions.length > 0) {
+            await writeAuditLog(supabase, {
+                action: 'vendor_data_deletion',
+                actorId: session.vendorId,
+                targetId: projectList.project_id,
+                detail: `${deletions.length} field(s) cleared`,
+                meta: { deletions },
+            });
         }
 
         const completedCount = validRows.filter(p =>
@@ -153,6 +182,7 @@ export async function saveVendorProgress(hash, payload) {
         // Audit log the save
         await writeAuditLog(supabase, {
             action: 'vendor_save',
+            actorId: session.vendorId,
             targetId: projectList.project_id,
             detail: `rows=${validRows.length} completed=${completedCount}`,
         });

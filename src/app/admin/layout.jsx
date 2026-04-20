@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, PlusCircle, ClipboardList, CheckCircle2, Settings, PanelLeftClose, PanelLeftOpen, Blocks, Users, Globe, List } from 'lucide-react';
+import { LayoutDashboard, PlusCircle, ClipboardList, CheckCircle2, Settings, PanelLeftClose, PanelLeftOpen, Blocks, Users, Globe, List, Activity, Tag, BarChart2 } from 'lucide-react';
 import { logoutAction } from '@/app/admin/settings/actions';
 
 export default function AdminLayout({ children }) {
@@ -25,6 +25,9 @@ export default function AdminLayout({ children }) {
         { name: 'Schema Builder', href: '/admin/schema-builder', icon: Blocks },
         { name: 'Vendor Manager', href: '/admin/vendor-manager', icon: Users },
         { name: 'Domains Manager', href: '/admin/domains-manager', icon: Globe },
+        { name: 'Vendor Log', href: '/admin/vendor-log', icon: Activity },
+        { name: 'Categories', href: '/admin/categories', icon: Tag },
+        { name: 'Analytics', href: '/admin/vendor-analytics', icon: BarChart2 },
         { name: 'Settings', href: '/admin/settings', icon: Settings },
     ];
 

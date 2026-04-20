@@ -10,9 +10,7 @@ export const projectLanguageSchema = z.object({
 export const projectTargetSchema = z.object({
     id: z.number().int().optional().describe('SERIAL; PRIMARY KEY; Unique ID for the project target'),
     project_id: z.string().uuid().describe('UUID; FOREIGN KEY (project_id) REFERENCES projects(id); NOT NULL; Reference to the parent project'),
-    category: z.enum([
-        'NULL', 'PBN', 'GP', 'Tier 2', 'Tier 2 EDU', 'Tier 2 GOV', 'EDU GP', 'GOV GP', 'Web2.0', 'Bookmark', 'Forum'
-    ]).describe('VARCHAR(50); NOT NULL; Backlink category/tier for this group of targets'),
+    category: z.string().min(1, 'Category is required').describe('VARCHAR(50); NOT NULL; Backlink category/tier for this group of targets'),
     anchor_text: z.string().min(1, 'Anchor text required').describe('TEXT; NOT NULL; The exact text to be used for the hyperlink'),
     target_url: z.string().url('Invalid URL formatting').describe('TEXT; NOT NULL; The destination URL the link should point to'),
     quantity_requested: z.coerce.number().min(1, 'Quantity must be > 0').describe('INTEGER; NOT NULL; Number of links requested for this specific anchor/target pair'),

@@ -1,8 +1,9 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { vendorLogin } from './actions';
-import { ArrowRight, Building2, AlertCircle, Link as LinkIcon } from 'lucide-react';
+import { ArrowRight, ArrowLeft, Building2, AlertCircle, Link as LinkIcon } from 'lucide-react';
 
 export default function VendorLoginPage() {
     const [vendorName, setVendorName] = useState('');
@@ -36,6 +37,13 @@ export default function VendorLoginPage() {
     return (
         <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
             <div className="max-w-md w-full bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
+                <Link
+                    href="/"
+                    className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-400 hover:text-slate-600 transition-colors mb-6"
+                >
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                    Back
+                </Link>
                 <div className="flex justify-center mb-6">
                     <div className="p-4 bg-indigo-50 rounded-full text-indigo-600">
                         <Building2 className="w-8 h-8" />

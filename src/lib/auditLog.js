@@ -5,7 +5,7 @@
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase
  * @param {{ action: string, actor?: string, actorId?: string, targetId?: string, detail?: string }} entry
  */
-export async function writeAuditLog(supabase, { action, actor, actorId, targetId, detail }) {
+export async function writeAuditLog(supabase, { action, actor, actorId, targetId, detail, meta }) {
     try {
         await supabase.from('audit_log').insert({
             action,
@@ -13,6 +13,7 @@ export async function writeAuditLog(supabase, { action, actor, actorId, targetId
             actor_id: actorId ?? null,
             target_id: targetId ?? null,
             detail: detail ?? null,
+            meta: meta ?? null,
             created_at: new Date().toISOString(),
         });
     } catch (e) {
