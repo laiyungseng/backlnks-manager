@@ -1,5 +1,5 @@
 import { getServerSupabase } from '@/lib/supabase-server';
-import { verifyVendorSession } from '@/lib/session';
+import { verifyVendorSession, getSession } from '@/lib/session';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { ExternalLink, Clock } from 'lucide-react';
@@ -15,9 +15,12 @@ export default async function VendorInProgressPage({ params }) {
 
     if (!vendorName || !vendorUuid) redirect('/vendor');
 
-    // Session guard — verify cookie + DB session_version (revocation check)
-    const session = await verifyVendorSession(supabase);
-    if (!session?.vendorId || session.vendorId !== vendorUuid) redirect('/vendor');
+    // Admin users bypass vendor session check — allow read-only preview
+    const adminSession = await getSession();
+    if (!adminSession) {
+        const session = await verifyVendorSession(supabase);
+        if (!session?.vendorId || session.vendorId !== vendorUuid) redirect('/vendor');
+    }
 
     // Validate UUID — exact match against vendors.id
     const { data: vendor } = await supabase

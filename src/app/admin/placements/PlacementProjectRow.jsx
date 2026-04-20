@@ -60,14 +60,15 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
 
     // Portal Access Copier
     const vendorName = project.vendors?.vendor_name || 'unknown';
+    const vendorSlug = vendorName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
     const copyLink = () => {
-        const fullUrl = `${window.location.origin}/vendor/${encodeURIComponent(vendorName)}/${representativeHash}`;
+        const fullUrl = `${window.location.origin}/vendor/${vendorSlug}/${representativeHash}`;
         navigator.clipboard.writeText(fullUrl);
         alert('Vendor Portal Link copied to clipboard!');
     };
-    
+
     const openLink = () => {
-        const fullUrl = `${window.location.origin}/vendor/${encodeURIComponent(vendorName)}/${representativeHash}`;
+        const fullUrl = `${window.location.origin}/vendor/${vendorSlug}/${representativeHash}`;
         window.open(fullUrl, '_blank');
     };
 

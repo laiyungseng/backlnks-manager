@@ -220,6 +220,15 @@ export async function normalizeProjectData(projectHash) {
             return { success: false, message: 'No valid completed placements found in staging.' };
         }
 
+        // Delete existing placements before re-inserting — makes re-runs idempotent
+        const { error: deleteErr } = await supabase
+            .from('placements')
+            .delete()
+            .eq('project_id', projectUUID)
+            .eq('vendor_token', projectHash);
+
+        if (deleteErr) throw new Error(`Placements delete error: ${deleteErr.message}`);
+
         const { error: placementsErr } = await supabase
             .from('placements')
             .insert(placementsToInsert);

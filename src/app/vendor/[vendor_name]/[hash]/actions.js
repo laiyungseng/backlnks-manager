@@ -20,6 +20,13 @@ const vendorPayloadSchema = z.array(z.object({
     indexed_datetime: z.string().optional().or(z.literal(''))
 }));
 
+const syncIndexPayloadSchema = z.array(z.object({
+    published_url: z.string().url('Published URL must be a valid link').or(z.literal('')),
+    indexed_status: z.string().optional().or(z.literal('')),
+    indexed_datetime: z.string().optional().or(z.literal('')),
+    remark: z.string().optional().or(z.literal(''))
+}));
+
 /**
  * Called from VendorSessionSetter client component on hash page mount.
  * Validates the hash, resolves vendor_id, sets a signed vendor session cookie.
@@ -179,6 +186,7 @@ export async function saveVendorProgress(hash, payload) {
                 if (isFinalized) {
                     const nowIso = new Date().toISOString();
                     let syncSuccessCount = 0;
+                    const syncErrors = [];
 
                     for (const row of validRows) {
                         if (!row.published_url || row.published_url.trim() === '') continue;
@@ -204,9 +212,17 @@ export async function saveVendorProgress(hash, payload) {
 
                         if (syncError) {
                             console.error(`[saveVendorProgress] Sync Error for ${row.published_url}:`, syncError);
-                        } else if (syncData?.length) {
+                            syncErrors.push(row.published_url);
+                        } else if (!syncData?.length) {
+                            console.warn(`[saveVendorProgress] No placement matched for ${row.published_url}`);
+                            syncErrors.push(row.published_url);
+                        } else {
                             syncSuccessCount += syncData.length;
                         }
+                    }
+
+                    if (syncErrors.length > 0) {
+                        return { success: false, message: `Placements sync failed for ${syncErrors.length} row(s). Staging was saved.` };
                     }
                     console.log(`[saveVendorProgress] Finalized sync complete. Updated ${syncSuccessCount} placements.`);
                 }
@@ -263,7 +279,7 @@ export async function syncFinalizedIndexStatus(hash, payload) {
         }
 
         // Validate payload with Zod before any DB writes
-        const validatedSync = vendorPayloadSchema.safeParse(payload);
+        const validatedSync = syncIndexPayloadSchema.safeParse(payload);
         if (!validatedSync.success) {
             return { success: false, message: 'Validation Error: Invalid payload format.' };
         }

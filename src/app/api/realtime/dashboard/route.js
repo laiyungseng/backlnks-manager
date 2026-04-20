@@ -53,7 +53,10 @@ async function fetchProjects(supabase) {
         const hub = project.projects_hub?.[0];
         if (!hub) return project;
         const staging = Array.isArray(hub.vendor_staging_data) ? hub.vendor_staging_data : [];
-        const completed_count = staging.filter(s => s.published_url && s.published_url.trim().length > 0).length;
+        const completed_count = staging.filter(s =>
+            s.published_url && s.published_url.trim().length > 0 &&
+            s.published_date && s.published_date.trim().length > 0
+        ).length;
         const { vendor_staging_data: _dropped, ...hubWithoutBlob } = hub;
         return {
             ...project,

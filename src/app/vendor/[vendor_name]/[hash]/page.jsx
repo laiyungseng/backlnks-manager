@@ -57,12 +57,15 @@ export default async function VendorProjectPage({ params }) {
     if (vendorUuid) {
         const { data: siblings } = await supabase
             .from('projects')
-            .select('id, project_name, status, is_approved, projects_hub ( hash )')
+            .select('id, project_name, status, is_approved, projects_hub ( hash ), placements ( id )')
             .eq('vendor_id', vendorUuid)
             .order('created_date', { ascending: false });
 
         siblingProjects = (siblings || [])
-            .filter(p => p.is_approved && p.status !== 'Finalized')
+            .filter(p => {
+                const hasPlacements = p.placements && p.placements.length > 0;
+                return p.is_approved && p.status !== 'Finalized' && !hasPlacements;
+            })
             .map(p => ({
                 project_name: p.project_name,
                 hash: p.projects_hub?.[0]?.hash || null,

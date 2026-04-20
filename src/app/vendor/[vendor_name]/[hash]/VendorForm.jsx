@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { saveVendorProgress, syncFinalizedIndexStatus, toggleUrlEntryMode } from './actions';
+import { saveVendorProgress, toggleUrlEntryMode } from './actions';
 import { parseDomainUrl } from '../../../../lib/utils';
 import { CheckCircle2, FileSpreadsheet, RefreshCw, Filter, ChevronDown, ChevronRight, Calendar, Lock, Unlock, Link, PlusCircle } from 'lucide-react';
 import { DataEditor, GridCellKind } from '@glideapps/glide-data-grid';
@@ -62,28 +62,6 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
         if (!isAutoSave) setFeedback({ type: '', message: '' });
 
         try {
-            // --- PATH A: Locked finalized project --- sync index status directly to placements (bypass staging)
-            if (isLocked && isFinalized) {
-                const rowsToSync = rows.map(r => ({
-                    published_url: r.published_url || '',
-                    indexed_status: r.indexed_status || '',
-                    indexed_datetime: r.indexed_datetime || '',
-                    remark: r.remark || '',
-                }));
-
-                const result = await syncFinalizedIndexStatus(projectHash, rowsToSync);
-                if (result.success) {
-                    if (!isAutoSave) setFeedback({ type: 'success', message: result.message });
-                    setLastSavedAt(new Date());
-                    setIsDirty(false);
-                } else {
-                    setFeedback({ type: 'error', message: result.message });
-                }
-                return;
-            }
-
-            // --- PATH B: In-progress OR admin-unlocked finalized project ---
-            // saveVendorProgress handles the finalized sync internally when project.status === 'Finalized'
             const rowsToUpdate = rows.map(r => ({
                 id: r.id,
                 target_id: r.target_id,
