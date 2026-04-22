@@ -222,7 +222,9 @@ export default function VendorManager() {
         { title: "Total Price / Spent", id: "price", width: 160 },
         { title: "Remark", id: "remark", width: 200 },
         { title: "Option Stock", id: "option_stock", width: 150 },
-        { title: "Max Discount %", id: "max_discount_pct", width: 150 }
+        { title: "Max Discount %", id: "max_discount_pct", width: 150 },
+        { title: "Project Status", id: "project_status", width: 200 },
+        { title: "Close Reason", id: "close_reason", width: 260 },
     ], []);
 
     const getCellContent = useCallback((cell) => {
@@ -248,7 +250,7 @@ export default function VendorManager() {
 
         const val = dataRow[colDef.id] === null || dataRow[colDef.id] === undefined ? "" : String(dataRow[colDef.id]);
         
-        const isDerivedReadOnly = colDef.id === 'product_types' || colDef.id === 'price';
+        const isDerivedReadOnly = colDef.id === 'product_types' || colDef.id === 'price' || colDef.id === 'project_status';
 
         if (colDef.id === 'employ_status') {
             const allowedValues = ["continue", "discontinue"];
@@ -269,6 +271,33 @@ export default function VendorManager() {
             };
         }
 
+        if (colDef.id === 'close_reason') {
+            return {
+                kind: GridCellKind.Text,
+                data: val,
+                displayData: val,
+                allowOverlay: true,
+                readonly: true,
+            };
+        }
+
+        if (colDef.id === 'project_status') {
+            const tierColors = {
+                'NO RESPONSE':                 { text: '#c2410c', bg: '#ffedd5' },
+                'POTENTIAL FRAUD':             { text: '#dc2626', bg: '#fee2e2' },
+                'POTENTIAL FRAUD — HIGH RISK': { text: '#991b1b', bg: '#fecaca' },
+            };
+            const colors = tierColors[val];
+            return {
+                kind: GridCellKind.Text,
+                data: val,
+                displayData: val,
+                allowOverlay: false,
+                readonly: true,
+                ...(colors ? { themeOverride: { textDark: colors.text, bgCell: colors.bg } } : {}),
+            };
+        }
+
         return {
             kind: GridCellKind.Text,
             data: val,
@@ -284,8 +313,8 @@ export default function VendorManager() {
         const colDef = columns[col];
         const field = colDef.id;
 
-        // Derived fields cannot be edited
-        if (field === 'product_types' || field === 'price') return;
+        // Derived / system-set fields cannot be edited
+        if (field === 'product_types' || field === 'price' || field === 'project_status' || field === 'close_reason') return;
 
         let valToSet;
         if (newValue.kind === GridCellKind.Custom && newValue.data.kind === "dropdown-cell") {

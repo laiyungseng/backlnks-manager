@@ -35,6 +35,14 @@ export async function getVendors() {
             .from('placements')
             .select('vendor_id, category');
 
+        // Fetch live risk tiers from view (overrides stale stored project_status)
+        const { data: riskTierData } = await supabase
+            .from('vendor_risk_tiers')
+            .select('vendor_id, risk_tier');
+
+        const riskTierMap = {};
+        (riskTierData || []).forEach(r => { riskTierMap[r.vendor_id] = r.risk_tier; });
+
         // Map data checking normalized columns first, fallback to JSONB legacy if necessary
         const vendors = data.map(v => {
             const legacyDetails = (Array.isArray(v.vendor_details) ? v.vendor_details[0] : v.vendor_details) || {};
@@ -75,7 +83,9 @@ export async function getVendors() {
                 option_stock: v.option_stock !== null ? v.option_stock : (legacyDetails.option_stock || false),
                 max_discount_pct: v.max_discount_pct !== null ? v.max_discount_pct : (legacyDetails.max_discount_pct || 0),
                 employ_status: v.employ_status || 'continue',
-                remark: v.remark || ''
+                remark: v.remark || '',
+                project_status: riskTierMap[v.id] ?? v.project_status ?? '',
+                close_reason: v.close_reason || '',
             };
         });
 

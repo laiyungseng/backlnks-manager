@@ -3,11 +3,19 @@
 import { useState, useEffect } from 'react';
 import { Search } from 'lucide-react';
 import PlacementGroupCard from './PlacementGroupCard';
+import { autoCloseHighRiskProjects } from './actions';
 
 export default function PlacementsMonitoringPage() {
     const [projects, setProjects] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
+
+    // Auto-close projects that have been inactive >30 days (SQL view handles the detection)
+    useEffect(() => {
+        autoCloseHighRiskProjects().catch(err =>
+            console.error('[AutoClose] Unexpected error:', err)
+        );
+    }, []);
 
     useEffect(() => {
         // Use SSE stream for real-time updates without leaking Supabase keys
@@ -34,12 +42,12 @@ export default function PlacementsMonitoringPage() {
         };
     }, []);
 
-    // Filter: Only show active projects
+    // Filter: Only show active projects (exclude Finalized, Closed, and projects with committed placements)
     const activeProjects = (projects || []).filter(p => {
         const hasPlacements = p.placements && p.placements.length > 0;
         const isProjApproved = p.is_approved === true;
         const projectStatus = p.status;
-        return isProjApproved === true && projectStatus !== 'Finalized' && !hasPlacements;
+        return isProjApproved === true && projectStatus !== 'Finalized' && projectStatus !== 'Closed' && !hasPlacements;
     });
 
     // Global Metrics Calculation

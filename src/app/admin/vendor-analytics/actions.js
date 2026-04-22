@@ -50,10 +50,22 @@ export async function getVendorStats(vendorId) {
     const projects = projResult.data || [];
     const allVendors = vendorResult.data || [];
 
+    // Count in-progress staging rows (projects not yet finalized → rows still in vendor_staging_data)
+    const inProgressIds = projects.filter(p => p.status !== 'Finalized').map(p => p.id);
+    let stagingCount = 0;
+    if (inProgressIds.length > 0) {
+        const { data: stagingHubs } = await supabase
+            .from('projects_hub')
+            .select('vendor_staging_data')
+            .in('project_id', inProgressIds);
+        stagingCount = (stagingHubs || []).reduce((sum, hub) =>
+            sum + (Array.isArray(hub.vendor_staging_data) ? hub.vendor_staging_data.length : 0), 0);
+    }
+
     // 1. Index Rate
-    const totalPlacements = placements.length;
+    const totalPlacements = placements.length + stagingCount;
     const indexedCount = placements.filter(p => p.indexed_status === 'page_indexed').length;
-    const indexRate = { indexed: indexedCount, total: totalPlacements };
+    const indexRate = { indexed: indexedCount, total: placements.length };
 
     // 2. Monthly Completions (last 12 months)
     const monthCounts = {};
@@ -111,9 +123,9 @@ export async function getVendorStats(vendorId) {
         }
     }
 
-    // 5. Domain Diversity
+    // 5. Domain Diversity (finalized placements only — staging rows have no domain_id)
     const uniqueDomains = new Set(placements.map(p => p.domain_id).filter(Boolean)).size;
-    const domainDiversity = { uniqueDomains, totalPlacements };
+    const domainDiversity = { uniqueDomains, totalPlacements: placements.length };
 
     // 6. Anchor Text Distribution (top 10)
     const anchorCounts = {};

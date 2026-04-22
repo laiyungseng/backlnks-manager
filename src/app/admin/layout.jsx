@@ -21,7 +21,7 @@ export default function AdminLayout({ children }) {
         { name: 'Project Details', href: '/admin/projects', icon: List },
         { name: 'Kickoff Project', href: '/admin/new-project', icon: PlusCircle },
         { name: 'Active Placements', href: '/admin/placements', icon: ClipboardList },
-        { name: 'Completed Placements', href: '/admin/completed', icon: CheckCircle2 },
+        { name: 'Completed & Closed', href: '/admin/completed', icon: CheckCircle2 },
         { name: 'Schema Builder', href: '/admin/schema-builder', icon: Blocks },
         { name: 'Vendor Manager', href: '/admin/vendor-manager', icon: Users },
         { name: 'Domains Manager', href: '/admin/domains-manager', icon: Globe },

@@ -452,6 +452,12 @@ export async function saveVendorProgressDelta(hash, delta, completedCount, known
             return { success: false, conflict: true, message: 'Another save occurred simultaneously. Please refresh to load the latest data.' };
         }
 
+        // Stamp last vendor activity timestamp for risk-tier computation
+        await supabase
+            .from('projects_hub')
+            .update({ last_activity_at: new Date().toISOString() })
+            .eq('hash', hash);
+
         const targetProjectId = projectList.project_id;
         const proj = projectList.projects;
 
