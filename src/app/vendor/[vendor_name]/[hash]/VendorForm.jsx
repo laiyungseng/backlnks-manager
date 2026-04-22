@@ -1,18 +1,21 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
-import { saveVendorProgress, toggleUrlEntryMode } from './actions';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { saveVendorProgressDelta, toggleUrlEntryMode } from './actions';
 import { parseDomainUrl } from '../../../../lib/utils';
 import { CheckCircle2, FileSpreadsheet, RefreshCw, Filter, ChevronDown, ChevronRight, Calendar, Lock, Unlock, Link, PlusCircle } from 'lucide-react';
 import { DataEditor, GridCellKind } from '@glideapps/glide-data-grid';
 import '@glideapps/glide-data-grid/dist/index.css';
 
-export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, dripfeedPeriod, urlsPerDay, isLocked = false, isFinalized = false, urlEntryEnabled = true }) {
+export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, dripfeedPeriod, urlsPerDay, isLocked = false, isFinalized = false, urlEntryEnabled = true, initialVersion = 1 }) {
     const [rows, setRows] = useState(initialRows || []);
     const [isSaving, setIsSaving] = useState(false);
     const [lastSavedAt, setLastSavedAt] = useState(null);
     const [isDirty, setIsDirty] = useState(false);
     const [feedback, setFeedback] = useState({ type: '', message: '' });
+    const [version, setVersion] = useState(initialVersion);
+    const isDirtyRef = useRef(isDirty);
+    const lastSavedRowsRef = useRef(initialRows || []);
 
     // Live Toggle State
     const [localUrlEntryEnabled, setLocalUrlEntryEnabled] = useState(urlEntryEnabled);
@@ -62,26 +65,52 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
         if (!isAutoSave) setFeedback({ type: '', message: '' });
 
         try {
-            const rowsToUpdate = rows.map(r => ({
-                id: r.id,
-                target_id: r.target_id,
-                target_url: r.target_url,
-                anchor_text: r.anchor_text,
-                language: r.language || '',
-                domain_url: r.domain_url || '',
-                published_url: r.published_url || '',
-                published_date: r.published_date || '',
-                remark: r.remark || '',
-                indexed_status: r.indexed_status || '',
-                indexed_datetime: r.indexed_datetime || ''
-            }));
+            // Compute delta — only rows that changed since the last successful save
+            const lastSavedMap = new Map(lastSavedRowsRef.current.map(r => [r.id, r]));
+            const delta = rows
+                .filter(r => {
+                    const saved = lastSavedMap.get(r.id);
+                    return !saved || JSON.stringify(r) !== JSON.stringify(saved);
+                })
+                .map(r => ({
+                    id: r.id,
+                    target_id: r.target_id,
+                    target_url: r.target_url,
+                    anchor_text: r.anchor_text,
+                    language: r.language || '',
+                    domain_url: r.domain_url || '',
+                    published_url: r.published_url || '',
+                    published_date: r.published_date || '',
+                    remark: r.remark || '',
+                    indexed_status: r.indexed_status || '',
+                    indexed_datetime: r.indexed_datetime || ''
+                }));
 
-            const result = await saveVendorProgress(projectHash, rowsToUpdate);
+            if (delta.length === 0) {
+                setIsDirty(false);
+                isDirtyRef.current = false;
+                return;
+            }
+
+            const currentCompletedCount = rows.filter(r =>
+                r.published_url?.trim() && r.published_date?.trim()
+            ).length;
+
+            const result = await saveVendorProgressDelta(projectHash, delta, currentCompletedCount, version);
+
+            if (result.conflict) {
+                setFeedback({ type: 'error', message: 'Another session saved simultaneously. Refreshing to latest data...' });
+                setTimeout(() => window.location.reload(), 2000);
+                return;
+            }
 
             if (result.success) {
                 if (!isAutoSave) setFeedback({ type: 'success', message: result.message });
                 setLastSavedAt(new Date());
                 setIsDirty(false);
+                isDirtyRef.current = false;
+                setVersion(v => v + 1);
+                lastSavedRowsRef.current = [...rows];
             } else {
                 setFeedback({ type: 'error', message: result.message });
             }
@@ -93,16 +122,28 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
                 setTimeout(() => setFeedback({ type: '', message: '' }), 4000);
             }
         }
-    }, [rows, isLocked, isFinalized, projectHash, feedback.type]);
+    }, [rows, isLocked, isFinalized, projectHash, feedback.type, version]);
 
-    // Auto-save effect — defined AFTER handleSaveProgress so the closure is always fresh
+    // Keep ref in sync so beforeunload can read current dirty state without stale closure
+    useEffect(() => { isDirtyRef.current = isDirty; }, [isDirty]);
+
+    // Auto-save effect — 3 s debounce reduces DB write frequency vs the previous 1 s
     useEffect(() => {
         if (!isDirty) return;
         const timer = setTimeout(() => {
             handleSaveProgress(true);
-        }, 1000);
+        }, 3000);
         return () => clearTimeout(timer);
     }, [rows, isDirty, handleSaveProgress]);
+
+    // Flush pending save when tab closes / navigates away
+    useEffect(() => {
+        const handleBeforeUnload = () => {
+            if (isDirtyRef.current) handleSaveProgress(true);
+        };
+        window.addEventListener('beforeunload', handleBeforeUnload);
+        return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    }, [handleSaveProgress]);
 
 
     const handleToggleUrlEntry = async () => {
@@ -156,6 +197,7 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
         };
         setRows(prev => [...prev, newRow]);
         setIsDirty(true);
+        isDirtyRef.current = true;
         setFeedback({ type: 'success', message: 'Extra placement row added.' });
         setTimeout(() => setFeedback({ type: '', message: '' }), 3000);
     }, [isLocked]);
@@ -385,6 +427,7 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
         });
 
         setIsDirty(true);
+        isDirtyRef.current = true;
     }, [filteredRows, columns, rows]);
 
     const onPaste = useCallback((target, values) => {
@@ -472,6 +515,7 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
 
         if (hasChanges) {
             setIsDirty(true);
+            isDirtyRef.current = true;
         }
 
         return true;
@@ -537,7 +581,7 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
             }
 
             if (hasChanges) {
-                setTimeout(() => setIsDirty(true), 0);
+                setTimeout(() => { setIsDirty(true); isDirtyRef.current = true; }, 0);
                 return newRows;
             }
 

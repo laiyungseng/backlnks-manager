@@ -18,7 +18,11 @@ function getRemainingDays(deadline) {
     return Math.floor((due - now) / (1000 * 60 * 60 * 24));
 }
 
-function getActiveStatus(daysLeft) {
+function getProjectStatus(daysLeft, completed, total, indexedCount) {
+    if (total > 0 && completed >= total) {
+        if (indexedCount >= total) return { label: 'Completed', color: 'teal' };
+        return { label: 'Completed — Pending Index Status', color: 'blue' };
+    }
     if (daysLeft === null) return { label: 'In Progress', color: 'green' };
     if (daysLeft < 0) return { label: `Late — ${Math.abs(daysLeft)}d overdue`, color: 'red' };
     if (daysLeft === 0) return { label: 'Due Today', color: 'orange' };
@@ -31,6 +35,8 @@ const statusColorMap = {
     yellow: 'bg-yellow-50 text-yellow-700 border-yellow-200',
     orange: 'bg-orange-50 text-orange-700 border-orange-200',
     red: 'bg-red-50 text-red-700 border-red-200',
+    teal: 'bg-teal-50 text-teal-700 border-teal-200',
+    blue: 'bg-blue-50 text-blue-700 border-blue-200',
 };
 
 const progressBarColorMap = {
@@ -38,6 +44,8 @@ const progressBarColorMap = {
     yellow: 'bg-yellow-400',
     orange: 'bg-orange-500',
     red: 'bg-red-500',
+    teal: 'bg-teal-500',
+    blue: 'bg-blue-500',
 };
 
 function getProgress(project) {
@@ -45,10 +53,11 @@ function getProgress(project) {
     const stagingData = Array.isArray(hub.vendor_staging_data) ? hub.vendor_staging_data : [];
     const hubTargets = Array.isArray(hub.targets) ? hub.targets : [];
     const completed = stagingData.filter(s => s.published_url && s.published_url.trim().length > 0).length;
+    const indexedCount = stagingData.filter(s => s.indexed_status && s.indexed_status.trim().length > 0).length;
     const total = hubTargets.length > 0
         ? hubTargets.reduce((acc, t) => acc + (parseInt(t.quantity || '0', 10)), 0)
         : (project.total_quantity || 0);
-    return { completed, total, percent: total > 0 ? Math.round((completed / total) * 100) : 0 };
+    return { completed, indexedCount, total, percent: total > 0 ? Math.round((completed / total) * 100) : 0 };
 }
 
 function getTotal(project) {
@@ -261,8 +270,8 @@ export default async function VendorDashboardPage({ params }) {
                     <div className="space-y-3">
                         {activeProjects.map(p => {
                             const daysLeft = getRemainingDays(p.deadline);
-                            const { label, color } = getActiveStatus(daysLeft);
                             const progress = getProgress(p);
+                            const { label, color } = getProjectStatus(daysLeft, progress.completed, progress.total, progress.indexedCount);
                             const hash = p.projects_hub?.[0]?.hash;
                             const category = p.project_targets?.[0]?.category;
 
