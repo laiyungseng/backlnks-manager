@@ -18,9 +18,11 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
         : (project.total_quantity || 0);
 
     const completedLinks = hub.completed_count ?? 0;
-    
+    const indexedLinks = hub.indexed_count ?? 0;
+
     const percentage = totalLinks > 0 ? Math.round((completedLinks / totalLinks) * 100) : 0;
-    const allFulfilled = completedLinks === totalLinks && totalLinks > 0;
+    const allFulfilled = completedLinks >= totalLinks && totalLinks > 0;
+    const allIndexed = indexedLinks >= totalLinks && totalLinks > 0;
     const hasPlacements = project.placements && project.placements.length > 0;
     const isFinalized = project.status === 'Finalized' || hasPlacements;
 
@@ -75,7 +77,8 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
     // UI Formatting
     const getStatusStyle = () => {
         if (isFinalized) return { label: 'FINALIZED', bg: 'bg-emerald-100 text-emerald-700' };
-        if (allFulfilled) return { label: 'COMPLETED', bg: 'bg-emerald-100 text-emerald-700' };
+        if (allFulfilled && allIndexed) return { label: 'COMPLETED', bg: 'bg-teal-100 text-teal-700' };
+        if (allFulfilled && !allIndexed) return { label: 'COMPLETED — PENDING INDEX', bg: 'bg-blue-100 text-blue-700' };
         return { label: 'IN PROGRESS', bg: 'bg-amber-100 text-amber-700' };
     };
     

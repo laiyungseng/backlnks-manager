@@ -205,6 +205,7 @@ export default async function VendorProjectPage({ params }) {
                         isLocked={isLocked}
                         isFinalized={isFinalized}
                         urlEntryEnabled={projectData?.url_entry_enabled ?? true}
+                        initialVersion={projectsHub.version ?? 1}
                     />
                 </div>
             </main>

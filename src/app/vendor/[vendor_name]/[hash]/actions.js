@@ -63,7 +63,7 @@ export async function establishVendorSession(hash) {
     return { success: true };
 }
 
-export async function saveVendorProgress(hash, payload) {
+export async function saveVendorProgress(hash, payload, knownVersion) {
     let supabase;
     try {
         supabase = getServerSupabase();
@@ -96,9 +96,10 @@ export async function saveVendorProgress(hash, payload) {
         const validRows = validatedData.data;
 
         // Verify the project exists for this hash AND check lock status
+        // Batch: fetch vendor_id, project status/completed_date, and project_targets in one round-trip
         const { data: projectList, error: checkError } = await supabase
             .from('projects_hub')
-            .select('id, project_id, is_locked, vendor_staging_data, projects(vendor_id)')
+            .select('id, project_id, is_locked, vendor_staging_data, projects(vendor_id, status, completed_date, project_targets(quantity_requested))')
             .eq('hash', hash)
             .single();
 
@@ -153,30 +154,32 @@ export async function saveVendorProgress(hash, payload) {
         // --- STATUS CALCULATION ---
         const targetProjectId = projectList.project_id;
 
-        // Fetch authoritative total from project_targets (used for both completed_at and status)
-        const { data: targetsData } = await supabase
-            .from('project_targets')
-            .select('quantity_requested')
-            .eq('project_id', targetProjectId);
-
-        const hubTargets = targetsData || [];
+        // Derive total from project_targets already fetched in the initial hub query
+        const hubTargets = projectList.projects?.project_targets || [];
         const totalLinksOrdered = hubTargets.length > 0
             ? hubTargets.reduce((acc, t) => acc + (t.quantity_requested || 0), 0)
             : validRows.length;
 
-        const updatePayload = { vendor_staging_data: validRows };
+        const updatePayload = { vendor_staging_data: validRows, version: (knownVersion ?? 0) + 1 };
         if (completedCount >= totalLinksOrdered && totalLinksOrdered > 0) {
             updatePayload.completed_at = new Date().toISOString();
         }
 
-        const { error: updateError } = await supabase
-            .from('projects_hub')
-            .update(updatePayload)
-            .eq('hash', hash);
+        // Build update query — apply optimistic lock if version was provided
+        let updateQuery = supabase.from('projects_hub').update(updatePayload).eq('hash', hash);
+        if (typeof knownVersion === 'number') {
+            updateQuery = updateQuery.eq('version', knownVersion);
+        }
+        const { data: updatedHub, error: updateError } = await updateQuery.select('id');
 
         if (updateError) {
             console.error("Staging Data Update Error:", updateError);
             return { success: false, message: 'Supabase blocked staging push.' };
+        }
+
+        // 0 rows updated = version mismatch (concurrent save from another session)
+        if (typeof knownVersion === 'number' && (!updatedHub || updatedHub.length === 0)) {
+            return { success: false, conflict: true, message: 'Another save occurred simultaneously. Please refresh to load the latest data.' };
         }
 
         // Audit log the save
@@ -190,11 +193,8 @@ export async function saveVendorProgress(hash, payload) {
         if (targetProjectId) {
             const newStatus = completedCount >= totalLinksOrdered && totalLinksOrdered > 0 ? 'Completed' : 'Inprogress';
 
-            const { data: proj } = await supabase
-                .from('projects')
-                .select('status, completed_date')
-                .eq('id', targetProjectId)
-                .single();
+            // Use project data already fetched in the initial batched query
+            const proj = projectList.projects;
 
             if (proj) {
                 const isFinalized = proj.status === 'Finalized';
@@ -375,6 +375,136 @@ export async function syncFinalizedIndexStatus(hash, payload) {
 
     } catch (e) {
         console.error("syncFinalizedIndexStatus Critical Error:", e);
+        return { success: false, message: 'An unexpected server error occurred.' };
+    }
+}
+
+/**
+ * saveVendorProgressDelta — Phase 3A bandwidth-optimised save.
+ * Sends only changed rows (delta) and patches them in Postgres via RPC.
+ * Eliminates the full vendor_staging_data read+write on every auto-save.
+ * Requires the `patch_staging_rows` SQL function to exist in Supabase.
+ */
+export async function saveVendorProgressDelta(hash, delta, completedCount, knownVersion) {
+    let supabase;
+    try {
+        supabase = getServerSupabase();
+    } catch {
+        return { success: false, message: 'Database connection not configured.' };
+    }
+
+    try {
+        if (!hash || typeof hash !== 'string') {
+            return { success: false, message: 'Unauthorized Request: Missing Security Hash' };
+        }
+
+        const session = await verifyVendorSession(supabase);
+        if (!session?.vendorId) {
+            return { success: false, message: 'Unauthorized: No active vendor session.' };
+        }
+
+        const rl = vendorRateLimiter.check(hash);
+        if (!rl.allowed) {
+            return { success: false, message: `Too many save requests. Try again in ${rl.retryAfterSeconds}s.` };
+        }
+
+        const validatedData = vendorPayloadSchema.safeParse(delta);
+        if (!validatedData.success) {
+            return { success: false, message: 'Validation Error: Please ensure all provided URLs are valid format.' };
+        }
+
+        const validDelta = validatedData.data;
+
+        // Fetch hub metadata — intentionally excludes vendor_staging_data to save bandwidth
+        const { data: projectList, error: checkError } = await supabase
+            .from('projects_hub')
+            .select('id, project_id, is_locked, projects(vendor_id, status, completed_date, project_targets(quantity_requested))')
+            .eq('hash', hash)
+            .single();
+
+        if (checkError || !projectList) {
+            return { success: false, message: 'Project context lost. Save Rejected.' };
+        }
+
+        if (projectList.projects?.vendor_id !== session.vendorId) {
+            return { success: false, message: 'Unauthorized: Session does not match project vendor.' };
+        }
+
+        if (projectList.is_locked) {
+            return { success: false, message: 'This project has been locked and can no longer be edited.' };
+        }
+
+        // Patch only changed rows directly in Postgres — no full-blob read or rewrite
+        const { data: patchResult, error: patchError } = await supabase
+            .rpc('patch_staging_rows', {
+                p_hash: hash,
+                p_known_version: knownVersion,
+                p_delta: validDelta,
+            });
+
+        if (patchError) {
+            console.error('[saveVendorProgressDelta] RPC Error:', patchError);
+            return { success: false, message: 'Supabase blocked staging patch.' };
+        }
+
+        // 0 rows returned = version mismatch (concurrent save)
+        if (!patchResult || patchResult.length === 0) {
+            return { success: false, conflict: true, message: 'Another save occurred simultaneously. Please refresh to load the latest data.' };
+        }
+
+        const targetProjectId = projectList.project_id;
+        const proj = projectList.projects;
+
+        if (proj && targetProjectId) {
+            const isFinalized = proj.status === 'Finalized';
+            const hubTargets = proj.project_targets || [];
+            const totalLinksOrdered = hubTargets.length > 0
+                ? hubTargets.reduce((acc, t) => acc + (t.quantity_requested || 0), 0)
+                : 0;
+
+            if (!isFinalized) {
+                const newStatus = completedCount >= totalLinksOrdered && totalLinksOrdered > 0 ? 'Completed' : 'Inprogress';
+                const dbUpdatePayload = { status: newStatus };
+                if (newStatus === 'Completed' && !proj.completed_date) {
+                    dbUpdatePayload.completed_date = new Date().toISOString();
+                }
+                await supabase.from('projects').update(dbUpdatePayload).eq('id', targetProjectId);
+            } else {
+                // Finalized + unlocked: sync changed delta rows directly to placements
+                const nowIso = new Date().toISOString();
+                for (const row of validDelta) {
+                    if (!row.published_url || row.published_url.trim() === '') continue;
+                    let normalizedIndexedStatus = null;
+                    if (row.indexed_status) {
+                        const l = row.indexed_status.toLowerCase().trim();
+                        if (l.includes('not')) normalizedIndexedStatus = 'page_not_indexed';
+                        else if (l.includes('index')) normalizedIndexedStatus = 'page_indexed';
+                    }
+                    await supabase
+                        .from('placements')
+                        .update({
+                            indexed_status: normalizedIndexedStatus,
+                            indexed_checked_at: row.indexed_datetime || null,
+                            notes: row.remark || null,
+                            last_vendor_update_at: nowIso,
+                        })
+                        .eq('vendor_token', hash)
+                        .eq('published_url', row.published_url);
+                }
+            }
+        }
+
+        await writeAuditLog(supabase, {
+            action: 'vendor_save',
+            actorId: session.vendorId,
+            targetId: projectList.project_id,
+            detail: `delta=${validDelta.length} completed=${completedCount}`,
+        });
+
+        return { success: true, message: 'All placements saved directly into Virtual Staging successfully!' };
+
+    } catch (e) {
+        console.error('[saveVendorProgressDelta] Critical Error:', e);
         return { success: false, message: 'An unexpected server error occurred.' };
     }
 }

@@ -76,10 +76,22 @@ export default async function VendorInProgressPage({ params }) {
         const stagingData = Array.isArray(hub.vendor_staging_data) ? hub.vendor_staging_data : [];
         const hubTargets = Array.isArray(hub.targets) ? hub.targets : [];
         const completed = stagingData.filter(s => s.published_url && s.published_url.trim().length > 0).length;
+        const indexedCount = stagingData.filter(s => s.indexed_status && s.indexed_status.trim().length > 0).length;
         const total = hubTargets.length > 0
             ? hubTargets.reduce((acc, t) => acc + (parseInt(t.quantity || '0', 10)), 0)
             : (project.total_quantity || 0);
-        return { completed, total, percent: total > 0 ? Math.round((completed / total) * 100) : 0 };
+        return { completed, indexedCount, total, percent: total > 0 ? Math.round((completed / total) * 100) : 0 };
+    };
+
+    const getStatusBadge = (project, progress) => {
+        const { completed, total, indexedCount } = progress;
+        if (total > 0 && completed >= total) {
+            if (indexedCount >= total) {
+                return { label: 'Completed', cls: 'text-teal-700 bg-teal-50 border border-teal-200' };
+            }
+            return { label: 'Completed — Pending Index Status', cls: 'text-blue-700 bg-blue-50 border border-blue-200' };
+        }
+        return { label: project.status || 'In Progress', cls: 'text-yellow-700' };
     };
 
     return (
@@ -97,6 +109,7 @@ export default async function VendorInProgressPage({ params }) {
                     activeProjects.map((project) => {
                         const hash = project.projects_hub?.[0]?.hash;
                         const progress = getProgress(project);
+                        const statusBadge = getStatusBadge(project, progress);
                         const category = project.project_targets?.[0]?.category;
 
                         return (
@@ -105,9 +118,9 @@ export default async function VendorInProgressPage({ params }) {
                                     <div className="flex-1">
                                         <h2 className="text-lg font-bold text-gray-900">{project.project_name || 'Unnamed Project'}</h2>
                                         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
-                                            <div>
+                                            <div className="flex items-center gap-1">
                                                 <span className="text-gray-400">Status: </span>
-                                                <span className="font-semibold text-yellow-700">{project.status || 'In Progress'}</span>
+                                                <span className={`font-semibold text-xs px-1.5 py-0.5 rounded ${statusBadge.cls}`}>{statusBadge.label}</span>
                                             </div>
                                             {project.country && (
                                                 <div>
