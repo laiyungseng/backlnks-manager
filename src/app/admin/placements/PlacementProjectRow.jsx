@@ -2,15 +2,35 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Eye, Link as LinkIcon, MoreVertical, CheckCircle2, Lock, Unlock } from 'lucide-react';
-import { finalizeProjectAction, toggleProjectLockAction } from './actions';
+import { Eye, Link as LinkIcon, MoreVertical, CheckCircle2, Lock, Unlock, XCircle, AlertTriangle, ShieldAlert } from 'lucide-react';
+import { finalizeProjectAction, toggleProjectLockAction, closeProjectAction } from './actions';
 import CopyButton from '../projects/CopyButton';
+import CloseProjectModal from './CloseProjectModal';
+
+const RISK_TIER_STYLES = {
+    'NO RESPONSE':                 { bg: 'bg-orange-100', text: 'text-orange-700', border: 'border-orange-200', icon: AlertTriangle },
+    'POTENTIAL FRAUD':             { bg: 'bg-red-100',    text: 'text-red-600',    border: 'border-red-200',    icon: ShieldAlert   },
+    'POTENTIAL FRAUD — HIGH RISK': { bg: 'bg-red-200',    text: 'text-red-800',    border: 'border-red-300',    icon: ShieldAlert   },
+};
+
+function computeRiskTier(lastActivityIso, createdDateIso) {
+    const base = lastActivityIso
+        ? new Date(lastActivityIso)
+        : createdDateIso
+            ? new Date(createdDateIso)
+            : null;
+    if (!base) return null;
+    const days = Math.floor((Date.now() - base.getTime()) / 86400000);
+    if (days >= 30) return 'POTENTIAL FRAUD — HIGH RISK';
+    if (days >= 14) return 'POTENTIAL FRAUD';
+    if (days >= 7)  return 'NO RESPONSE';
+    return null;
+}
 
 export default function PlacementProjectRow({ project, isCompletedView }) {
     const router = useRouter();
     const representativeHash = project.projects_hub?.[0]?.hash;
 
-    // Parse Targets
     const hub = project.projects_hub?.[0] || {};
     const hubTargets = Array.isArray(hub.targets) ? hub.targets : [];
     const totalLinks = hubTargets.length > 0
@@ -26,11 +46,12 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
     const hasPlacements = project.placements && project.placements.length > 0;
     const isFinalized = project.status === 'Finalized' || hasPlacements;
 
-    // Actions
     const [isFinalizing, setIsFinalizing] = useState(false);
     const currentLockState = hub.is_locked || false;
     const [localLockState, setLocalLockState] = useState(currentLockState);
     const [isToggling, setIsToggling] = useState(false);
+    const [isCloseModalOpen, setIsCloseModalOpen] = useState(false);
+    const [isClosing, setIsClosing] = useState(false);
 
     async function handleFinalize() {
         if (!representativeHash) return;
@@ -39,8 +60,8 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
             const res = await finalizeProjectAction(representativeHash);
             if (!res.success) alert(`Error Finalizing: ${res.message}`);
             else router.refresh();
-        } catch (error) {
-            alert("Crash triggering processor.");
+        } catch {
+            alert('Crash triggering processor.');
         } finally {
             setIsFinalizing(false);
         }
@@ -60,7 +81,24 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
         }
     }
 
-    // Portal Access Copier
+    async function handleCloseConfirm(reason) {
+        if (!project.id || !project.vendor_id) return;
+        setIsClosing(true);
+        try {
+            const res = await closeProjectAction(project.id, project.vendor_id, reason);
+            if (!res.success) {
+                alert(`Error closing project: ${res.message}`);
+            } else {
+                setIsCloseModalOpen(false);
+                router.refresh();
+            }
+        } catch {
+            alert('Unexpected error closing project.');
+        } finally {
+            setIsClosing(false);
+        }
+    }
+
     const vendorName = project.vendors?.vendor_name || 'unknown';
     const vendorSlug = vendorName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
     const copyLink = () => {
@@ -68,143 +106,252 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
         navigator.clipboard.writeText(fullUrl);
         alert('Vendor Portal Link copied to clipboard!');
     };
-
     const openLink = () => {
         const fullUrl = `${window.location.origin}/vendor/${vendorSlug}/${representativeHash}`;
         window.open(fullUrl, '_blank');
     };
 
-    // UI Formatting
+    const riskTier = !isCompletedView ? computeRiskTier(hub.last_activity_at || null, project.created_date) : null;
+    const riskStyle = riskTier ? RISK_TIER_STYLES[riskTier] : null;
+
     const getStatusStyle = () => {
         if (isFinalized) return { label: 'FINALIZED', bg: 'bg-emerald-100 text-emerald-700' };
         if (allFulfilled && allIndexed) return { label: 'COMPLETED', bg: 'bg-teal-100 text-teal-700' };
         if (allFulfilled && !allIndexed) return { label: 'COMPLETED — PENDING INDEX', bg: 'bg-blue-100 text-blue-700' };
         return { label: 'IN PROGRESS', bg: 'bg-amber-100 text-amber-700' };
     };
-    
     const statusStyle = getStatusStyle();
 
-    // Grouping identical category/sheet_name to avoid chip spam
-    const chipLabels = [...new Set(hubTargets.map(t => 
+    const chipLabels = [...new Set(hubTargets.map(t =>
         t.category || t._parent_category || t.sheet_name || t._parent_sheet_name || 'GENERIC'
-    ).filter(Boolean))].slice(0, 3); // Max 3 chips
+    ).filter(Boolean))].slice(0, 3);
+
+    const progressBar = (
+        <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+            <div
+                className={`h-full rounded-full transition-all duration-1000 ${percentage === 100 ? (isFinalized ? 'bg-emerald-500' : 'bg-indigo-600') : 'bg-indigo-500'}`}
+                style={{ width: `${percentage}%` }}
+            />
+        </div>
+    );
+
+    const portalButtons = (
+        <>
+            <button onClick={openLink} className="flex items-center gap-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 font-bold text-[10px] uppercase tracking-widest px-3 py-2 rounded-lg transition-colors flex-1 justify-center">
+                <Eye className="w-3.5 h-3.5" />
+                Open Link
+            </button>
+            <button onClick={copyLink} className="p-2 border border-slate-200 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-lg transition-colors shrink-0" title="Copy Link">
+                <LinkIcon className="w-3.5 h-3.5" />
+            </button>
+        </>
+    );
+
+    const actionButtons = !isCompletedView ? (
+        <>
+            {allFulfilled ? (
+                <button
+                    onClick={handleFinalize}
+                    disabled={isFinalizing}
+                    className="px-4 py-2 bg-emerald-50 text-emerald-600 border border-emerald-100 hover:bg-emerald-100 rounded-lg font-black text-[10px] uppercase tracking-widest transition-all shadow-sm flex items-center gap-1.5 justify-center min-w-[90px]"
+                >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    {isFinalizing ? '...' : 'Process'}
+                </button>
+            ) : (
+                <button disabled className="px-4 py-2 bg-slate-50 text-slate-400 border border-slate-100 rounded-lg font-black text-[10px] uppercase tracking-widest opacity-60 flex items-center gap-1.5 justify-center min-w-[90px] cursor-not-allowed">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    Process
+                </button>
+            )}
+            <button
+                onClick={() => setIsCloseModalOpen(true)}
+                title="Close Project"
+                className="p-2 bg-red-50 text-red-400 border border-red-100 hover:bg-red-100 hover:text-red-600 rounded-lg transition-colors shrink-0"
+            >
+                <XCircle className="w-4 h-4" />
+            </button>
+        </>
+    ) : (
+        <>
+            <button
+                onClick={handleToggleLock}
+                disabled={isToggling}
+                title={localLockState ? 'Locked' : 'Unlocked'}
+                className={`p-2 rounded-lg border transition-all flex items-center justify-center shrink-0 ${localLockState
+                    ? 'bg-amber-50 text-amber-600 border-amber-200 hover:bg-amber-100'
+                    : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'}`}
+            >
+                {localLockState ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
+            </button>
+            <div title="Processed" className="p-2 bg-emerald-50 border border-emerald-100 text-emerald-600 rounded-lg flex items-center justify-center shrink-0">
+                <CheckCircle2 className="w-4 h-4" />
+            </div>
+            <button className="p-1.5 text-slate-300 hover:text-slate-500 transition-colors shrink-0">
+                <MoreVertical className="w-4 h-4" />
+            </button>
+        </>
+    );
 
     return (
-        <div className="group flex flex-wrap items-center gap-3 sm:gap-4 px-4 sm:px-5 py-4 bg-white rounded-2xl border border-slate-100 hover:border-slate-200 hover:shadow-sm transition-all relative">
-            {/* Project ID */}
-            <div className="w-[120px] shrink-0 flex items-center gap-1 border-r border-slate-200 md:mr-4 pr-2">
-                <span className="text-xs font-mono text-slate-500 cursor-help" title={project.id}>
-                    {project.id?.substring(0, 6)}...
-                </span>
-                <CopyButton textToCopy={project.id} />
-            </div>
-
-            {/* Project Name & Chips */}
-            <div className="w-full md:w-auto md:flex-[1.5] min-w-[150px] pr-0 sm:pr-4 flex flex-col justify-center">
-                <div className="flex flex-wrap items-center gap-2 mb-2">
-                    <span className="text-base font-bold text-slate-900 line-clamp-1" title={project.project_name}>
-                        {project.project_name || 'Unnamed Project'}
+        <>
+            {/* ── Mobile Card (< md) ── */}
+            <div className="md:hidden bg-white rounded-[12px] border border-slate-100 hover:border-slate-200 hover:shadow-sm transition-all overflow-hidden">
+                {/* Top Header Row */}
+                <div className="flex items-center justify-between px-4 pt-4 pb-2">
+                    <span className="text-xs font-mono text-slate-500 cursor-help" title={project.id}>
+                        {project.id?.substring(0, 6)}...
                     </span>
-                    {project.created_date && (
-                        <span className="text-[10px] font-semibold text-slate-400">
-                            {new Date(project.created_date).toLocaleDateString()}
+                    <CopyButton textToCopy={project.id} />
+                </div>
+
+                {/* Information Block */}
+                <div className="px-4 pb-2">
+                    <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+                        <span className="text-base font-bold text-slate-900 line-clamp-1" title={project.project_name}>
+                            {project.project_name || 'Unnamed Project'}
                         </span>
-                    )}
-                    <span className={`px-2 py-0.5 text-[9px] font-black rounded uppercase tracking-widest flex-shrink-0 ${statusStyle.bg}`}>
+                        {project.created_date && (
+                            <span className="text-[10px] font-semibold text-slate-400">
+                                {new Date(project.created_date).toLocaleDateString()}
+                            </span>
+                        )}
+                    </div>
+                    <span className={`block w-full px-2 py-0.5 text-[9px] font-black rounded uppercase tracking-widest mb-1.5 ${statusStyle.bg}`}>
                         {statusStyle.label}
                     </span>
+                    {riskTier && riskStyle && (() => {
+                        const RiskIcon = riskStyle.icon;
+                        return (
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-[9px] font-black rounded-md border uppercase tracking-widest mb-1.5 ${riskStyle.bg} ${riskStyle.text} ${riskStyle.border}`}>
+                                <RiskIcon className="w-2.5 h-2.5" />
+                                {riskTier}
+                            </span>
+                        );
+                    })()}
+                    <div className="flex flex-wrap gap-1">
+                        {chipLabels.map((lbl, i) => (
+                            <span key={i} className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded text-[9px] font-black tracking-widest uppercase truncate max-w-[100px]">
+                                {lbl}
+                            </span>
+                        ))}
+                    </div>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                    {chipLabels.map((lbl, i) => (
-                        <span key={i} className="px-2 py-1 bg-slate-100 text-slate-500 rounded text-[9px] font-black tracking-widest uppercase truncate max-w-[100px]">
-                            {lbl}
-                        </span>
-                    ))}
-                </div>
-            </div>
 
-            {/* Region / Delivery */}
-            <div className="w-1/2 sm:w-auto sm:flex-[0.8] min-w-[120px]">
-                <div className="flex flex-col gap-1.5">
+                {/* Metadata Row */}
+                <div className="flex items-center gap-3 px-4 py-2">
                     <span className="text-[13px] font-bold text-slate-800">
-                        {project.country || 'GLOBAL'} {project.project_languages?.length > 0 && `(${project.project_languages[0].lang_code})`}
+                        {project.country || 'GLOBAL'}{project.project_languages?.length > 0 && ` (${project.project_languages[0].lang_code})`}
                     </span>
                     <span className="text-[11px] font-semibold text-indigo-600 italic">
                         {project.dripfeed_enabled ? `${project.urls_per_day} URL/day (${project.dripfeed_period || 0} days)` : 'No Dripfeed'}
                     </span>
                 </div>
+
+                {/* Progress Block */}
+                <div className="px-4 py-2">
+                    <div className="flex items-center gap-3 mb-1.5">
+                        <span className="text-xs font-bold text-slate-700">{completedLinks}/{totalLinks}</span>
+                        <span className="text-xs font-bold text-slate-500">{percentage}%</span>
+                    </div>
+                    {progressBar}
+                </div>
+
+                {/* Portal Access Row */}
+                <div className="flex items-center gap-2 px-4 py-2">
+                    {portalButtons}
+                </div>
+
+                {/* Actions Footer */}
+                <div className="flex items-center justify-between gap-2 px-4 py-3 border-t border-slate-100">
+                    {actionButtons}
+                </div>
             </div>
 
-            {/* Fulfillment */}
-            <div className="w-1/2 sm:w-auto sm:flex-1 min-w-[150px] pr-0 lg:pr-6">
-                <div className="flex flex-col gap-2 w-full">
+            {/* ── Desktop Row (≥ md) — 12-column grid ── */}
+            <div className="hidden md:grid grid-cols-12 items-center bg-white rounded-[12px] border border-slate-100 hover:border-slate-200 hover:shadow-sm transition-all relative">
+                {/* Col 1-2: Project ID + Category Badge */}
+                <div className="col-span-2 flex flex-col gap-1.5 px-4 py-4 border-r border-slate-100 min-w-0">
+                    <div className="flex items-center gap-1">
+                        <span className="text-xs font-mono text-slate-500 cursor-help truncate" title={project.id}>
+                            {project.id?.substring(0, 6)}...
+                        </span>
+                        <CopyButton textToCopy={project.id} />
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                        {chipLabels.slice(0, 1).map((lbl, i) => (
+                            <span key={i} className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded text-[9px] font-black tracking-widest uppercase truncate max-w-[100px]">
+                                {lbl}
+                            </span>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Col 3-4: Project Name + Date / Status Badge */}
+                <div className="col-span-2 flex flex-col gap-1 px-4 py-4 border-r border-slate-100 min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-sm font-bold text-slate-900 line-clamp-1" title={project.project_name}>
+                            {project.project_name || 'Unnamed Project'}
+                        </span>
+                        {project.created_date && (
+                            <span className="text-[10px] font-semibold text-slate-400 shrink-0">
+                                {new Date(project.created_date).toLocaleDateString()}
+                            </span>
+                        )}
+                    </div>
+                    <span className={`px-2 py-0.5 text-[9px] font-black rounded uppercase tracking-widest self-start ${statusStyle.bg}`}>
+                        {statusStyle.label}
+                    </span>
+                    {riskTier && riskStyle && (() => {
+                        const RiskIcon = riskStyle.icon;
+                        return (
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-[9px] font-black rounded-md border uppercase tracking-widest self-start mt-0.5 ${riskStyle.bg} ${riskStyle.text} ${riskStyle.border}`}>
+                                <RiskIcon className="w-2.5 h-2.5" />
+                                {riskTier}
+                            </span>
+                        );
+                    })()}
+                </div>
+
+                {/* Col 5-6: Region / Delivery */}
+                <div className="col-span-2 flex flex-col gap-1 px-4 py-4 border-r border-slate-100 min-w-0">
+                    <span className="text-[13px] font-bold text-slate-800">
+                        {project.country || 'GLOBAL'}{project.project_languages?.length > 0 && ` (${project.project_languages[0].lang_code})`}
+                    </span>
+                    <span className="text-[11px] font-semibold text-indigo-600 italic">
+                        {project.dripfeed_enabled ? `${project.urls_per_day} URL/day (${project.dripfeed_period || 0} days)` : 'No Dripfeed'}
+                    </span>
+                </div>
+
+                {/* Col 7-8: Fulfillment */}
+                <div className="col-span-2 flex flex-col gap-2 px-4 py-4 border-r border-slate-100 min-w-0">
                     <div className="flex items-center gap-3">
                         <span className="text-xs font-bold text-slate-700">{completedLinks}/{totalLinks}</span>
                         <span className="text-xs font-bold text-slate-500">{percentage}%</span>
                     </div>
-                    <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                        <div 
-                            className={`h-full rounded-full transition-all duration-1000 ${percentage === 100 ? (isFinalized ? 'bg-emerald-500' : 'bg-indigo-600') : 'bg-indigo-500'}`}
-                            style={{ width: `${percentage}%` }}
-                        />
-                    </div>
+                    {progressBar}
+                </div>
+
+                {/* Col 9-10: Portal Access */}
+                <div className="col-span-2 flex items-center gap-2 px-4 py-4 border-r border-slate-100 min-w-0">
+                    {portalButtons}
+                </div>
+
+                {/* Col 11-12: Status & Actions */}
+                <div className="col-span-2 flex items-center gap-2 justify-end px-4 py-4 min-w-0">
+                    {actionButtons}
                 </div>
             </div>
 
-            {/* Portal Access */}
-            <div className="w-full sm:w-[140px] shrink-0 flex items-center gap-2 mt-2 sm:mt-0 sm:ml-auto md:ml-0">
-                <button onClick={openLink} className="flex items-center gap-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 font-bold text-[10px] uppercase tracking-widest px-3 py-2 rounded-lg transition-colors flex-1 justify-center sm:flex-none">
-                    <Eye className="w-3.5 h-3.5" />
-                    Open Link
-                </button>
-                <button onClick={copyLink} className="p-2 border border-slate-200 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-lg transition-colors shrink-0" title="Copy Link">
-                    <LinkIcon className="w-3.5 h-3.5" />
-                </button>
-            </div>
-
-            {/* Status & Security Actions */}
-            <div className="w-full sm:w-[150px] shrink-0 flex items-center gap-2 justify-end mt-2 sm:mt-0">
-                {!isCompletedView ? (
-                    // Active View
-                    <>
-                        {allFulfilled ? (
-                            <button
-                                onClick={handleFinalize}
-                                disabled={isFinalizing}
-                                className="px-4 py-2 bg-emerald-50 text-emerald-600 border border-emerald-100 hover:bg-emerald-100 rounded-lg font-black text-[10px] uppercase tracking-widest transition-all shadow-sm flex items-center gap-1.5 flex-1 justify-center sm:flex-none min-w-[100px]"
-                            >
-                                <CheckCircle2 className="w-3.5 h-3.5" />
-                                {isFinalizing ? '...' : 'Process'}
-                            </button>
-                        ) : (
-                            <button disabled className="px-4 py-2 bg-slate-50 text-slate-400 border border-slate-100 rounded-lg font-black text-[10px] uppercase tracking-widest transition-all opacity-60 flex items-center gap-1.5 flex-1 justify-center sm:flex-none min-w-[100px] cursor-not-allowed hidden sm:flex">
-                                <CheckCircle2 className="w-3.5 h-3.5" />
-                                Process
-                            </button>
-                        )}
-                    </>
-                ) : (
-                    // Completed View
-                    <>
-                        <button
-                            onClick={handleToggleLock}
-                            disabled={isToggling}
-                            title={localLockState ? 'Locked' : 'Unlocked'}
-                            className={`p-2 rounded-lg border transition-all flex items-center justify-center shrink-0 ${localLockState
-                                ? 'bg-amber-50 text-amber-600 border-amber-200 hover:bg-amber-100'
-                                : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'}`}
-                        >
-                            {localLockState ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
-                        </button>
-                        <div title="Processed" className="p-2 bg-emerald-50 border border-emerald-100 text-emerald-600 rounded-lg flex items-center justify-center shrink-0">
-                            <CheckCircle2 className="w-4 h-4" />
-                        </div>
-                        <button className="p-1.5 text-slate-300 hover:text-slate-500 transition-colors shrink-0">
-                            <MoreVertical className="w-4 h-4" />
-                        </button>
-                    </>
-                )}
-            </div>
-        </div>
+            {isCloseModalOpen && (
+                <CloseProjectModal
+                    project={project}
+                    vendorLastActivity={hub.last_activity_at || null}
+                    onClose={() => setIsCloseModalOpen(false)}
+                    onConfirm={handleCloseConfirm}
+                    isSubmitting={isClosing}
+                />
+            )}
+        </>
     );
 }
