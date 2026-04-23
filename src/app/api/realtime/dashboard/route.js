@@ -32,7 +32,7 @@ async function fetchProjects(supabase) {
             id, owner, created_date, completed_date,
             project_name, country, total_quantity,
             status, is_approved, start_date, deadline, price, price_type,
-            dripfeed_enabled, dripfeed_period, urls_per_day,
+            dripfeed_enabled, dripfeed_period, urls_per_day, url_entry_enabled,
             vendors ( vendor_name ),
             projects_hub ( hash, targets, is_locked, vendor_staging_data ),
             placements ( id ),

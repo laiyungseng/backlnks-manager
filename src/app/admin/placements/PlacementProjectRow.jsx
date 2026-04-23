@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Eye, Link as LinkIcon, MoreVertical, CheckCircle2, Lock, Unlock, XCircle, AlertTriangle, ShieldAlert } from 'lucide-react';
-import { finalizeProjectAction, toggleProjectLockAction, closeProjectAction } from './actions';
+import { finalizeProjectAction, toggleProjectLockAction, closeProjectAction, toggleUrlEntryAction } from './actions';
 import CopyButton from '../projects/CopyButton';
 import CloseProjectModal from './CloseProjectModal';
 
@@ -52,6 +52,8 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
     const [isToggling, setIsToggling] = useState(false);
     const [isCloseModalOpen, setIsCloseModalOpen] = useState(false);
     const [isClosing, setIsClosing] = useState(false);
+    const [localUrlEntry, setLocalUrlEntry] = useState(project.url_entry_enabled || false);
+    const [isTogglingUrlEntry, setIsTogglingUrlEntry] = useState(false);
 
     async function handleFinalize() {
         if (!representativeHash) return;
@@ -78,6 +80,18 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
             } else alert(`Error: ${res.message}`);
         } finally {
             setIsToggling(false);
+        }
+    }
+
+    async function handleToggleUrlEntry() {
+        if (!project.id) return;
+        setIsTogglingUrlEntry(true);
+        try {
+            const res = await toggleUrlEntryAction(project.id, !localUrlEntry);
+            if (res.success) setLocalUrlEntry(v => !v);
+            else alert(`Error: ${res.message}`);
+        } finally {
+            setIsTogglingUrlEntry(false);
         }
     }
 
@@ -147,6 +161,24 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
         </>
     );
 
+    const urlEntryToggle = (
+        <button
+            onClick={handleToggleUrlEntry}
+            disabled={isTogglingUrlEntry}
+            title={localUrlEntry ? 'URL Entry ON — click to disable' : 'URL Entry OFF — click to enable'}
+            className={`flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-lg border text-[8px] font-black uppercase tracking-widest transition-all shrink-0 ${
+                localUrlEntry
+                    ? 'bg-violet-50 text-violet-600 border-violet-200 hover:bg-violet-100'
+                    : 'bg-slate-50 text-slate-400 border-slate-200 hover:bg-slate-100'
+            }`}
+        >
+            <div className={`w-6 h-3 rounded-full relative transition-colors ${localUrlEntry ? 'bg-violet-500' : 'bg-slate-300'}`}>
+                <div className={`absolute top-0.5 w-2 h-2 bg-white rounded-full shadow transition-all ${localUrlEntry ? 'left-3.5' : 'left-0.5'}`} />
+            </div>
+            URL
+        </button>
+    );
+
     const actionButtons = !isCompletedView ? (
         <>
             {allFulfilled ? (
@@ -164,6 +196,7 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
                     Process
                 </button>
             )}
+            {urlEntryToggle}
             <button
                 onClick={() => setIsCloseModalOpen(true)}
                 title="Close Project"
@@ -196,7 +229,7 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
     return (
         <>
             {/* ── Mobile Card (< md) ── */}
-            <div className="md:hidden bg-white rounded-[12px] border border-slate-100 hover:border-slate-200 hover:shadow-sm transition-all overflow-hidden">
+            <div className="md:hidden group bg-white rounded-[12px] border border-slate-100 hover:border-slate-200 hover:shadow-sm transition-all overflow-hidden">
                 {/* Top Header Row */}
                 <div className="flex items-center justify-between px-4 pt-4 pb-2">
                     <span className="text-xs font-mono text-slate-500 cursor-help" title={project.id}>
@@ -269,7 +302,7 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
             </div>
 
             {/* ── Desktop Row (≥ md) — 12-column grid ── */}
-            <div className="hidden md:grid grid-cols-12 items-center bg-white rounded-[12px] border border-slate-100 hover:border-slate-200 hover:shadow-sm transition-all relative">
+            <div className="hidden md:grid group grid-cols-12 items-center bg-white rounded-[12px] border border-slate-100 hover:border-slate-200 hover:shadow-sm transition-all relative">
                 {/* Col 1-2: Project ID + Category Badge */}
                 <div className="col-span-2 flex flex-col gap-1.5 px-4 py-4 border-r border-slate-100 min-w-0">
                     <div className="flex items-center gap-1">

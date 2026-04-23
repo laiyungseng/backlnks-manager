@@ -50,7 +50,8 @@ export const projectFormPayloadSchema = projectSchema.omit({
     status: true,
     created_date: true,
     organization_id: true,
-    total_quantity: true // Master UI field is named "quantity"
+    total_quantity: true, // Master UI field is named "quantity"
+    url_entry_enabled: true // Managed from Active Placements row, not kickoff form
 }).extend({
     vendor_name: z.string().min(1, 'Vendor Name is required').describe('The assigned vendor handling this specific portion of the project'),
     quantity: z.coerce.number().min(1, 'Master Quantity must be greater than 0').describe('Total gross number of links requested for this project segment'),

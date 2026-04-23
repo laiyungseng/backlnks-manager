@@ -1,14 +1,16 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { usePathname, useParams } from 'next/navigation';
 import Link from 'next/link';
-import { FileSpreadsheet, Loader, CheckCircle2, Clock, PanelLeftClose, PanelLeftOpen, LogOut, LayoutDashboard } from 'lucide-react';
+import { FileSpreadsheet, Loader, CheckCircle2, Clock, PanelLeftClose, PanelLeftOpen, LogOut, LayoutDashboard, ArrowUp } from 'lucide-react';
 import { vendorLogoutAction } from '@/app/vendor/actions';
 
 export default function VendorPortalLayout({ children }) {
     const [collapsed, setCollapsed] = useState(false);
     const [lastProjectHash, setLastProjectHash] = useState('');
+    const [showScrollTop, setShowScrollTop] = useState(false);
+    const mainRef = useRef(null);
     const pathname = usePathname();
     const params = useParams();
 
@@ -29,6 +31,14 @@ export default function VendorPortalLayout({ children }) {
         const savedHash = localStorage.getItem(`lastProjectHash_${vendorName}`);
         if (savedHash) setLastProjectHash(savedHash);
     }, [vendorName]);
+
+    useEffect(() => {
+        const el = mainRef.current;
+        if (!el) return;
+        const onScroll = () => setShowScrollTop(el.scrollTop > 300);
+        el.addEventListener('scroll', onScroll, { passive: true });
+        return () => el.removeEventListener('scroll', onScroll);
+    }, []);
 
     return (
         <div className="flex h-screen bg-gray-50 overflow-hidden">
@@ -98,8 +108,17 @@ export default function VendorPortalLayout({ children }) {
                 </div>
             </aside>
 
-            <main className="flex-1 min-w-0 overflow-y-auto">
+            <main ref={mainRef} className="flex-1 min-w-0 overflow-y-auto">
                 {children}
+                {showScrollTop && (
+                    <button
+                        onClick={() => mainRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+                        className="fixed bottom-6 right-6 z-50 w-11 h-11 rounded-full bg-indigo-600 text-white shadow-lg flex items-center justify-center hover:bg-indigo-700 active:scale-95 transition-all"
+                        aria-label="Back to top"
+                    >
+                        <ArrowUp className="w-5 h-5" />
+                    </button>
+                )}
             </main>
         </div>
     );

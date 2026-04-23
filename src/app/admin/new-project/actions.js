@@ -2,7 +2,6 @@
 
 import { getServerSupabase } from '@/lib/supabase-server';
 import { getSession } from '@/lib/session';
-import { projectFormPayloadSchema } from '@/schemas/projectSchema';
 import crypto from 'crypto';
 
 async function requireAdmin() {
@@ -11,201 +10,196 @@ async function requireAdmin() {
     return session;
 }
 
-export async function createProjectAction(prevState, formData) {
+async function resolveVendor(supabase, vendorName) {
+    const { data: existing } = await supabase
+        .from('vendors').select('id').eq('vendor_name', vendorName).maybeSingle();
+    if (existing) return existing.id;
+
+    const { data: legacy } = await supabase.from('vendors').select('id')
+        .filter('vendor_details', 'cs', `[{"vendor_name": "${vendorName}"}]`).maybeSingle();
+    if (legacy) return legacy.id;
+
+    const { data: newV, error } = await supabase
+        .from('vendors').insert({ vendor_name: vendorName }).select('id').single();
+    if (error) throw new Error(`Failed to create vendor: ${error.message}`);
+    return newV.id;
+}
+
+export async function createCampaignAction(prevState, formData) {
     try { await requireAdmin(); } catch { return { success: false, message: 'Unauthorized.' }; }
+
     const supabase = getServerSupabase();
+
     try {
-        const rawData = {
-            project_name: formData.get('project_name'),
-            owner: formData.get('owner'),
-            start_date: formData.get('start_date'),
-            deadline: formData.get('deadline'),
-            vendor_name: formData.get('vendor_name'),
-            country: formData.get('country'),
-            language: formData.get('language'),
-            languages_json: formData.get('languages_json'),
-            project_info_json: formData.get('project_info_json'),
-            quantity: formData.get('quantity'),
-            remarks: formData.get('remarks') || '',
-            dripfeed_enabled: formData.has('dripfeed_enabled'),
-            dripfeed_period: formData.get('dripfeed_period') || null,
-            urls_per_day: formData.get('urls_per_day') || null,
-            url_entry_enabled: formData.get('url_entry_enabled') === 'true',
-            price: formData.get('price'),
-            price_type: formData.get('price_type'),
-            randomize_languages: formData.get('randomize_languages') === 'true'
-        };
+        const campaignTitle = formData.get('campaign_title')?.trim();
+        const personInCharge = formData.get('person_in_charge')?.trim();
+        const plansRaw = formData.get('plans_json');
 
-        // 1. Strict Validation
-        const validatedData = projectFormPayloadSchema.safeParse(rawData);
+        if (!campaignTitle) return { success: false, message: 'Campaign title is required.' };
+        if (!plansRaw) return { success: false, message: 'No plans submitted.' };
 
-        if (!validatedData.success) {
-            return {
-                success: false,
-                errors: validatedData.error.flatten().fieldErrors,
-                message: 'Validation failed. Please check the dynamic row quantities.'
-            };
+        let plans;
+        try { plans = JSON.parse(plansRaw); } catch {
+            return { success: false, message: 'Invalid plans data format.' };
         }
 
-        const projectData = validatedData.data;
-        const projectInfoArray = projectData.project_info_json;
-        const languagesArray = projectData.languages_json;
+        if (!Array.isArray(plans) || plans.length === 0) {
+            return { success: false, message: 'At least one plan is required.' };
+        }
 
-        // Flatten the required targets for the projects_hub 
-        const flattenedTargets = [];
-        let allocatedCount = 0;
+        // 1. Create campaign
+        const { data: campaign, error: campErr } = await supabase
+            .from('project_campaigns')
+            .insert({ title: campaignTitle, person_in_charge: personInCharge || null })
+            .select('id').single();
 
-        projectInfoArray.forEach(infoGroup => {
-            infoGroup.placement_target.forEach(target => {
-                const absoluteQuantity = parseInt(target.ratio || 0, 10);
-                allocatedCount += absoluteQuantity;
-                
-                flattenedTargets.push({
-                    anchor_text: target.anchor_text || "",
-                    target_url: target.target_url || "",
-                    quantity: String(absoluteQuantity),
-                    category: infoGroup.category,
-                    sheet_name: infoGroup.sheet_name || null,
-                    created_at: new Date().toISOString()
+        if (campErr) throw new Error(`Campaign creation failed: ${campErr.message}`);
+
+        const results = [];
+
+        // 2. Process each plan sequentially
+        for (const plan of plans) {
+            const {
+                vendor_name, country, start_date, deadline,
+                dripfeed_enabled, dripfeed_period, urls_per_day,
+                price, price_type, randomize_languages, remarks,
+                languages, project_info_groups
+            } = plan;
+
+            if (!vendor_name?.trim()) continue;
+
+            const totalQty = (project_info_groups || []).reduce((acc, g) =>
+                acc + (g.placement_target || []).reduce((s, t) => s + (parseInt(t.ratio) || 0), 0), 0);
+
+            // Flatten targets for legacy JSONB
+            const flattenedTargets = [];
+            (project_info_groups || []).forEach(g => {
+                (g.placement_target || []).forEach(t => {
+                    flattenedTargets.push({
+                        anchor_text: t.anchor_text || '',
+                        target_url: t.target_url || '',
+                        quantity: String(parseInt(t.ratio) || 0),
+                        category: g.category,
+                        sheet_name: g.sheet_name || null,
+                        created_at: new Date().toISOString()
+                    });
                 });
             });
-        });
 
-        // 2. Generate cryptographically random token for Vendor allocation URL
-        const projectHash = crypto.randomBytes(32).toString('hex');
+            const projectHash = crypto.randomBytes(32).toString('hex');
+            const vendorSlug = vendor_name.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+            const vendorId = await resolveVendor(supabase, vendor_name.trim());
+            const firstLangCode = ((languages?.[0]?.code) || 'EN').toUpperCase();
 
-        // 3. Generate vendor_name slug for URL
-        const vendorSlug = projectData.vendor_name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+            // Create project (project_name mirrors campaign title for backward compat)
+            const { data: proj, error: projErr } = await supabase
+                .from('projects')
+                .insert({
+                    project_name: campaignTitle,
+                    owner: personInCharge || '',
+                    start_date,
+                    deadline,
+                    vendor_id: vendorId,
+                    country: (country || 'GLOBAL').toUpperCase(),
+                    language: firstLangCode,
+                    total_quantity: totalQty,
+                    remarks: remarks || null,
+                    dripfeed_enabled: !!dripfeed_enabled,
+                    dripfeed_period: dripfeed_enabled ? (dripfeed_period || null) : null,
+                    urls_per_day: dripfeed_enabled ? (parseInt(urls_per_day) || null) : null,
+                    url_entry_enabled: false,
+                    price: parseFloat(price) || 0,
+                    price_type: price_type || 'per_url',
+                    randomize_languages: !!randomize_languages,
+                    status: 'Inprogress',
+                    created_date: new Date().toISOString()
+                })
+                .select('id').single();
 
-        // 4. Resolve Vendor ID based on Vendor Name
-        let targetVendorId = null;
-        const { data: existingVendor } = await supabase
-            .from('vendors')
-            .select('id')
-            .eq('vendor_name', projectData.vendor_name)
-            .maybeSingle();
+            if (projErr) throw new Error(`Project insert failed (plan: ${vendor_name}): ${projErr.message}`);
+            const projectId = proj.id;
 
-        if (existingVendor) {
-            targetVendorId = existingVendor.id;
-        } else {
-            // Check legacy JSONB
-            const { data: legacyVendor } = await supabase
-                .from('vendors')
-                .select('id')
-                .filter('vendor_details', 'cs', `[{"vendor_name": "${projectData.vendor_name}"}]`)
-                .maybeSingle();
+            const rollback = async () => {
+                await supabase.from('project_languages').delete().eq('project_id', projectId);
+                await supabase.from('project_targets').delete().eq('project_id', projectId);
+                await supabase.from('projects').delete().eq('id', projectId);
+            };
 
-            if (legacyVendor) {
-                targetVendorId = legacyVendor.id;
-            } else {
-                const { data: newV, error: vendorInsertErr } = await supabase
-                    .from('vendors')
-                    .insert({ vendor_name: projectData.vendor_name })
-                    .select('id')
-                    .single();
-                if (vendorInsertErr) throw new Error(`Failed to create vendor: ${vendorInsertErr.message}`);
-                targetVendorId = newV.id;
+            // Insert languages
+            if (languages?.length > 0) {
+                const { error: langErr } = await supabase.from('project_languages').insert(
+                    languages.map(l => ({
+                        project_id: projectId,
+                        lang_code: (l.code || '').toUpperCase(),
+                        ratio: l.ratio
+                    }))
+                );
+                if (langErr) { await rollback(); throw new Error(`Languages insert failed: ${langErr.message}`); }
             }
-        }
 
-        // 5. Insert Master Project into normalized columns
-        const { data: projectInsertResult, error: projectError } = await supabase
-            .from('projects')
-            .insert({
-                project_name: projectData.project_name,
-                owner: projectData.owner,
-                start_date: projectData.start_date,
-                deadline: projectData.deadline,
-                vendor_id: targetVendorId,
-                country: projectData.country.toUpperCase(),
-                language: (languagesArray[0]?.code || 'EN').toUpperCase(), // Legacy fallback
-                total_quantity: projectData.quantity,
-                remarks: projectData.remarks || null,
-                dripfeed_enabled: projectData.dripfeed_enabled,
-                dripfeed_period: projectData.dripfeed_enabled ? projectData.dripfeed_period : null,
-                urls_per_day: projectData.dripfeed_enabled ? projectData.urls_per_day : null,
-                url_entry_enabled: projectData.url_entry_enabled,
-                price: projectData.price || 0,
-                price_type: projectData.price_type || 'per_url',
-                randomize_languages: projectData.randomize_languages || false,
-                status: 'Inprogress',
-                created_date: new Date().toISOString()
-            })
-            .select('id')
-            .single();
-
-        if (projectError) {
-            console.error('Projects Insert Error:', projectError);
-            return { success: false, message: `Failed to create Core Project in database: ${projectError.message}` };
-        }
-
-        const projectId = projectInsertResult.id;
-
-        // Helper: delete child rows first (FK constraint), then the project row
-        const rollbackProject = async () => {
-            await supabase.from('project_languages').delete().eq('project_id', projectId);
-            await supabase.from('project_targets').delete().eq('project_id', projectId);
-            await supabase.from('projects').delete().eq('id', projectId);
-        };
-
-        // 6. Insert Languages into child table (FATAL — roll back project on failure)
-        if (languagesArray && languagesArray.length > 0) {
-            const languagesToInsert = languagesArray.map(l => ({
+            // Insert targets
+            const targetsToInsert = flattenedTargets.map(t => ({
                 project_id: projectId,
-                lang_code: l.code.toUpperCase(),
-                ratio: l.ratio
+                category: t.category || 'NULL',
+                anchor_text: t.anchor_text,
+                target_url: t.target_url,
+                quantity_requested: parseInt(t.quantity, 10),
+                sheet_name: t.sheet_name
             }));
-            const { error: langErr } = await supabase.from('project_languages').insert(languagesToInsert);
-            if (langErr) {
-                await rollbackProject();
-                return { success: false, message: `Failed to insert project languages: ${langErr.message}` };
+
+            if (targetsToInsert.length > 0) {
+                const { error: targetsErr } = await supabase.from('project_targets').insert(targetsToInsert);
+                if (targetsErr) { await rollback(); throw new Error(`Targets insert failed: ${targetsErr.message}`); }
             }
-        }
 
-        // 7. Insert Targets into child table (FATAL — roll back project on failure)
-        const targetsToInsert = flattenedTargets.map(t => ({
-            project_id: projectId,
-            category: t.category || 'NULL',
-            anchor_text: t.anchor_text,
-            target_url: t.target_url,
-            quantity_requested: parseInt(t.quantity, 10),
-            sheet_name: t.sheet_name
-        }));
-
-        if (targetsToInsert.length > 0) {
-            const { error: targetsErr } = await supabase.from('project_targets').insert(targetsToInsert);
-            if (targetsErr) {
-                await rollbackProject();
-                return { success: false, message: `Failed to insert project targets: ${targetsErr.message}` };
-            }
-        }
-
-        // 8. Provision projects_hub (Hash Tracker + Virtual Targets legacy sync)
-        const { error: projectsHubError } = await supabase
-            .from('projects_hub')
-            .insert({
+            // Insert projects_hub
+            const { error: hubErr } = await supabase.from('projects_hub').insert({
                 project_id: projectId,
                 hash: projectHash,
-                targets: flattenedTargets, // Keeping legacy JSONB alive here until specific refactor of Vendor Page
+                targets: flattenedTargets,
                 vendor_staging_data: null,
                 is_locked: false
             });
+            if (hubErr) { await rollback(); throw new Error(`Hub insert failed: ${hubErr.message}`); }
 
-        if (projectsHubError) {
-            console.error('Projects Hub Insert Error:', projectsHubError);
-            await rollbackProject();
-            return { success: false, message: 'Project mapped, but failed to mint secure Vendor Hub.' };
+            // Insert project_plans (one per category group — non-fatal if fails)
+            const planRows = (project_info_groups || []).map((g, idx) => ({
+                campaign_id: campaign.id,
+                project_id: projectId,
+                step_order: idx,
+                category: g.category || null,
+                plan_info: g.sheet_name || null,
+                vendor_id: vendorId,
+                country: (country || 'GLOBAL').toUpperCase(),
+                start_date,
+                end_date: deadline,
+                dripfeed_enabled: !!dripfeed_enabled,
+                dripfeed_period: dripfeed_enabled ? String(dripfeed_period || '') : null,
+                links_per_day: dripfeed_enabled ? (parseInt(urls_per_day) || null) : null,
+                total_quantity: (g.placement_target || []).reduce((s, t) => s + (parseInt(t.ratio) || 0), 0)
+            }));
+
+            if (planRows.length > 0) {
+                const { error: planErr } = await supabase.from('project_plans').insert(planRows);
+                if (planErr) console.warn(`[Kickoff] project_plans insert warning: ${planErr.message}`);
+            }
+
+            results.push({ hash: projectHash, vendorSlug, planLabel: vendor_name.trim() });
+        }
+
+        if (results.length === 0) {
+            return { success: false, message: 'No valid plans were processed.' };
         }
 
         return {
             success: true,
-            message: 'Complex SEO Kickoff successful.',
-            hash: projectHash,
-            vendorSlug: vendorSlug
+            message: `Campaign kicked off with ${results.length} plan(s).`,
+            campaignId: campaign.id,
+            results
         };
 
     } catch (error) {
-        console.error('Unhandled Kickoff error:', error);
-        return { success: false, message: 'An unexpected architectural server error occurred.' };
+        console.error('Campaign kickoff error:', error);
+        return { success: false, message: error.message };
     }
 }

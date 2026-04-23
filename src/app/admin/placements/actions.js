@@ -117,6 +117,21 @@ export async function toggleProjectLockAction(projectHash, newLockState) {
     };
 }
 
+export async function toggleUrlEntryAction(projectId, newValue) {
+    if (!projectId) return { success: false, message: 'Invalid project reference.' };
+
+    const supabase = getServerSupabase();
+    const { error } = await supabase
+        .from('projects')
+        .update({ url_entry_enabled: newValue })
+        .eq('id', projectId);
+
+    if (error) return { success: false, message: `Failed to toggle URL entry: ${error.message}` };
+
+    revalidatePath('/admin', 'layout');
+    return { success: true };
+}
+
 export async function closeProjectAction(projectId, vendorId, reason) {
     if (!projectId || !vendorId) {
         return { success: false, message: 'Invalid project or vendor reference.' };

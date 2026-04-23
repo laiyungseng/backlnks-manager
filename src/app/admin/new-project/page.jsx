@@ -1,6 +1,10 @@
 'use client';
 
 import { useState, useActionState, useMemo, useRef, useEffect } from 'react';
+import { createCampaignAction } from './actions';
+import { getCategories } from '../categories/actions';
+import { useFormStatus } from 'react-dom';
+import { Plus, Trash2, Languages, ChevronDown, ChevronUp } from 'lucide-react';
 
 function genId() {
     if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
@@ -9,708 +13,571 @@ function genId() {
         return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
     });
 }
-import { createProjectAction } from './actions';
-import { getCategories } from '../categories/actions';
-import { useFormStatus } from 'react-dom';
-import { Plus, Trash2, Languages } from 'lucide-react';
 
-const initialState = {
-    message: '',
-    errors: null,
-    success: false,
-    hash: null,
-    vendorSlug: null,
-};
-
-function SubmitButton({ isValid }) {
-    const { pending } = useFormStatus();
-    const disabled = pending || !isValid;
-
-    return (
-        <button
-            type="submit"
-            disabled={disabled}
-            className={`mt-6 w-full py-3 px-4 rounded-md text-white font-bold shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500
-        ${disabled ? 'bg-indigo-300 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'} 
-        `}
-        >
-            {pending ? 'Encrypting & Bootstrapping Project...' : 'Kickoff Project'}
-        </button>
-    );
-}
-
-export default function NewProjectPage() {
-    const [state, formAction] = useActionState(createProjectAction, initialState);
-    const formRef = useRef(null);
-
-    // Dynamic Row State
-    const [masterQuantity, setMasterQuantity] = useState(1);
-    const [dripFeedEnabled, setDripFeedEnabled] = useState(true);
-    const [dripfeedPeriod, setDripfeedPeriod] = useState('');
-    const [urlsPerDay, setUrlsPerDay] = useState('');
-    const [manualOverride, setManualOverride] = useState(false);
-
-    // Dynamic categories from DB
-    const [categories, setCategories] = useState([]);
-    useEffect(() => {
-        getCategories().then(res => { if (res.success) setCategories(res.categories); });
-    }, []);
-
-    // Performance Toggles
-    const [urlEntryEnabled, setUrlEntryEnabled] = useState(false);
-    const [randomizeLanguages, setRandomizeLanguages] = useState(false);
-
-    // Pricing State
-    const [price, setPrice] = useState(0);
-    const [priceType, setPriceType] = useState('per_url');
-
-    // Language Ratio State
-    const [languages, setLanguages] = useState([
-        { id: genId(), code: '', ratio: 1 }
-    ]);
-
-    const [projectInfoGroups, setProjectInfoGroups] = useState([
-        {
-            id: genId(),
-            sheet_name: '',
-            category: 'NULL',
-            placement_target: [
-                { id: genId(), anchor_text: '', target_url: '', ratio: 1 }
-            ]
-        }
-    ]);
-
-    const rebalanceLanguages = (langs, totalQty) => {
-        if (langs.length === 0) return langs;
-        const baseQty = Math.floor(totalQty / langs.length);
-        const remainder = totalQty % langs.length;
-        return langs.map((l, idx) => ({ ...l, ratio: baseQty + (idx === 0 ? remainder : 0) }));
-    };
-
-    const rebalanceProjectInfoGroups = (groups, totalQty) => {
-        const totalRows = groups.reduce((sum, g) => sum + g.placement_target.length, 0);
-        if (totalRows === 0) return groups;
-        const baseQty = Math.floor(totalQty / totalRows);
-        const remainder = totalQty % totalRows;
-        
-        let isFirstRow = true;
-        return groups.map(g => ({
-            ...g,
-            placement_target: g.placement_target.map(t => {
-                const extra = isFirstRow ? remainder : 0;
-                isFirstRow = false;
-                return { ...t, ratio: baseQty + extra };
-            })
-        }));
-    };
-
-    // Auto-rebalance when masterQuantity changes
-    useEffect(() => {
-        setLanguages(prev => rebalanceLanguages(prev, masterQuantity));
-        setProjectInfoGroups(prev => rebalanceProjectInfoGroups(prev, masterQuantity));
-    }, [masterQuantity]);
-
-    useEffect(() => {
-        if (state?.success && state?.hash) {
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-            setTimeout(() => {
-                alert('Project Kicked Off Successfully!');
-            }, 300);
-            formRef.current?.reset();
-            setMasterQuantity(1);
-            setDripFeedEnabled(true);
-            setDripfeedPeriod('');
-            setUrlsPerDay('');
-            setManualOverride(false);
-            setUrlEntryEnabled(false);
-            setRandomizeLanguages(false);
-            setPrice(0);
-            setPriceType('per_url');
-            setLanguages([{ id: genId(), code: '', ratio: 1 }]);
-            setProjectInfoGroups([{
-                id: genId(),
-                sheet_name: '',
-                category: 'NULL',
-                placement_target: [{ id: genId(), anchor_text: '', target_url: '', ratio: 1 }]
-            }]);
-        }
-    }, [state?.success, state?.hash]);
-
-    // Auto calculate URLs per day globally
-    useEffect(() => {
-        if (dripFeedEnabled && !manualOverride) {
-            const period = parseInt(dripfeedPeriod) || 0;
-            if (masterQuantity > 0 && period > 0) {
-                setUrlsPerDay(Math.ceil(masterQuantity / period));
-            } else {
-                setUrlsPerDay('');
-            }
-        }
-    }, [masterQuantity, dripfeedPeriod, dripFeedEnabled, manualOverride]);
-
-    // --- Language Ratio Helpers ---
-    const addLanguage = () => {
-        const newLangs = [...languages, { id: genId(), code: '', ratio: 0 }];
-        setLanguages(rebalanceLanguages(newLangs, masterQuantity));
-    };
-
-    const removeLanguage = (idToRemove) => {
-        if (languages.length > 1) {
-            const remaining = languages.filter(l => l.id !== idToRemove);
-            setLanguages(rebalanceLanguages(remaining, masterQuantity));
-        }
-    };
-
-    const updateLanguage = (id, field, value) => {
-        setLanguages(languages.map(l =>
-            l.id === id ? { ...l, [field]: field === 'ratio' ? parseInt(value) || 0 : value.toUpperCase() } : l
-        ));
-    };
-
-    const languageRatioSum = useMemo(() => {
-        return languages.reduce((sum, l) => sum + (parseInt(l.ratio) || 0), 0);
-    }, [languages]);
-
-    const isValidLanguageRatio = languageRatioSum === masterQuantity;
-    const allLanguagesFilled = languages.every(l => l.code.trim().length > 0);
-
-    // --- Project Info Group Helpers ---
-    const addProjectInfoGroup = () => {
-        const newGroups = [...projectInfoGroups, {
+function createEmptyPlan() {
+    return {
+        id: genId(),
+        vendor_name: '',
+        country: '',
+        start_date: '',
+        deadline: '',
+        dripfeed_enabled: true,
+        dripfeed_period: '',
+        urls_per_day: '',
+        manualOverride: false,
+        price: 0,
+        price_type: 'per_url',
+        randomize_languages: false,
+        remarks: '',
+        total_quantity: 0,
+        languages: [{ id: genId(), code: '', ratio: 0 }],
+        project_info_groups: [{
             id: genId(),
             sheet_name: '',
             category: 'NULL',
             placement_target: [{ id: genId(), anchor_text: '', target_url: '', ratio: 0 }]
-        }];
-        setProjectInfoGroups(rebalanceProjectInfoGroups(newGroups, masterQuantity));
+        }]
+    };
+}
+
+function getPlanQuantity(plan) {
+    return (plan.project_info_groups || []).reduce((acc, g) =>
+        acc + (g.placement_target || []).reduce((s, t) => s + (parseInt(t.ratio) || 0), 0), 0);
+}
+
+function rebalanceLanguages(langs, total) {
+    if (!langs.length) return langs;
+    const base = Math.floor(total / langs.length);
+    const rem = total % langs.length;
+    return langs.map((l, i) => ({ ...l, ratio: base + (i === 0 ? rem : 0) }));
+}
+
+function rebalanceGroups(groups, total) {
+    const rows = groups.reduce((s, g) => s + g.placement_target.length, 0);
+    if (!rows) return groups;
+    const base = Math.floor(total / rows);
+    const rem = total % rows;
+    let first = true;
+    return groups.map(g => ({
+        ...g,
+        placement_target: g.placement_target.map(t => {
+            const extra = first ? rem : 0;
+            first = false;
+            return { ...t, ratio: base + extra };
+        })
+    }));
+}
+
+const initialState = { message: '', success: false, results: null };
+
+function SubmitButton({ isValid }) {
+    const { pending } = useFormStatus();
+    const disabled = pending || !isValid;
+    return (
+        <button type="submit" disabled={disabled}
+            className={`mt-6 w-full py-3 px-4 rounded-md text-white font-bold shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${disabled ? 'bg-indigo-300 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
+            {pending ? 'Encrypting & Bootstrapping Campaign...' : 'Kickoff Campaign'}
+        </button>
+    );
+}
+
+function PlanCard({ plan, planIndex, categories, onUpdate, onRemove, canRemove }) {
+    const [collapsed, setCollapsed] = useState(false);
+
+    const masterQty = parseInt(plan.total_quantity) || 0;
+    const planQty = getPlanQuantity(plan);
+    const langSum = (plan.languages || []).reduce((s, l) => s + (parseInt(l.ratio) || 0), 0);
+    const targetSum = planQty;
+    const isValidLang = langSum === masterQty;
+    const isValidTarget = targetSum === masterQty;
+    const allLangsFilled = (plan.languages || []).every(l => l.code.trim().length > 0);
+    const allCatsSelected = (plan.project_info_groups || []).every(g => g.category !== 'NULL');
+
+    // ── plan-level field update
+    const set = (field, value) => onUpdate(plan.id, field, value);
+
+    // ── total quantity change → rebalance both languages and targets atomically
+    const setTotalQty = (val) => {
+        const qty = parseInt(val) || 0;
+        onUpdate(plan.id, {
+            total_quantity: qty,
+            languages: rebalanceLanguages(plan.languages, qty),
+            project_info_groups: rebalanceGroups(plan.project_info_groups, qty),
+        });
     };
 
-    const removeProjectInfoGroup = (groupId) => {
-        if (projectInfoGroups.length > 1) {
-            const newGroups = projectInfoGroups.filter(g => g.id !== groupId);
-            setProjectInfoGroups(rebalanceProjectInfoGroups(newGroups, masterQuantity));
-        }
+    // ── language helpers
+    const addLang = () => {
+        const next = [...plan.languages, { id: genId(), code: '', ratio: 0 }];
+        set('languages', rebalanceLanguages(next, planQty));
     };
-
-    const updateProjectInfoGroup = (groupId, field, value) => {
-        setProjectInfoGroups(projectInfoGroups.map(g =>
-            g.id === groupId ? { ...g, [field]: value } : g
+    const removeLang = (lid) => {
+        if (plan.languages.length <= 1) return;
+        const next = plan.languages.filter(l => l.id !== lid);
+        set('languages', rebalanceLanguages(next, planQty));
+    };
+    const updateLang = (lid, field, val) => {
+        set('languages', plan.languages.map(l =>
+            l.id === lid ? { ...l, [field]: field === 'ratio' ? parseInt(val) || 0 : val.toUpperCase() } : l
         ));
     };
 
-    const addTargetRow = (groupId) => {
-        const newGroups = projectInfoGroups.map(g => {
-            if (g.id === groupId) {
-                return { ...g, placement_target: [...g.placement_target, { id: genId(), anchor_text: '', target_url: '', ratio: 0 }] };
-            }
-            return g;
-        });
-        setProjectInfoGroups(rebalanceProjectInfoGroups(newGroups, masterQuantity));
+    // ── group helpers
+    const addGroup = () => {
+        const next = [...plan.project_info_groups, {
+            id: genId(), sheet_name: '', category: 'NULL',
+            placement_target: [{ id: genId(), anchor_text: '', target_url: '', ratio: 0 }]
+        }];
+        set('project_info_groups', rebalanceGroups(next, planQty));
+    };
+    const removeGroup = (gid) => {
+        if (plan.project_info_groups.length <= 1) return;
+        set('project_info_groups', rebalanceGroups(plan.project_info_groups.filter(g => g.id !== gid), planQty));
+    };
+    const updateGroup = (gid, field, val) => {
+        set('project_info_groups', plan.project_info_groups.map(g => g.id === gid ? { ...g, [field]: val } : g));
+    };
+    const addTarget = (gid) => {
+        const next = plan.project_info_groups.map(g =>
+            g.id === gid ? { ...g, placement_target: [...g.placement_target, { id: genId(), anchor_text: '', target_url: '', ratio: 0 }] } : g
+        );
+        set('project_info_groups', rebalanceGroups(next, planQty));
+    };
+    const removeTarget = (gid, tid) => {
+        const next = plan.project_info_groups.map(g =>
+            g.id === gid && g.placement_target.length > 1
+                ? { ...g, placement_target: g.placement_target.filter(t => t.id !== tid) } : g
+        );
+        set('project_info_groups', rebalanceGroups(next, planQty));
+    };
+    const updateTarget = (gid, tid, field, val) => {
+        set('project_info_groups', plan.project_info_groups.map(g =>
+            g.id === gid ? {
+                ...g, placement_target: g.placement_target.map(t =>
+                    t.id === tid ? { ...t, [field]: field === 'ratio' ? parseInt(val) || 0 : val } : t
+                )
+            } : g
+        ));
     };
 
-    const removeTargetRow = (groupId, rowId) => {
-        const newGroups = projectInfoGroups.map(g => {
-            if (g.id === groupId && g.placement_target.length > 1) {
-                return { ...g, placement_target: g.placement_target.filter(t => t.id !== rowId) };
-            }
-            return g;
-        });
-        setProjectInfoGroups(rebalanceProjectInfoGroups(newGroups, masterQuantity));
+    const checkBadUrl = (url) => {
+        if (!url) return false;
+        try {
+            const u = new URL(/^https?:\/\//i.test(url) ? url : `https://${url}`);
+            return !u.hostname.includes('.');
+        } catch { return true; }
     };
 
-    const updateTarget = (groupId, rowId, field, value) => {
-        setProjectInfoGroups(projectInfoGroups.map(g => {
-            if (g.id === groupId) {
-                return {
-                    ...g,
-                    placement_target: g.placement_target.map(t =>
-                        t.id === rowId ? { ...t, [field]: field === 'ratio' ? parseInt(value) || 0 : value } : t
-                    )
-                };
-            }
-            return g;
+    return (
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            {/* Plan Header */}
+            <div className="flex items-center justify-between px-5 py-3 bg-indigo-50 border-b border-indigo-100 cursor-pointer" onClick={() => setCollapsed(v => !v)}>
+                <div className="flex items-center gap-3">
+                    <span className="w-6 h-6 flex items-center justify-center rounded-full bg-indigo-600 text-white font-bold text-xs shrink-0">{planIndex + 1}</span>
+                    <div>
+                        <span className="font-bold text-gray-900 text-sm">{plan.vendor_name || `Plan ${planIndex + 1}`}</span>
+                        {plan.country && <span className="ml-2 text-xs text-gray-500 font-mono">[{plan.country.toUpperCase()}]</span>}
+                        {planQty > 0 && <span className="ml-2 text-xs font-semibold text-indigo-700">{planQty} qty</span>}
+                    </div>
+                </div>
+                <div className="flex items-center gap-2">
+                    {canRemove && (
+                        <button type="button" onClick={(e) => { e.stopPropagation(); onRemove(plan.id); }}
+                            className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors">
+                            <Trash2 className="w-4 h-4" />
+                        </button>
+                    )}
+                    {collapsed ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronUp className="w-4 h-4 text-gray-400" />}
+                </div>
+            </div>
+
+            {!collapsed && (
+                <div className="p-5 space-y-8">
+                    {/* Core Settings */}
+                    <div className="grid grid-cols-1 gap-y-5 gap-x-4 sm:grid-cols-2">
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1">Vendor Assigned *</label>
+                            <input type="text" required value={plan.vendor_name} onChange={e => set('vendor_name', e.target.value)}
+                                placeholder="e.g. Vendor company name" className="block w-full border border-gray-300 rounded-md shadow-sm p-2.5 text-gray-900 text-sm focus:ring-indigo-500 focus:border-indigo-500" />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1">Country Code *</label>
+                            <input type="text" required value={plan.country} onChange={e => set('country', e.target.value.toUpperCase())}
+                                placeholder="MY, AUS, PNG" maxLength={3}
+                                className="block w-full border border-gray-300 rounded-md shadow-sm p-2.5 text-gray-900 text-sm font-mono uppercase focus:ring-indigo-500 focus:border-indigo-500" />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1">Start Date *</label>
+                            <input type="date" required value={plan.start_date} onChange={e => set('start_date', e.target.value)}
+                                className="block w-full border border-gray-300 rounded-md shadow-sm p-2.5 text-gray-900 text-sm focus:ring-indigo-500 focus:border-indigo-500" />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1">Deadline *</label>
+                            <input type="date" required value={plan.deadline} onChange={e => set('deadline', e.target.value)}
+                                className="block w-full border border-gray-300 rounded-md shadow-sm p-2.5 text-gray-900 text-sm focus:ring-indigo-500 focus:border-indigo-500" />
+                        </div>
+                        <div className="sm:col-span-2">
+                            <label className="block text-xs font-semibold text-gray-600 mb-1">Total Quantity *</label>
+                            <div className="flex items-center gap-3">
+                                <input type="number" min="1" required value={plan.total_quantity || ''}
+                                    onChange={e => setTotalQty(e.target.value)}
+                                    placeholder="e.g. 100"
+                                    className="w-48 border border-gray-300 rounded-md shadow-sm p-2.5 text-gray-900 text-sm font-mono focus:ring-indigo-500 focus:border-indigo-500" />
+                                <span className="text-xs text-gray-400">Setting this auto-distributes quantities across languages and targets</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Pricing */}
+                    <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                        <h3 className="text-sm font-bold text-gray-800 mb-3">Pricing</h3>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="relative">
+                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <span className="text-gray-500 text-sm font-bold">$</span>
+                                </div>
+                                <input type="number" min="0" step="0.01" value={plan.price}
+                                    onChange={e => set('price', parseFloat(e.target.value) || 0)}
+                                    className="pl-7 block w-full border border-gray-300 rounded-md p-2.5 text-sm font-mono focus:ring-indigo-500 focus:border-indigo-500" placeholder="0.00" />
+                            </div>
+                            <div className="flex bg-gray-100 rounded-lg p-1">
+                                <button type="button" onClick={() => set('price_type', 'per_url')}
+                                    className={`flex-1 text-xs font-semibold py-1.5 px-2 rounded-md transition-colors ${plan.price_type === 'per_url' ? 'bg-white shadow-sm text-indigo-700' : 'text-gray-500'}`}>
+                                    Per URL
+                                </button>
+                                <button type="button" onClick={() => set('price_type', 'package')}
+                                    className={`flex-1 text-xs font-semibold py-1.5 px-2 rounded-md transition-colors ${plan.price_type === 'package' ? 'bg-white shadow-sm text-indigo-700' : 'text-gray-500'}`}>
+                                    Package
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Drip Feed */}
+                    <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                        <div className="flex items-center gap-3 mb-3">
+                            <h3 className="text-sm font-bold text-gray-800">Drip Feed</h3>
+                            <label className="inline-flex items-center cursor-pointer">
+                                <input type="checkbox" className="sr-only peer" checked={plan.dripfeed_enabled}
+                                    onChange={e => set('dripfeed_enabled', e.target.checked)} />
+                                <div className="relative w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+                                <span className="ml-2 text-xs font-semibold text-indigo-700">Enabled</span>
+                            </label>
+                        </div>
+                        {plan.dripfeed_enabled && (
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs text-gray-500 mb-1">Period (days)</label>
+                                    <input type="number" min="1" value={plan.dripfeed_period}
+                                        onChange={e => set('dripfeed_period', e.target.value)}
+                                        className="block w-full border border-gray-300 rounded-md p-2 text-sm font-mono focus:ring-indigo-500 focus:border-indigo-500" placeholder="e.g. 10" />
+                                </div>
+                                <div>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <label className="block text-xs text-gray-500">URLs / day</label>
+                                        <label className="flex items-center text-[10px] text-indigo-600 cursor-pointer">
+                                            <input type="checkbox" checked={plan.manualOverride}
+                                                onChange={e => set('manualOverride', e.target.checked)}
+                                                className="w-3 h-3 mr-1 rounded border-gray-300" />
+                                            Manual
+                                        </label>
+                                    </div>
+                                    <input type="number" min="1" value={plan.urls_per_day}
+                                        readOnly={!plan.manualOverride}
+                                        onChange={e => plan.manualOverride && set('urls_per_day', e.target.value)}
+                                        className={`block w-full border rounded-md p-2 text-sm font-mono ${!plan.manualOverride ? 'bg-gray-100 border-gray-200 text-gray-500 cursor-not-allowed' : 'border-gray-300'} focus:ring-indigo-500 focus:border-indigo-500`}
+                                        placeholder="Auto" />
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Languages */}
+                    <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg p-4 border border-indigo-100">
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                                <Languages className="w-4 h-4 text-indigo-600" />
+                                <h3 className="text-sm font-bold text-gray-800">Languages</h3>
+                                <span className={`text-xs font-bold px-2 py-0.5 rounded ${isValidLang ? 'bg-green-100 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                                    {langSum}/{masterQty} {isValidLang ? '✓' : '✗'}
+                                </span>
+                            </div>
+                            {plan.languages.length > 1 && (
+                                <label className="flex items-center gap-2 text-xs font-medium text-gray-600 cursor-pointer">
+                                    Randomize
+                                    <input type="checkbox" checked={plan.randomize_languages}
+                                        onChange={e => set('randomize_languages', e.target.checked)}
+                                        className="w-3.5 h-3.5 rounded border-gray-300 text-purple-600" />
+                                </label>
+                            )}
+                        </div>
+                        <div className="space-y-2">
+                            {(plan.languages || []).map((lang, i) => (
+                                <div key={lang.id} className="flex items-center gap-2 bg-white p-2 rounded-lg border border-gray-200">
+                                    <span className="text-gray-400 text-xs w-5 text-center">#{i + 1}</span>
+                                    <input type="text" placeholder="EN, MY..." value={lang.code}
+                                        onChange={e => updateLang(lang.id, 'code', e.target.value)}
+                                        maxLength={5} className="flex-1 border border-gray-300 rounded p-1.5 text-sm uppercase font-mono focus:ring-indigo-500 focus:border-indigo-500 outline-none" />
+                                    <div className="relative w-24">
+                                        <input type="number" min="0" value={lang.ratio}
+                                            onChange={e => updateLang(lang.id, 'ratio', e.target.value)}
+                                            className="w-full border border-gray-300 rounded p-1.5 text-sm font-mono text-right pr-7 focus:ring-indigo-500 focus:border-indigo-500 outline-none" />
+                                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] text-gray-400">qty</span>
+                                    </div>
+                                    {plan.languages.length > 1 && (
+                                        <button type="button" onClick={() => removeLang(lang.id)}
+                                            className="text-gray-300 hover:text-red-500 p-1 rounded transition-colors">
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                        <button type="button" onClick={addLang}
+                            className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-indigo-700 hover:text-indigo-800 bg-white px-3 py-1.5 rounded border border-indigo-200 shadow-sm">
+                            <Plus className="w-3.5 h-3.5" /> Add Language
+                        </button>
+                    </div>
+
+                    {/* Placement Targets */}
+                    <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                        <div className="flex items-center justify-between mb-4">
+                            <div>
+                                <h3 className="text-sm font-bold text-gray-800">Placement Targets</h3>
+                                <p className="text-xs text-gray-500 mt-0.5">Group by category. Total must equal language total.</p>
+                            </div>
+                            <span className={`text-xs font-bold px-2 py-0.5 rounded border ${isValidTarget && targetSum > 0 ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-100'}`}>
+                                {targetSum}/{masterQty} qty {isValidTarget && targetSum > 0 ? '✓' : '✗'}
+                            </span>
+                        </div>
+
+                        <div className="space-y-6">
+                            {(plan.project_info_groups || []).map((group, gi) => (
+                                <div key={group.id} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                                    <div className="bg-indigo-50/50 border-b border-gray-200 px-4 py-3 flex flex-col sm:flex-row sm:items-end gap-3">
+                                        <div className="flex items-center gap-2 shrink-0">
+                                            <span className="w-5 h-5 flex items-center justify-center rounded-full bg-indigo-100 text-indigo-700 font-bold text-[10px]">{gi + 1}</span>
+                                            <span className="text-xs font-bold text-gray-700">Group</span>
+                                        </div>
+                                        <div className="flex-1 grid grid-cols-2 gap-3">
+                                            <div>
+                                                <label className="block text-[10px] font-semibold text-gray-500 mb-1">Category</label>
+                                                <select value={group.category} onChange={e => updateGroup(group.id, 'category', e.target.value)}
+                                                    className="block w-full border border-gray-300 rounded py-1.5 px-2 text-sm bg-white focus:ring-indigo-500 focus:border-indigo-500">
+                                                    {categories.length === 0
+                                                        ? <option value={group.category}>{group.category || 'Loading…'}</option>
+                                                        : categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)
+                                                    }
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="block text-[10px] font-semibold text-gray-500 mb-1">Sheet Name</label>
+                                                <input type="text" placeholder="e.g. Month 1" value={group.sheet_name}
+                                                    onChange={e => updateGroup(group.id, 'sheet_name', e.target.value)}
+                                                    className="block w-full border border-gray-300 rounded py-1.5 px-2 text-sm focus:ring-indigo-500 focus:border-indigo-500" />
+                                            </div>
+                                        </div>
+                                        {plan.project_info_groups.length > 1 && (
+                                            <button type="button" onClick={() => removeGroup(group.id)}
+                                                className="text-gray-400 hover:text-red-600 p-1.5 rounded hover:bg-red-50 transition-colors self-end shrink-0">
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        )}
+                                    </div>
+                                    <div className="p-4 space-y-3">
+                                        {group.placement_target.map((row, ri) => (
+                                            <div key={row.id} className="flex items-center gap-2 relative">
+                                                <span className="text-gray-300 text-[9px] font-mono w-4 text-center">T{ri + 1}</span>
+                                                <input type="text" required placeholder="Anchor text" value={row.anchor_text}
+                                                    onChange={e => updateTarget(group.id, row.id, 'anchor_text', e.target.value)}
+                                                    className="flex-1 border border-gray-300 rounded p-2 text-sm focus:ring-indigo-500 focus:border-indigo-500 outline-none" />
+                                                <input type="url" required placeholder="https://client.com/page" value={row.target_url}
+                                                    onChange={e => updateTarget(group.id, row.id, 'target_url', e.target.value)}
+                                                    className={`flex-[2] border rounded p-2 text-sm focus:ring-indigo-500 focus:border-indigo-500 outline-none ${checkBadUrl(row.target_url) ? 'border-red-400 bg-red-50' : 'border-gray-300'}`} />
+                                                <div className="relative w-20">
+                                                    <input type="number" min="0" value={row.ratio}
+                                                        onChange={e => updateTarget(group.id, row.id, 'ratio', e.target.value)}
+                                                        className="w-full border border-gray-300 rounded p-2 text-sm font-mono text-right pr-7 focus:ring-indigo-500 focus:border-indigo-500 outline-none" />
+                                                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] text-gray-400">qty</span>
+                                                </div>
+                                                {group.placement_target.length > 1 && (
+                                                    <button type="button" onClick={() => removeTarget(group.id, row.id)}
+                                                        className="text-gray-300 hover:text-red-500 p-1 rounded transition-colors">
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                    </button>
+                                                )}
+                                            </div>
+                                        ))}
+                                        <button type="button" onClick={() => addTarget(group.id)}
+                                            className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-gray-500 hover:text-indigo-700 bg-gray-50 hover:bg-indigo-50 px-2.5 py-1 rounded transition-colors">
+                                            <Plus className="w-3 h-3" /> Add Target
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="mt-4 flex items-center justify-between">
+                            <button type="button" onClick={addGroup}
+                                className="inline-flex items-center gap-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg shadow-sm transition-colors">
+                                <Plus className="w-4 h-4" /> Add Category Group
+                            </button>
+                            {!allCatsSelected && (
+                                <span className="text-xs font-medium text-red-600 bg-red-50 px-2 py-1 rounded animate-pulse">
+                                    All groups need a category
+                                </span>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Remarks */}
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1">Remarks (Optional)</label>
+                        <textarea rows={2} value={plan.remarks} onChange={e => set('remarks', e.target.value)}
+                            placeholder="Additional notes..." className="block w-full border border-gray-300 rounded-md shadow-sm p-2.5 text-sm text-gray-900 focus:ring-indigo-500 focus:border-indigo-500" />
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+export default function NewProjectPage() {
+    const [state, formAction] = useActionState(createCampaignAction, initialState);
+    const formRef = useRef(null);
+
+    const [campaignTitle, setCampaignTitle] = useState('');
+    const [personInCharge, setPersonInCharge] = useState('');
+    const [plans, setPlans] = useState([createEmptyPlan()]);
+    const [categories, setCategories] = useState([]);
+
+    useEffect(() => {
+        getCategories().then(res => { if (res.success) setCategories(res.categories); });
+    }, []);
+
+    // Auto-calc urls_per_day when plan fields change
+    useEffect(() => {
+        setPlans(prev => prev.map(plan => {
+            if (!plan.dripfeed_enabled || plan.manualOverride) return plan;
+            const qty = parseInt(plan.total_quantity) || 0;
+            const period = parseInt(plan.dripfeed_period) || 0;
+            const auto = qty > 0 && period > 0 ? String(Math.ceil(qty / period)) : '';
+            return plan.urls_per_day !== auto ? { ...plan, urls_per_day: auto } : plan;
+        }));
+    }, [plans.map(p => `${p.dripfeed_enabled}-${p.dripfeed_period}-${p.total_quantity}`).join('|')]);
+
+    useEffect(() => {
+        if (state?.success) {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            formRef.current?.reset();
+            setCampaignTitle('');
+            setPersonInCharge('');
+            setPlans([createEmptyPlan()]);
+        }
+    }, [state?.success, state?.results]);
+
+    const updatePlan = (planId, fieldOrPatch, value) => {
+        setPlans(prev => prev.map(p => {
+            if (p.id !== planId) return p;
+            if (typeof fieldOrPatch === 'object') return { ...p, ...fieldOrPatch };
+            return { ...p, [fieldOrPatch]: value };
         }));
     };
 
-    const targetRatioSum = useMemo(() => {
-        return projectInfoGroups.reduce((acc, group) => {
-            return acc + group.placement_target.reduce((sum, row) => sum + (parseInt(row.ratio) || 0), 0);
-        }, 0);
-    }, [projectInfoGroups]);
+    const addPlan = () => setPlans(prev => [...prev, createEmptyPlan()]);
+    const removePlan = (planId) => setPlans(prev => prev.filter(p => p.id !== planId));
 
-    const isValidTargetRatio = targetRatioSum === masterQuantity;
-
-    const allCategoriesSelected = useMemo(() => {
-        return projectInfoGroups.every(g => g.category !== 'NULL');
-    }, [projectInfoGroups]);
-
-    // URL Validation (mega888gaya catch)
-    const checkInvalidUrlFormat = (urlStr) => {
-        if (!urlStr) return false;
-        try {
-            const urlObj = new URL(/^https?:\/\//i.test(urlStr) ? urlStr : `https://${urlStr}`);
-            return !urlObj.hostname.includes('.');
-        } catch(e) {
+    const isFormValid = useMemo(() => {
+        if (!campaignTitle.trim() || !personInCharge.trim()) return false;
+        return plans.every(plan => {
+            const masterQty = parseInt(plan.total_quantity) || 0;
+            if (!plan.vendor_name.trim() || !plan.country.trim() || !plan.start_date || !plan.deadline) return false;
+            if (masterQty === 0) return false;
+            const langSum = (plan.languages || []).reduce((s, l) => s + (parseInt(l.ratio) || 0), 0);
+            const targetSum = getPlanQuantity(plan);
+            if (langSum !== masterQty || targetSum !== masterQty) return false;
+            if (!(plan.languages || []).every(l => l.code.trim())) return false;
+            if (!(plan.project_info_groups || []).every(g => g.category !== 'NULL')) return false;
             return true;
-        }
-    };
+        });
+    }, [campaignTitle, personInCharge, plans]);
 
-    const hasInvalidUrls = useMemo(() => {
-        return projectInfoGroups.some(g => g.placement_target.some(t => checkInvalidUrlFormat(t.target_url)));
-    }, [projectInfoGroups]);
-
-    // Derived first language for backward compat hidden field
-    const firstLanguageCode = languages[0]?.code || '';
+    // Serialize plans for hidden input (strip internal id from sub-items, keep for server to ignore)
+    const plansForSubmit = plans.map(({ id, manualOverride, ...rest }) => rest);
 
     return (
         <div className="max-w-4xl mx-auto py-10 px-4 sm:px-6 lg:px-8 pb-24">
-            <h1 className="text-4xl font-bold text-gray-900 tracking-tight mb-2">Kickoff Project</h1>
+            <h1 className="text-4xl font-bold text-gray-900 tracking-tight mb-2">Kickoff Campaign</h1>
             <p className="text-sm text-gray-500 mb-8">
-                Initialize an event-sourced SEO project. Configure complex URL allocations securely.
+                Create a campaign with one or more vendor plans. Each plan generates its own vendor portal link.
             </p>
 
-            {state?.success && state?.hash && (
+            {state?.success && state?.results && (
                 <div className="rounded-md bg-green-50 p-4 mb-6 border border-green-200 shadow-sm">
-                    <div className="flex">
-                        <div className="ml-3">
-                            <h3 className="text-sm font-medium text-green-800">Project Kicked Off Successfully!</h3>
-                            <div className="mt-2 text-sm text-green-700">
-                                <p>Encrypted Vendor Allocation Link (Share with Vendor):</p>
-                                <code className="mt-1 block p-2 bg-green-100 rounded text-green-900 border border-green-300 select-all overflow-x-auto font-mono text-xs">
-                                    {typeof window !== 'undefined' ? `${window.location.origin}/vendor/${state.vendorSlug || 'vendor'}/${state.hash}` : `/vendor/${state.vendorSlug || 'vendor'}/${state.hash}`}
+                    <h3 className="text-sm font-bold text-green-800 mb-3">Campaign Kicked Off — {state.results.length} Plan(s) Created</h3>
+                    <div className="space-y-2">
+                        {state.results.map((r, i) => (
+                            <div key={i}>
+                                <p className="text-xs font-semibold text-green-700 mb-1">Plan {i + 1}: {r.planLabel}</p>
+                                <code className="block p-2 bg-green-100 rounded text-green-900 border border-green-300 select-all overflow-x-auto font-mono text-xs">
+                                    {typeof window !== 'undefined' ? `${window.location.origin}/vendor/${r.vendorSlug}/${r.hash}` : `/vendor/${r.vendorSlug}/${r.hash}`}
                                 </code>
                             </div>
-                        </div>
+                        ))}
                     </div>
                 </div>
             )}
 
             {state?.success === false && state?.message && (
                 <div className="rounded-md bg-red-50 p-4 mb-6 border border-red-200">
-                    <div className="ml-3">
-                        <h3 className="text-sm font-medium text-red-800">Error</h3>
-                        <p className="text-sm text-red-700 mt-1">{state.message}</p>
-                    </div>
+                    <h3 className="text-sm font-medium text-red-800">Error</h3>
+                    <p className="text-sm text-red-700 mt-1">{state.message}</p>
                 </div>
             )}
 
-            <form ref={formRef} action={formAction} className="space-y-8 bg-white p-6 sm:p-8 rounded-xl shadow-sm border border-gray-100">
-                {/* 1. Core Project Settings */}
-                <div>
-                    <h2 className="text-lg font-bold text-gray-900 border-b pb-2 mb-4">Core Settings</h2>
-                    <div className="grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-2">
+            <form ref={formRef} action={formAction} className="space-y-8">
+                {/* Campaign Header */}
+                <div className="bg-white p-6 sm:p-8 rounded-xl shadow-sm border border-gray-100">
+                    <h2 className="text-lg font-bold text-gray-900 border-b pb-2 mb-5">Campaign Details</h2>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                         <div className="sm:col-span-2">
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Project Name</label>
-                            <input type="text" name="project_name" required placeholder="e.g. Client XYZ SEO Campaign" className="block w-full border border-gray-300 rounded-md shadow-sm p-2.5 text-gray-900 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" />
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Campaign Title *</label>
+                            <input type="text" name="campaign_title" required value={campaignTitle}
+                                onChange={e => setCampaignTitle(e.target.value)}
+                                placeholder="e.g. Client XYZ SEO Campaign Q2"
+                                className="block w-full border border-gray-300 rounded-md shadow-sm p-2.5 text-gray-900 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" />
                         </div>
-
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Project Owner (Internal)</label>
-                            <input type="text" name="owner" required placeholder="e.g. John" className="block w-full border border-gray-300 rounded-md shadow-sm p-2.5 text-gray-900 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" />
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Vendor Assigned</label>
-                            <input type="text" name="vendor_name" required placeholder="e.g. IBETSEO" className="block w-full border border-gray-300 rounded-md shadow-sm p-2.5 text-gray-900 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" />
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
-                            <input type="date" name="start_date" required className="block w-full border border-gray-300 rounded-md shadow-sm p-2.5 text-gray-900 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" />
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Deadline</label>
-                            <input type="date" name="deadline" required className="block w-full border border-gray-300 rounded-md shadow-sm p-2.5 text-gray-900 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" />
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Country Code</label>
-                            <input type="text" name="country" required placeholder="MY, AUS, PNG" className="block w-full border border-gray-300 rounded-md shadow-sm p-2.5 text-gray-900 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm uppercase font-mono" maxLength={3} />
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Total Quantity Desired</label>
-                            <input type="number" name="quantity" required min="1" value={masterQuantity} onChange={(e) => setMasterQuantity(parseInt(e.target.value) || 0)} className="block w-full border border-gray-300 rounded-md shadow-sm p-2.5 text-gray-900 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm font-bold bg-indigo-50" />
-                        </div>
-
-                        <div className="sm:col-span-2 mt-2 pt-4 border-t border-gray-100 flex items-center justify-between">
-                            <div>
-                                <label className="block text-sm font-bold text-gray-900 mb-1">Perform URL Entry</label>
-                                <p className="text-xs text-gray-500">Allow vendor to enter domain URLs for each published link.</p>
-                            </div>
-                            <label className="inline-flex items-center cursor-pointer">
-                                <input type="checkbox" className="sr-only peer" checked={urlEntryEnabled} onChange={(e) => setUrlEntryEnabled(e.target.checked)} />
-                                <div className="relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
-                            </label>
-                            <input type="hidden" name="url_entry_enabled" value={urlEntryEnabled ? 'true' : 'false'} />
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Person in Charge *</label>
+                            <input type="text" name="person_in_charge" required value={personInCharge}
+                                onChange={e => setPersonInCharge(e.target.value)}
+                                placeholder="e.g. John"
+                                className="block w-full border border-gray-300 rounded-md shadow-sm p-2.5 text-gray-900 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" />
                         </div>
                     </div>
                 </div>
 
-                {/* Pricing Section */}
-                <div className="bg-gray-50 -mx-6 sm:-mx-8 p-6 sm:p-8 border-y border-gray-200">
-                    <h2 className="text-lg font-bold text-gray-900 mb-4">Pricing Configuration</h2>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 bg-white p-5 rounded-lg border border-gray-200 shadow-sm">
-                        <div className="relative">
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Project Price</label>
-                            <div className="relative rounded-md shadow-sm">
-                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                    <span className="text-gray-500 sm:text-sm font-bold">$</span>
-                                </div>
-                                <input
-                                    type="number"
-                                    name="price"
-                                    required
-                                    min="0"
-                                    step="0.01"
-                                    value={price}
-                                    onChange={(e) => setPrice(parseFloat(e.target.value) || 0)}
-                                    className="pl-7 block w-full border border-gray-300 rounded-md p-2.5 text-gray-900 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm font-mono"
-                                    placeholder="0.00"
-                                />
-                            </div>
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Pricing Model</label>
-                            <div className="flex bg-gray-100 rounded-lg p-1">
-                                <button
-                                    type="button"
-                                    onClick={() => setPriceType('per_url')}
-                                    className={`flex-1 text-sm font-medium py-1.5 px-3 rounded-md transition-colors ${priceType === 'per_url' ? 'bg-white shadow-sm text-indigo-700' : 'text-gray-500 hover:text-gray-700'}`}
-                                >
-                                    Per URL
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setPriceType('package')}
-                                    className={`flex-1 text-sm font-medium py-1.5 px-3 rounded-md transition-colors ${priceType === 'package' ? 'bg-white shadow-sm text-indigo-700' : 'text-gray-500 hover:text-gray-700'}`}
-                                >
-                                    Total Package
-                                </button>
-                            </div>
-                            <input type="hidden" name="price_type" value={priceType} />
-                        </div>
-                    </div>
-                </div>
-
-                {/* Language Ratio Section */}
-                <div className="bg-gradient-to-r from-indigo-50 to-purple-50 -mx-6 sm:-mx-8 p-6 sm:p-8 border-y border-indigo-100">
-                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end mb-6 gap-4">
-                        <div>
-                            <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                                <Languages className="w-5 h-5 text-indigo-600" />
-                                Language Distribution
-                            </h2>
-                            <p className="text-xs text-gray-500 mt-1">Specify content languages and their distinct quantities. Must total {masterQuantity} units.</p>
-                        </div>
-                        <div className={`text-sm font-bold px-4 py-2 rounded-md border flex items-center justify-center transition-colors shadow-sm ${isValidLanguageRatio ? 'bg-green-100 text-green-800 border-green-300' : 'bg-red-50 text-red-700 border-red-200'}`}>
-                            Subtotal: {languageRatioSum} qty {isValidLanguageRatio ? '✓' : '✗'}
-                        </div>
-                    </div>
-
-                    <div className="space-y-3">
-                        {languages.map((lang, index) => (
-                            <div key={lang.id} className="flex items-center gap-3 bg-white p-3 rounded-lg border border-gray-200 shadow-sm group hover:border-indigo-300 transition-all">
-                                <div className="text-gray-400 font-mono text-xs w-6 text-center">#{index + 1}</div>
-
-                                <div className="flex-1">
-                                    <input
-                                        type="text"
-                                        placeholder="EN, MY, BM, ZH, JP..."
-                                        value={lang.code}
-                                        onChange={(e) => updateLanguage(lang.id, 'code', e.target.value)}
-                                        maxLength={5}
-                                        className="w-full border border-gray-300 rounded p-2 text-sm text-gray-900 uppercase font-mono focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all placeholder:text-gray-400 placeholder:normal-case"
-                                    />
-                                </div>
-
-                                <div className="w-28 relative">
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        value={lang.ratio}
-                                        onChange={(e) => updateLanguage(lang.id, 'ratio', e.target.value)}
-                                        className="w-full border border-gray-300 rounded p-2 text-sm font-mono text-right pr-9 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all text-gray-900"
-                                    />
-                                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-gray-400">qty</span>
-                                </div>
-
-                                {languages.length > 1 && (
-                                    <button
-                                        type="button"
-                                        onClick={() => removeLanguage(lang.id)}
-                                        title="Remove Language"
-                                        className="text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md p-1.5 transition-colors shrink-0"
-                                    >
-                                        <Trash2 className="w-4 h-4" />
-                                    </button>
-                                )}
-                            </div>
-                        ))}
-                    </div>
-
-                    <div className="mt-4 flex items-center justify-between">
-                        <button
-                            type="button"
-                            onClick={addLanguage}
-                            className="inline-flex items-center gap-1.5 text-sm font-semibold text-indigo-700 hover:text-indigo-800 bg-white hover:bg-indigo-50 px-4 py-2 rounded-md transition-colors border border-indigo-200 shadow-sm"
-                        >
-                            <Plus className="w-4 h-4" /> Add Language
+                {/* Plan Cards */}
+                <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                        <h2 className="text-lg font-bold text-gray-900">Vendor Plans ({plans.length})</h2>
+                        <button type="button" onClick={addPlan}
+                            className="inline-flex items-center gap-2 text-sm font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-4 py-2 rounded-lg border border-indigo-200 transition-colors">
+                            <Plus className="w-4 h-4" /> Add Plan
                         </button>
-
-                        {!isValidLanguageRatio && (
-                            <span className="text-sm font-medium text-red-600 bg-red-50 px-3 py-1 rounded-full animate-pulse">
-                                {languageRatioSum < masterQuantity ? `${masterQuantity - languageRatioSum} qty remaining` : `${languageRatioSum - masterQuantity} qty over limit`}
-                            </span>
-                        )}
-
-                        {/* Randomize Distribution Toggle */}
-                        {languages.length > 1 && (
-                            <div className="flex items-center gap-3">
-                                <label className="text-sm font-medium text-gray-700 cursor-pointer">Randomize Distribution</label>
-                                <label className="inline-flex items-center cursor-pointer">
-                                    <input type="checkbox" className="sr-only peer" checked={randomizeLanguages} onChange={(e) => setRandomizeLanguages(e.target.checked)} />
-                                    <div className="relative w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
-                                </label>
-                            </div>
-                        )}
                     </div>
-
-                    {/* Hidden inputs for form submission */}
-                    <input type="hidden" name="randomize_languages" value={randomizeLanguages ? 'true' : 'false'} />
-                    <input type="hidden" name="language" value={firstLanguageCode} />
-                    <input type="hidden" name="languages_json" value={JSON.stringify(languages.map(l => ({ code: l.code, ratio: l.ratio })))} />
+                    {plans.map((plan, i) => (
+                        <PlanCard key={plan.id} plan={plan} planIndex={i}
+                            categories={categories}
+                            onUpdate={updatePlan}
+                            onRemove={removePlan}
+                            canRemove={plans.length > 1} />
+                    ))}
                 </div>
 
-                {/* Drip Feed Configuration */}
-                <div className="bg-gray-50 -mx-6 sm:-mx-8 p-6 sm:p-8 border-y border-gray-200">
-                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end mb-6 gap-4">
-                        <div>
-                            <h2 className="text-lg font-bold text-gray-900">Drip Feed Configuration</h2>
-                            <p className="text-xs text-gray-500 mt-1">Configure project-wide daily limits for vendor submissions.</p>
-                            <label className="inline-flex items-center cursor-pointer mt-4 border border-gray-200 rounded-md px-3 py-2 bg-white shadow-sm hover:bg-gray-50 transition-colors">
-                                <input type="checkbox" name="dripfeed_enabled" className="sr-only peer" checked={dripFeedEnabled} onChange={(e) => setDripFeedEnabled(e.target.checked)} />
-                                <div className="relative w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
-                                <span className="ml-3 text-sm font-semibold text-indigo-700">Enable Drip Feed Mode</span>
-                            </label>
-                        </div>
-                    </div>
+                {/* Hidden serialised plans */}
+                <input type="hidden" name="plans_json" value={JSON.stringify(plansForSubmit)} />
 
-                    {dripFeedEnabled && (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 bg-white p-5 rounded-lg border border-gray-200 shadow-sm">
-                            <div>
-                                <h3 className="text-sm font-bold text-gray-800 mb-1">Total Dripfeed Period</h3>
-                                <label className="block text-xs text-gray-500 mb-2">Duration in Days</label>
-                                <input
-                                    type="number"
-                                    name="dripfeed_period"
-                                    required={dripFeedEnabled}
-                                    placeholder="e.g. 10, 20"
-                                    min="1"
-                                    value={dripfeedPeriod}
-                                    onChange={(e) => setDripfeedPeriod(e.target.value)}
-                                    className="block w-full border border-gray-300 rounded-md shadow-sm p-2.5 text-gray-900 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm font-mono"
-                                />
-                            </div>
-
-                            <div className="relative">
-                                <div className="flex items-center justify-between mb-1">
-                                    <h3 className="text-sm font-bold text-gray-800">Quantity URLs per day</h3>
-                                    <label className="flex items-center text-xs text-indigo-600 cursor-pointer hover:text-indigo-800">
-                                        <input
-                                            type="checkbox"
-                                            title="Manual Override"
-                                            name="manual_override"
-                                            checked={manualOverride}
-                                            onChange={(e) => setManualOverride(e.target.checked)}
-                                            className="w-3.5 h-3.5 mr-1.5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500 cursor-pointer"
-                                        />
-                                        Manual Override
-                                    </label>
-                                </div>
-                                <label className="block text-xs text-gray-500 mb-2">Required submissions per day</label>
-                                <input
-                                    type="number"
-                                    name="urls_per_day"
-                                    required={dripFeedEnabled}
-                                    placeholder="Auto"
-                                    readOnly={!manualOverride}
-                                    min="1"
-                                    value={urlsPerDay}
-                                    onChange={(e) => setUrlsPerDay(e.target.value)}
-                                    className={`block w-full border ${!manualOverride ? 'bg-gray-100 border-gray-200 text-gray-500 cursor-not-allowed' : 'border-gray-300 text-gray-900 bg-white placeholder:text-gray-400'} rounded-md p-2.5 text-sm font-mono focus:ring-indigo-500 focus:border-transparent outline-none transition-all shadow-sm`}
-                                />
-                            </div>
-                        </div>
-                    )}
-                </div>
-
-                {/* Placement Targets Nested Structures */}
-                <div className="bg-gray-50 -mx-6 sm:-mx-8 p-6 sm:p-8 border-y border-gray-200">
-                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end mb-6 gap-4">
-                        <div>
-                            <h2 className="text-lg font-bold text-gray-900">Placement Targets (Project Tasks)</h2>
-                            <p className="text-xs text-gray-500 mt-1">Group your target links by category and sheet origin. Quantities across all groups must exactly total the Master Quantity ({masterQuantity}).</p>
-                        </div>
-                        <div className={`text-sm font-bold px-4 py-2 rounded-md border flex items-center justify-center transition-colors shadow-sm ${isValidTargetRatio ? 'bg-green-100 text-green-800 border-green-300' : 'bg-red-50 text-red-700 border-red-200'}`}>
-                            Subtotal: {targetRatioSum} qty {isValidTargetRatio ? '✓' : '✗'}
-                        </div>
-                    </div>
-
-                    <div className="space-y-8">
-                        {projectInfoGroups.map((group, groupIdx) => (
-                            <div key={group.id} className="bg-white rounded-xl border border-gray-200 shadow-sm relative transition-all overflow-hidden focus-within:ring-1 focus-within:ring-indigo-500">
-                                {/* Group Header */}
-                                <div className="bg-indigo-50/50 border-b border-gray-200 px-5 py-4 flex flex-col sm:flex-row sm:items-end gap-4">
-                                    <div className="flex items-center gap-2 mb-1 sm:mb-0 shrink-0">
-                                        <div className="flex items-center justify-center w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 font-bold text-xs">
-                                            {groupIdx + 1}
-                                        </div>
-                                        <h3 className="font-bold text-gray-800 text-sm">Target Group</h3>
-                                    </div>
-
-                                    <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                        <div>
-                                            <label className="block text-xs font-semibold text-gray-600 mb-1">Category</label>
-                                            <select
-                                                value={group.category}
-                                                onChange={(e) => updateProjectInfoGroup(group.id, 'category', e.target.value)}
-                                                className="block w-full border border-gray-300 rounded-md shadow-sm py-1.5 px-3 text-gray-900 focus:ring-indigo-500 focus:border-indigo-500 text-sm bg-white"
-                                            >
-                                                {categories.length === 0 ? (
-                                                    <option value={group.category}>{group.category || 'Loading…'}</option>
-                                                ) : categories.map(cat => (
-                                                    <option key={cat.id} value={cat.name}>{cat.name}</option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                        <div>
-                                            <label className="block text-xs font-semibold text-gray-600 mb-1">Sheet Name (Optional)</label>
-                                            <input
-                                                type="text"
-                                                placeholder="e.g. Month 1 Priority"
-                                                value={group.sheet_name}
-                                                onChange={(e) => updateProjectInfoGroup(group.id, 'sheet_name', e.target.value)}
-                                                className="block w-full border border-gray-300 rounded-md shadow-sm py-1.5 px-3 text-gray-900 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
-                                            />
-                                        </div>
-                                    </div>
-
-                                    {projectInfoGroups.length > 1 && (
-                                        <button
-                                            type="button"
-                                            onClick={() => removeProjectInfoGroup(group.id)}
-                                            className="text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md p-1.5 transition-colors self-end shrink-0"
-                                            title="Remove Project Info Group"
-                                        >
-                                            <Trash2 className="w-5 h-5" />
-                                        </button>
-                                    )}
-                                </div>
-
-                                {/* Target Rows inner loop */}
-                                <div className="p-4 sm:p-5 space-y-4">
-                                    {group.placement_target.map((row, index) => (
-                                        <div key={row.id} className="flex flex-col sm:flex-row gap-3 items-start sm:items-center relative group">
-                                            <div className="hidden sm:flex text-gray-300 font-mono text-[10px] w-4 justify-center">T{index + 1}</div>
-
-                                            <div className="flex-[1.2] w-full">
-                                                <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1 sm:hidden">Anchor Text</label>
-                                                <input
-                                                    type="text"
-                                                    required
-                                                    placeholder="Target keyword"
-                                                    value={row.anchor_text}
-                                                    onChange={(e) => updateTarget(group.id, row.id, 'anchor_text', e.target.value)}
-                                                    className="w-full border border-gray-300 rounded p-2 text-sm text-gray-900 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all placeholder:text-gray-400"
-                                                />
-                                            </div>
-                                            <div className="flex-[2] w-full">
-                                                <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1 sm:hidden">Target URL</label>
-                                                <input
-                                                    type="url"
-                                                    required
-                                                    placeholder="https://client-site.com/seo-page"
-                                                    value={row.target_url}
-                                                    onChange={(e) => updateTarget(group.id, row.id, 'target_url', e.target.value)}
-                                                    className={`w-full border rounded p-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all placeholder:text-gray-400 ${checkInvalidUrlFormat(row.target_url) ? 'border-red-500 text-red-900 bg-red-50 focus:ring-red-500' : 'border-gray-300 text-gray-900'}`}
-                                                />
-                                                {checkInvalidUrlFormat(row.target_url) && (
-                                                    <span className="absolute -bottom-4 left-[2.5rem] sm:left-[35%] text-[10px] font-bold text-red-600">Invalid URL Format (Requires Top Level Domain like .com)</span>
-                                                )}
-                                            </div>
-                                            <div className="w-full sm:w-28 relative">
-                                                <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1 sm:hidden">Quantity</label>
-                                                <input
-                                                    type="number"
-                                                    required
-                                                    min="0"
-                                                    value={row.ratio}
-                                                    onChange={(e) => updateTarget(group.id, row.id, 'ratio', e.target.value)}
-                                                    className="w-full border border-gray-300 rounded p-2 text-sm text-gray-900 font-mono focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all pr-9 text-right"
-                                                />
-                                                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-gray-400 sm:mt-0 mt-[11px]">qty</span>
-                                            </div>
-
-                                            {group.placement_target.length > 1 && (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => removeTargetRow(group.id, row.id)}
-                                                    title="Remove Target Row"
-                                                    className="text-gray-300 opacity-50 hover:opacity-100 hover:text-red-500 hover:bg-red-50 rounded-md p-1.5 transition-all focus:outline-none shrink-0 self-end mb-1 sm:self-center sm:mb-0"
-                                                >
-                                                    <Trash2 className="w-4 h-4" />
-                                                </button>
-                                            )}
-                                        </div>
-                                    ))}
-
-                                    <div className="mt-2 pt-2 border-t border-gray-50 flex items-center justify-between">
-                                        <button
-                                            type="button"
-                                            onClick={() => addTargetRow(group.id)}
-                                            className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-600 hover:text-indigo-700 bg-gray-50 hover:bg-indigo-50 px-3 py-1.5 rounded-md transition-colors"
-                                        >
-                                            <Plus className="w-3.5 h-3.5" /> Add Another Target
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-
-                    <div className="mt-8 pt-6 border-t border-gray-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                        <button
-                            type="button"
-                            onClick={addProjectInfoGroup}
-                            className="inline-flex items-center gap-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm px-5 py-2.5 rounded-lg transition-colors border border-indigo-700"
-                        >
-                            <Plus className="w-5 h-5" /> Add New Project Info
-                        </button>
-
-                        {!isValidTargetRatio && (
-                            <span className="text-sm font-medium text-red-600 bg-red-50 px-3 py-1.5 rounded-full animate-pulse shadow-sm border border-red-100">
-                                {targetRatioSum < masterQuantity ? `${masterQuantity - targetRatioSum} qty remaining` : `${targetRatioSum - masterQuantity} qty over limit`} to reach exactly {masterQuantity}.
-                            </span>
-                        )}
-                        {isValidTargetRatio && !allCategoriesSelected && (
-                            <span className="text-sm font-medium text-red-600 bg-red-50 px-3 py-1.5 rounded-full animate-pulse shadow-sm border border-red-100">
-                                Please ensure all Target Groups have a Category selected.
-                            </span>
-                        )}
-                    </div>
-
-                    <input type="hidden" name="project_info_json" value={JSON.stringify(projectInfoGroups)} />
-                </div>
-
-                <div className="sm:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Remarks (Optional)</label>
-                    <textarea name="remarks" rows={3} placeholder="Any additional notes for this project..." className="block w-full border border-gray-300 rounded-md shadow-sm p-3 text-gray-900 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" />
-                </div>
-
-                <SubmitButton isValid={isValidTargetRatio && isValidLanguageRatio && allLanguagesFilled && !hasInvalidUrls && allCategoriesSelected} />
+                <SubmitButton isValid={isFormValid} />
             </form>
         </div>
     );

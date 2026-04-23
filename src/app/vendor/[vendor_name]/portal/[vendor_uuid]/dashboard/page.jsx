@@ -1,11 +1,8 @@
 import { getServerSupabase } from '@/lib/supabase-server';
 import { verifyVendorSession, getSession } from '@/lib/session';
 import { redirect } from 'next/navigation';
-import Link from 'next/link';
-import {
-    LayoutDashboard, Clock, CheckCircle2, Loader, AlertTriangle,
-    ExternalLink, TrendingUp, Activity, Target, Zap
-} from 'lucide-react';
+import { LayoutDashboard, Clock, CheckCircle2, AlertTriangle, Activity, Zap } from 'lucide-react';
+import DashboardActiveProjects from './DashboardActiveProjects';
 
 export const dynamic = 'force-dynamic';
 
@@ -150,10 +147,20 @@ export default async function VendorDashboardPage({ params }) {
         ? Math.round((completedProjects.length / allProjects.length) * 100)
         : 0;
 
-    // Urgent: active projects that are late or due within 1 day
+    // Urgent: active projects past deadline where vendor has NOT yet submitted all URLs
+    // (projects where all URLs are already submitted belong in the pending-index warning instead)
     const urgentProjects = activeProjects.filter(p => {
         const d = getRemainingDays(p.deadline);
-        return d !== null && d <= 0;
+        if (d === null || d > 0) return false;
+        const { completed, total } = getProgress(p);
+        return !(total > 0 && completed >= total);
+    });
+
+    // Any project (active or completed) where all URLs are submitted but index status not yet recorded
+    // Uses vendor_staging_data via getProgress() — same source as the "Completed — Pending Index Status" label
+    const pendingIndexProjects = allProjects.filter(p => {
+        const { completed, indexedCount, total } = getProgress(p);
+        return total > 0 && completed >= total && indexedCount < total;
     });
 
     return (
@@ -168,6 +175,42 @@ export default async function VendorDashboardPage({ params }) {
                     Overview for <span className="font-semibold text-indigo-600">{displayName}</span>
                 </p>
             </div>
+
+            {/* Pending index warning */}
+            {pendingIndexProjects.length > 0 && (
+                <div className="mb-4 bg-yellow-50 border border-yellow-200 rounded-lg overflow-hidden text-sm text-yellow-800">
+                    <details>
+                        <summary className="flex items-start gap-3 p-4 cursor-pointer select-none hover:bg-yellow-100/60 transition-colors list-none">
+                            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-yellow-500" />
+                            <p>
+                                <span className="font-bold">{pendingIndexProjects.length} completed project{pendingIndexProjects.length !== 1 ? 's' : ''}</span>
+                                {' '}
+                                <span className="underline underline-offset-2 decoration-yellow-500 font-semibold hover:text-yellow-900">
+                                    {pendingIndexProjects.length !== 1 ? 'are' : 'is'} awaiting index status verification
+                                </span>
+                                {' — click to view.'}
+                            </p>
+                        </summary>
+                        <div className="border-t border-yellow-200 px-4 pb-4 pt-3">
+                            <ul className="space-y-2">
+                                {pendingIndexProjects.map(p => {
+                                    const { completed, indexedCount, total } = getProgress(p);
+                                    return (
+                                        <li key={p.id} className="flex items-center gap-2 text-xs text-yellow-800">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 shrink-0" />
+                                            <span className="font-semibold">{p.project_name || 'Unnamed'}</span>
+                                            {p.country && (
+                                                <span className="font-mono text-[10px] bg-yellow-100 border border-yellow-200 px-1.5 py-0.5 rounded">{p.country}</span>
+                                            )}
+                                            <span className="text-yellow-600 ml-auto tabular-nums">{indexedCount}/{total} indexed</span>
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                        </div>
+                    </details>
+                </div>
+            )}
 
             {/* Urgent alert */}
             {urgentProjects.length > 0 && (
@@ -259,76 +302,7 @@ export default async function VendorDashboardPage({ params }) {
             </section>
 
             {/* Active Projects */}
-            <section>
-                <div className="flex items-center gap-2 mb-4">
-                    <Loader className="w-4 h-4 text-indigo-500" />
-                    <h2 className="text-lg font-bold text-gray-800">Active Projects</h2>
-                    <span className="ml-1 px-2 py-0.5 text-xs font-bold rounded-full bg-indigo-100 text-indigo-700">{activeProjects.length}</span>
-                </div>
-
-                {activeProjects.length > 0 ? (
-                    <div className="space-y-3">
-                        {activeProjects.map(p => {
-                            const daysLeft = getRemainingDays(p.deadline);
-                            const progress = getProgress(p);
-                            const { label, color } = getProjectStatus(daysLeft, progress.completed, progress.total, progress.indexedCount);
-                            const hash = p.projects_hub?.[0]?.hash;
-                            const category = p.project_targets?.[0]?.category;
-
-                            return (
-                                <div key={p.id} className="bg-white rounded-xl ring-1 ring-gray-200 px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-4">
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex flex-wrap items-center gap-2 mb-2">
-                                            <span className="font-bold text-gray-900 text-sm">{p.project_name || 'Unnamed'}</span>
-                                            {category && (
-                                                <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-purple-50 text-purple-700 border border-purple-100">{category}</span>
-                                            )}
-                                            <span className={`flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold rounded border ${statusColorMap[color]}`}>
-                                                {label}
-                                            </span>
-                                        </div>
-
-                                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 mb-3">
-                                            <span>Qty: <span className="font-semibold text-gray-700">{getTotal(p)}</span></span>
-                                            {p.country && <span>Country: <span className="font-semibold text-gray-700 uppercase">{p.country}</span></span>}
-                                            <span>Submission: <span className="font-semibold text-gray-700">{formatDate(p.deadline)}</span></span>
-                                            {p.start_date && <span>Kickoff: <span className="font-semibold text-gray-700">{formatDate(p.start_date)}</span></span>}
-                                        </div>
-
-                                        {/* Progress bar */}
-                                        <div className="flex items-center gap-2">
-                                            <div className="flex-1 bg-gray-100 rounded-full h-1.5 overflow-hidden">
-                                                <div
-                                                    className={`h-1.5 rounded-full transition-all ${progressBarColorMap[color]}`}
-                                                    style={{ width: `${progress.percent}%` }}
-                                                />
-                                            </div>
-                                            <span className="text-xs text-gray-500 shrink-0 tabular-nums">
-                                                {progress.completed}/{progress.total}
-                                                <span className="ml-1 text-gray-400">({progress.percent}%)</span>
-                                            </span>
-                                        </div>
-                                    </div>
-
-                                    {hash && (
-                                        <Link
-                                            href={`/vendor/${vendorName}/${hash}`}
-                                            className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-lg hover:bg-indigo-700 transition-colors shadow-sm shrink-0"
-                                        >
-                                            <ExternalLink className="w-3.5 h-3.5" />
-                                            Open
-                                        </Link>
-                                    )}
-                                </div>
-                            );
-                        })}
-                    </div>
-                ) : (
-                    <div className="text-center py-10 bg-white rounded-xl border border-dashed border-gray-200">
-                        <p className="text-gray-400 text-sm">No active projects right now.</p>
-                    </div>
-                )}
-            </section>
+            <DashboardActiveProjects activeProjects={activeProjects} vendorName={vendorName} />
         </div>
     );
 }

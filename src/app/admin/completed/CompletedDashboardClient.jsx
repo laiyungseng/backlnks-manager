@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Search, CheckCircle2, XCircle, AlertTriangle, ShieldAlert } from 'lucide-react';
 import PlacementGroupCard from '../placements/PlacementGroupCard';
+import CopyButton from '../projects/CopyButton';
 
 // Risk tier config
 const TIER_CONFIG = {
@@ -37,10 +38,16 @@ function ClosedProjectRow({ project }) {
     const completedLinks = hub.completed_count ?? 0;
 
     return (
-        <div className="flex flex-wrap items-center gap-4 px-5 py-4 bg-white rounded-2xl border border-red-100 hover:border-red-200 transition-all">
-            {/* Project Name */}
+        <div className="group flex flex-wrap items-center gap-4 px-5 py-4 bg-white rounded-2xl border border-red-100 hover:border-red-200 transition-all">
+            {/* Project Name + ID */}
             <div className="flex-[2] min-w-[180px]">
                 <p className="text-sm font-bold text-slate-800 line-clamp-1">{project.project_name || 'Unnamed Project'}</p>
+                <div className="flex items-center mt-0.5">
+                    <span className="font-mono text-[10px] text-slate-400 cursor-help" title={project.id}>
+                        {project.id?.substring(0, 8)}...
+                    </span>
+                    <CopyButton textToCopy={project.id} />
+                </div>
                 <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
                     Created {project.created_date ? new Date(project.created_date).toLocaleDateString() : '—'}
                     {project.closed_date && (
