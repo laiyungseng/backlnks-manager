@@ -117,6 +117,21 @@ export async function toggleProjectLockAction(projectHash, newLockState) {
     };
 }
 
+export async function togglePriorityAction(projectId, newValue) {
+    if (!projectId) return { success: false, message: 'Invalid project reference.' };
+
+    const supabase = getServerSupabase();
+    const { error } = await supabase
+        .from('projects')
+        .update({ is_priority: newValue })
+        .eq('id', projectId);
+
+    if (error) return { success: false, message: `Failed to toggle priority: ${error.message}` };
+
+    revalidatePath('/admin', 'layout');
+    return { success: true };
+}
+
 export async function toggleUrlEntryAction(projectId, newValue) {
     if (!projectId) return { success: false, message: 'Invalid project reference.' };
 

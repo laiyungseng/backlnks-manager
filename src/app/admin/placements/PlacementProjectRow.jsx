@@ -2,8 +2,8 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Eye, Link as LinkIcon, MoreVertical, CheckCircle2, Lock, Unlock, XCircle, AlertTriangle, ShieldAlert } from 'lucide-react';
-import { finalizeProjectAction, toggleProjectLockAction, closeProjectAction, toggleUrlEntryAction } from './actions';
+import { Eye, Link as LinkIcon, MoreVertical, CheckCircle2, Lock, Unlock, XCircle, AlertTriangle, ShieldAlert, Star } from 'lucide-react';
+import { finalizeProjectAction, toggleProjectLockAction, closeProjectAction, toggleUrlEntryAction, togglePriorityAction } from './actions';
 import CopyButton from '../projects/CopyButton';
 import CloseProjectModal from './CloseProjectModal';
 
@@ -54,6 +54,8 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
     const [isClosing, setIsClosing] = useState(false);
     const [localUrlEntry, setLocalUrlEntry] = useState(project.url_entry_enabled || false);
     const [isTogglingUrlEntry, setIsTogglingUrlEntry] = useState(false);
+    const [localPriority, setLocalPriority] = useState(project.is_priority || false);
+    const [isTogglingPriority, setIsTogglingPriority] = useState(false);
 
     async function handleFinalize() {
         if (!representativeHash) return;
@@ -92,6 +94,18 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
             else alert(`Error: ${res.message}`);
         } finally {
             setIsTogglingUrlEntry(false);
+        }
+    }
+
+    async function handleTogglePriority() {
+        if (!project.id) return;
+        setIsTogglingPriority(true);
+        try {
+            const res = await togglePriorityAction(project.id, !localPriority);
+            if (res.success) setLocalPriority(v => !v);
+            else alert(`Error: ${res.message}`);
+        } finally {
+            setIsTogglingPriority(false);
         }
     }
 
@@ -179,8 +193,24 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
         </button>
     );
 
+    const priorityButton = !isCompletedView && (
+        <button
+            onClick={handleTogglePriority}
+            disabled={isTogglingPriority}
+            title={localPriority ? 'Priority ON — click to remove' : 'Mark as priority for vendor'}
+            className={`p-2 rounded-lg border transition-all shrink-0 ${
+                localPriority
+                    ? 'bg-amber-50 text-amber-500 border-amber-200 hover:bg-amber-100'
+                    : 'bg-slate-50 text-slate-300 border-slate-200 hover:text-amber-400 hover:border-amber-200'
+            }`}
+        >
+            <Star className={`w-4 h-4 ${localPriority ? 'fill-amber-400' : ''}`} />
+        </button>
+    );
+
     const actionButtons = !isCompletedView ? (
         <>
+            {priorityButton}
             {allFulfilled ? (
                 <button
                     onClick={handleFinalize}

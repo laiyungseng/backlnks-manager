@@ -74,7 +74,7 @@ export default function InProgressProjectList({ projects, vendorName, displayNam
                         const category = project.project_targets?.[0]?.category;
 
                         return (
-                            <div key={project.id} className="bg-white rounded-xl shadow-sm ring-1 ring-gray-200 overflow-hidden hover:shadow-md transition-shadow">
+                            <div key={project.id} className={`bg-white rounded-xl shadow-sm overflow-hidden hover:shadow-md transition-shadow ${project.is_priority ? 'ring-1 ring-amber-200 border-l-4 border-l-amber-400' : 'ring-1 ring-gray-200'}`}>
                                 <div className="px-6 py-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                                     <div className="flex-1">
                                         <h2 className="text-lg font-bold text-gray-900">{project.project_name || 'Unnamed Project'}</h2>

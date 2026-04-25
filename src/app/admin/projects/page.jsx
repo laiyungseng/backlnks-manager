@@ -12,7 +12,7 @@ export default async function AdminProjectDetailsPage() {
             id, owner, created_date, completed_date,
             project_name, country, total_quantity,
             status, is_approved, start_date, deadline, price, price_type,
-            dripfeed_enabled, dripfeed_period, urls_per_day,
+            dripfeed_enabled, dripfeed_period, urls_per_day, payment_status,
             vendors ( vendor_name ),
             projects_hub ( targets, vendor_staging_data ),
             placements ( id ),

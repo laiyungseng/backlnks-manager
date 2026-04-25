@@ -447,6 +447,7 @@ export default function NewProjectPage() {
 
     const [campaignTitle, setCampaignTitle] = useState('');
     const [personInCharge, setPersonInCharge] = useState('');
+    const [clientName, setClientName] = useState('');
     const [plans, setPlans] = useState([createEmptyPlan()]);
     const [categories, setCategories] = useState([]);
 
@@ -471,6 +472,7 @@ export default function NewProjectPage() {
             formRef.current?.reset();
             setCampaignTitle('');
             setPersonInCharge('');
+            setClientName('');
             setPlans([createEmptyPlan()]);
         }
     }, [state?.success, state?.results]);
@@ -551,6 +553,13 @@ export default function NewProjectPage() {
                             <input type="text" name="person_in_charge" required value={personInCharge}
                                 onChange={e => setPersonInCharge(e.target.value)}
                                 placeholder="e.g. John"
+                                className="block w-full border border-gray-300 rounded-md shadow-sm p-2.5 text-gray-900 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Client Name</label>
+                            <input type="text" name="client_name" value={clientName}
+                                onChange={e => setClientName(e.target.value)}
+                                placeholder="e.g. Acme Corp (optional)"
                                 className="block w-full border border-gray-300 rounded-md shadow-sm p-2.5 text-gray-900 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" />
                         </div>
                     </div>

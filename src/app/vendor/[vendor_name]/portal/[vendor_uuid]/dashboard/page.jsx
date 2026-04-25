@@ -1,7 +1,8 @@
 import { getServerSupabase } from '@/lib/supabase-server';
 import { verifyVendorSession, getSession } from '@/lib/session';
 import { redirect } from 'next/navigation';
-import { LayoutDashboard, Clock, CheckCircle2, AlertTriangle, Activity, Zap } from 'lucide-react';
+import { LayoutDashboard, Clock, CheckCircle2, AlertTriangle, Activity, Zap, Star, ExternalLink } from 'lucide-react';
+import Link from 'next/link';
 import DashboardActiveProjects from './DashboardActiveProjects';
 
 export const dynamic = 'force-dynamic';
@@ -111,6 +112,7 @@ export default async function VendorDashboardPage({ params }) {
             start_date,
             deadline,
             completed_date,
+            is_priority,
             project_targets ( category ),
             projects_hub ( hash, vendor_staging_data, is_locked, targets ),
             placements ( id )
@@ -122,7 +124,6 @@ export default async function VendorDashboardPage({ params }) {
 
     const allProjects = projects || [];
 
-    const pendingProjects = allProjects.filter(p => !p.is_approved);
     const activeProjects = allProjects.filter(p => {
         const hasPlacements = p.placements && p.placements.length > 0;
         return p.is_approved && p.status !== 'Finalized' && !hasPlacements;
@@ -234,10 +235,10 @@ export default async function VendorDashboardPage({ params }) {
                 </div>
                 <div className="bg-white rounded-xl ring-1 ring-gray-200 px-5 py-4 flex flex-col gap-1">
                     <div className="flex items-center gap-1.5 text-xs text-amber-500 font-medium uppercase tracking-wide">
-                        <Clock className="w-3.5 h-3.5" /> Pending
+                        <Star className="w-3.5 h-3.5" /> Focus
                     </div>
-                    <div className="text-3xl font-bold text-gray-900">{pendingProjects.length}</div>
-                    <div className="text-xs text-gray-400">Awaiting approval</div>
+                    <div className="text-3xl font-bold text-gray-900">{activeProjects.filter(p => p.is_priority).length}</div>
+                    <div className="text-xs text-gray-400">Priority projects</div>
                 </div>
                 <div className="bg-white rounded-xl ring-1 ring-gray-200 px-5 py-4 flex flex-col gap-1">
                     <div className="flex items-center gap-1.5 text-xs text-green-600 font-medium uppercase tracking-wide">
@@ -255,51 +256,60 @@ export default async function VendorDashboardPage({ params }) {
                 </div>
             </div>
 
-            {/* Pending Payment */}
-            <section className="mb-10">
-                <div className="flex items-center gap-2 mb-4">
-                    <Clock className="w-4 h-4 text-amber-500" />
-                    <h2 className="text-lg font-bold text-gray-800">Pending Payment</h2>
-                    <span className="ml-1 px-2 py-0.5 text-xs font-bold rounded-full bg-amber-100 text-amber-700">{pendingProjects.length}</span>
-                </div>
-
-                {pendingProjects.length > 0 ? (
-                    <div className="bg-white rounded-xl ring-1 ring-gray-200 overflow-hidden">
-                        <table className="w-full text-sm">
-                            <thead>
-                                <tr className="bg-gray-50 border-b border-gray-100">
-                                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Project</th>
-                                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Qty</th>
-                                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Created</th>
-                                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Kickoff</th>
-                                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Submission</th>
-                                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-50">
-                                {pendingProjects.map(p => (
-                                    <tr key={p.id} className="hover:bg-gray-50/50 transition-colors">
-                                        <td className="px-4 py-3.5 font-semibold text-gray-900">{p.project_name || 'Unnamed'}</td>
-                                        <td className="px-4 py-3.5 text-gray-700">{getTotal(p)}</td>
-                                        <td className="px-4 py-3.5 text-gray-500">{formatDate(p.created_date)}</td>
-                                        <td className="px-4 py-3.5 text-gray-500">{formatDate(p.start_date)}</td>
-                                        <td className="px-4 py-3.5 text-gray-500">{formatDate(p.deadline)}</td>
-                                        <td className="px-4 py-3.5">
-                                            <span className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold rounded w-fit bg-amber-50 text-amber-700 border border-amber-200">
-                                                <Clock className="w-3 h-3" /> Pending Payment
-                                            </span>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
+            {/* Focus Section — priority projects */}
+            {activeProjects.filter(p => p.is_priority).length > 0 && (
+                <section className="mb-8">
+                    <div className="flex items-center gap-2 mb-3">
+                        <Star className="w-4 h-4 text-amber-500 fill-amber-400" />
+                        <h2 className="text-lg font-bold text-gray-800">Focus</h2>
+                        <span className="ml-1 px-2 py-0.5 text-xs font-bold rounded-full bg-amber-100 text-amber-700">
+                            {activeProjects.filter(p => p.is_priority).length}
+                        </span>
                     </div>
-                ) : (
-                    <div className="text-center py-10 bg-white rounded-xl border border-dashed border-gray-200">
-                        <p className="text-gray-400 text-sm">No pending projects.</p>
+                    <div className="space-y-2">
+                        {activeProjects.filter(p => p.is_priority).map(p => {
+                            const { completed, total, percent } = getProgress(p);
+                            const daysLeft = getRemainingDays(p.deadline);
+                            const hash = p.projects_hub?.[0]?.hash;
+                            return (
+                                <div key={p.id} className="bg-white rounded-xl ring-1 ring-amber-200 border-l-4 border-l-amber-400 px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-4">
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex flex-wrap items-center gap-2 mb-1">
+                                            <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400 shrink-0" />
+                                            <span className="font-bold text-gray-900 text-sm">{p.project_name || 'Unnamed'}</span>
+                                            {p.country && <span className="text-xs font-mono text-gray-400 uppercase">{p.country}</span>}
+                                        </div>
+                                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 mb-2">
+                                            <span>Qty: <span className="font-semibold text-gray-700">{total}</span></span>
+                                            <span>Deadline: <span className={`font-semibold ${daysLeft !== null && daysLeft <= 0 ? 'text-red-600' : 'text-gray-700'}`}>{formatDate(p.deadline)}</span></span>
+                                            {daysLeft !== null && daysLeft <= 3 && (
+                                                <span className={`font-bold px-1.5 py-0.5 rounded text-[10px] ${daysLeft < 0 ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                                                    {daysLeft < 0 ? `${Math.abs(daysLeft)}d late` : daysLeft === 0 ? 'Today' : `${daysLeft}d left`}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <div className="flex-1 bg-gray-100 rounded-full h-1.5 overflow-hidden max-w-[160px]">
+                                                <div className="h-1.5 rounded-full bg-amber-400 transition-all" style={{ width: `${percent}%` }} />
+                                            </div>
+                                            <span className="text-xs text-gray-500 tabular-nums">{completed}/{total} ({percent}%)</span>
+                                        </div>
+                                    </div>
+                                    {hash && (
+                                        <Link
+                                            href={`/vendor/${vendorName}/${hash}`}
+                                            className="flex items-center gap-1.5 px-4 py-2 bg-amber-500 text-white text-xs font-bold rounded-lg hover:bg-amber-600 transition-colors shadow-sm shrink-0"
+                                        >
+                                            <ExternalLink className="w-3.5 h-3.5" />
+                                            Open
+                                        </Link>
+                                    )}
+                                </div>
+                            );
+                        })}
                     </div>
-                )}
-            </section>
+                </section>
+            )}
 
             {/* Active Projects */}
             <DashboardActiveProjects activeProjects={activeProjects} vendorName={vendorName} />

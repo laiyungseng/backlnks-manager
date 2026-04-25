@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, PlusCircle, ClipboardList, CheckCircle2, Settings, PanelLeftClose, PanelLeftOpen, Blocks, Users, Globe, List, Activity, Tag, BarChart2 } from 'lucide-react';
+import { LayoutDashboard, PlusCircle, ClipboardList, CheckCircle2, Settings, PanelLeftClose, PanelLeftOpen, Blocks, Users, Globe, List, Activity, Tag, BarChart2, AlertCircle } from 'lucide-react';
 import { logoutAction } from '@/app/admin/settings/actions';
 
 export default function AdminLayout({ children }) {
@@ -19,11 +19,13 @@ export default function AdminLayout({ children }) {
     const navigation = [
         { name: 'Dashboard', href: '/admin', icon: LayoutDashboard },
         { name: 'Project Details', href: '/admin/projects', icon: List },
+        { name: 'Pending Payment', href: '/admin/pending-payment', icon: AlertCircle },
         { name: 'Kickoff Project', href: '/admin/new-project', icon: PlusCircle },
         { name: 'Active Placements', href: '/admin/placements', icon: ClipboardList },
         { name: 'Completed & Closed', href: '/admin/completed', icon: CheckCircle2 },
         { name: 'Schema Builder', href: '/admin/schema-builder', icon: Blocks },
         { name: 'Vendor Manager', href: '/admin/vendor-manager', icon: Users },
+        { name: 'Client Manager', href: '/admin/client-manager', icon: Users },
         { name: 'Domains Manager', href: '/admin/domains-manager', icon: Globe },
         { name: 'Vendor Log', href: '/admin/vendor-log', icon: Activity },
         { name: 'Categories', href: '/admin/categories', icon: Tag },

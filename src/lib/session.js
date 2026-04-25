@@ -157,3 +157,90 @@ export async function clearVendorSessionCookie() {
     const cookieStore = await cookies();
     cookieStore.delete(VENDOR_COOKIE_NAME);
 }
+
+// ---------------------------------------------------------------------------
+// Client session — scoped cookie set when a client validates their access link
+// ---------------------------------------------------------------------------
+
+const CLIENT_COOKIE_NAME = 'df_client_session';
+const CLIENT_SESSION_TTL_SECONDS = 60 * 60 * 8; // 8 hours
+
+export async function setClientSessionCookie(clientId, sessionVersion = 1) {
+    const token = await createSessionToken({ clientId, sessionVersion, expiresAt: Date.now() + CLIENT_SESSION_TTL_SECONDS * 1000 });
+    const cookieStore = await cookies();
+    cookieStore.set(CLIENT_COOKIE_NAME, token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        path: '/client',
+        maxAge: CLIENT_SESSION_TTL_SECONDS,
+    });
+}
+
+export async function getClientSession() {
+    const cookieStore = await cookies();
+    const token = cookieStore.get(CLIENT_COOKIE_NAME)?.value;
+    return verifySessionToken(token);
+}
+
+export async function verifyClientSession(supabase) {
+    const session = await getClientSession();
+    if (!session?.clientId) return null;
+
+    const { data: client } = await supabase
+        .from('clients')
+        .select('session_version')
+        .eq('id', session.clientId)
+        .maybeSingle();
+
+    if (!client || client.session_version !== (session.sessionVersion ?? 1)) return null;
+    return session;
+}
+
+export async function clearClientSessionCookie() {
+    const cookieStore = await cookies();
+    cookieStore.delete(CLIENT_COOKIE_NAME);
+}
+
+// ---------------------------------------------------------------------------
+// Report tokens — stateless signed tokens for shareable read-only analytics
+// ---------------------------------------------------------------------------
+
+const REPORT_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
+
+export async function createReportToken(vendorId, label) {
+    const expiresAt = Date.now() + REPORT_TOKEN_TTL_SECONDS * 1000;
+    const enc = new TextEncoder();
+    const payloadJson = JSON.stringify({ type: 'report', vendorId: vendorId ?? null, label: label ?? 'All Vendors', expiresAt });
+    const payload = base64urlEncode(enc.encode(payloadJson));
+    const key = await getHmacKey();
+    const sigBuffer = await crypto.subtle.sign('HMAC', key, enc.encode(payload));
+    const sig = base64urlEncode(sigBuffer);
+    return `${payload}.${sig}`;
+}
+
+export async function verifyReportToken(token) {
+    try {
+        if (!token || typeof token !== 'string') return null;
+        const dotIdx = token.lastIndexOf('.');
+        if (dotIdx === -1) return null;
+
+        const payload = token.slice(0, dotIdx);
+        const receivedSig = token.slice(dotIdx + 1);
+
+        const enc = new TextEncoder();
+        const key = await getHmacKey();
+        const sigBuffer = base64urlDecode(receivedSig);
+        const valid = await crypto.subtle.verify('HMAC', key, sigBuffer, enc.encode(payload));
+        if (!valid) return null;
+
+        const dec = new TextDecoder();
+        const data = JSON.parse(dec.decode(base64urlDecode(payload)));
+        if (data.type !== 'report') return null;
+        if (!data.expiresAt || Date.now() > data.expiresAt) return null;
+
+        return data;
+    } catch {
+        return null;
+    }
+}

@@ -48,6 +48,7 @@ export default async function VendorInProgressPage({ params }) {
             total_quantity,
             created_date,
             language,
+            is_priority,
             project_languages ( lang_code, ratio ),
             project_targets ( category ),
             projects_hub ( hash, vendor_staging_data, is_locked, targets ),

@@ -91,46 +91,58 @@ export async function approveProject(projectId) {
     }
 }
 
+async function resolveVendor(supabase, vendorName) {
+    const { data: existing } = await supabase
+        .from('vendors').select('id').eq('vendor_name', vendorName).maybeSingle();
+    if (existing) return existing.id;
+    const { data: newV, error } = await supabase
+        .from('vendors').insert({ vendor_name: vendorName }).select('id').single();
+    if (error) throw new Error(`Failed to create vendor: ${error.message}`);
+    return newV.id;
+}
+
 export async function updateDashboardProjects(projectsArray) {
     try { await requireAdmin(); } catch { return { success: false, message: 'Unauthorized.' }; }
     if (!Array.isArray(projectsArray) || projectsArray.length === 0) return { success: true };
 
     const supabase = getServerSupabase();
     try {
-        // Bulk update or individual updates
-        const updates = projectsArray.map(async p => {
-            // 1. Update main projects table
+        for (const p of projectsArray) {
+            // Resolve vendor_id if vendor name was edited
+            const updatePayload = {
+                project_name: p.project_name,
+                country: p.country,
+                start_date: p.start_date,
+                deadline: p.deadline,
+                price: parseFloat(p.price || 0),
+                price_type: p.price_type
+            };
+
+            const editedVendorName = p.vendorNameEdit?.trim();
+            const originalVendorName = p.vendors?.vendor_name || '';
+            if (editedVendorName && editedVendorName !== originalVendorName) {
+                updatePayload.vendor_id = await resolveVendor(supabase, editedVendorName);
+            }
+
             const { error: projError } = await supabase.from('projects')
-                .update({
-                    project_name: p.project_name,
-                    country: p.country,
-                    start_date: p.start_date,
-                    deadline: p.deadline,
-                    price: parseFloat(p.price || 0),
-                    price_type: p.price_type
-                })
+                .update(updatePayload)
                 .eq('id', p.id);
-            
             if (projError) throw projError;
 
-            // 2. Update category mappings if provided
+            // Update category mappings if provided
             if (p.categoryUpdates && Object.keys(p.categoryUpdates).length > 0) {
                 for (const [oldCategory, newCategory] of Object.entries(p.categoryUpdates)) {
-                    // Only update if there is a real change
                     if (oldCategory !== newCategory && newCategory && newCategory.trim() !== '') {
                         const { error: catError } = await supabase
                             .from('project_targets')
                             .update({ category: newCategory.trim() })
                             .eq('project_id', p.id)
                             .eq('category', oldCategory);
-                        
                         if (catError) throw catError;
                     }
                 }
             }
-        });
-
-        await Promise.all(updates);
+        }
 
         revalidatePath('/admin', 'layout');
         return { success: true, message: 'Changes saved successfully.' };
@@ -138,4 +150,30 @@ export async function updateDashboardProjects(projectsArray) {
         console.error('Server error updating projects:', error);
         return { success: false, message: 'An unexpected error occurred while saving edits.' };
     }
+}
+
+export async function approvePaymentAction(projectId) {
+    try { await requireAdmin(); } catch { return { success: false, message: 'Unauthorized.' }; }
+    if (!projectId) return { success: false, message: 'Project ID missing.' };
+    const supabase = getServerSupabase();
+    const { error } = await supabase
+        .from('projects')
+        .update({ payment_status: 'approved' })
+        .eq('id', projectId);
+    if (error) return { success: false, message: error.message };
+    revalidatePath('/admin', 'layout');
+    return { success: true };
+}
+
+export async function markPaymentPendingAction(projectId) {
+    try { await requireAdmin(); } catch { return { success: false, message: 'Unauthorized.' }; }
+    if (!projectId) return { success: false, message: 'Project ID missing.' };
+    const supabase = getServerSupabase();
+    const { error } = await supabase
+        .from('projects')
+        .update({ payment_status: 'pending' })
+        .eq('id', projectId);
+    if (error) return { success: false, message: error.message };
+    revalidatePath('/admin', 'layout');
+    return { success: true };
 }

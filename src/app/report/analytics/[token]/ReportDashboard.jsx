@@ -1,16 +1,21 @@
 'use client';
 
-import { useState, useTransition, useEffect } from 'react';
-import { getVendorStats, generateReportLinkAction } from './actions';
 import {
     ResponsiveContainer,
     PieChart, Pie, Cell,
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-    BarChart, Bar, Legend,
+    BarChart, Bar,
 } from 'recharts';
-import { Search, TrendingUp, DollarSign, Package, Zap, Share2, Check } from 'lucide-react';
+import { TrendingUp, DollarSign, Package, Zap } from 'lucide-react';
 
 const PALETTE = ['#6366f1', '#22d3ee', '#f59e0b', '#10b981', '#f43f5e', '#8b5cf6', '#06b6d4', '#84cc16', '#f97316', '#ec4899'];
+
+const INDEX_STATUS_COLORS = {
+    page_indexed:     '#10b981',
+    page_not_indexed: '#f43f5e',
+    no_data:          '#f59e0b',
+    not_checked:      '#cbd5e1',
+};
 
 function ChartCard({ title, children, className = '' }) {
     return (
@@ -51,17 +56,8 @@ function IndexGauge({ indexRate }) {
         <div className="flex flex-col items-center">
             <div className="relative">
                 <PieChart width={220} height={130}>
-                    <Pie
-                        data={gaugeData}
-                        cx={110}
-                        cy={120}
-                        startAngle={180}
-                        endAngle={0}
-                        innerRadius={65}
-                        outerRadius={100}
-                        dataKey="value"
-                        strokeWidth={0}
-                    >
+                    <Pie data={gaugeData} cx={110} cy={120} startAngle={180} endAngle={0}
+                        innerRadius={65} outerRadius={100} dataKey="value" strokeWidth={0}>
                         <Cell fill="#6366f1" />
                         <Cell fill="#e2e8f0" />
                     </Pie>
@@ -76,13 +72,6 @@ function IndexGauge({ indexRate }) {
         </div>
     );
 }
-
-const INDEX_STATUS_COLORS = {
-    page_indexed:     '#10b981',
-    page_not_indexed: '#f43f5e',
-    no_data:          '#f59e0b',
-    not_checked:      '#cbd5e1',
-};
 
 function IndexStatusBreakdown({ data }) {
     if (!data || data.length === 0) {
@@ -145,91 +134,13 @@ function EmptyState({ label }) {
     return <div className="flex items-center justify-center h-40 text-slate-300 text-sm">{label}</div>;
 }
 
-export default function VendorAnalyticsDashboard({ vendors, initialStats }) {
-    const [stats, setStats] = useState(initialStats);
-    const [selectedId, setSelectedId] = useState(null);
-    const [search, setSearch] = useState('');
-    const [isPending, startTransition] = useTransition();
-    const [shareCopied, setShareCopied] = useState(false);
-    const [shareLoading, setShareLoading] = useState(false);
-
-    async function handleShare() {
-        setShareLoading(true);
-        const label = selectedId ? (vendors.find(v => v.id === selectedId)?.vendor_name || 'Vendor') : 'All Vendors';
-        const res = await generateReportLinkAction(selectedId, label);
-        setShareLoading(false);
-        if (!res.success) return;
-        await navigator.clipboard.writeText(res.url);
-        setShareCopied(true);
-        setTimeout(() => setShareCopied(false), 2500);
-    }
-
-    const filteredVendors = vendors.filter(v =>
-        v.vendor_name.toLowerCase().includes(search.toLowerCase())
-    );
-
-    const selectVendor = (id) => {
-        setSelectedId(id);
-        startTransition(async () => {
-            const res = await getVendorStats(id);
-            if (res.success) setStats(res);
-        });
-    };
-
-    const selectedName = selectedId ? (vendors.find(v => v.id === selectedId)?.vendor_name || 'Unknown') : 'All Vendors';
-
-    if (!stats) {
-        return <div className="text-slate-400 text-sm py-10 text-center">Failed to load analytics data.</div>;
-    }
-
+export default function ReportDashboard({ stats }) {
     const indexPct = stats.indexRate.total > 0
         ? Math.round((stats.indexRate.indexed / stats.indexRate.total) * 100)
         : 0;
 
     return (
         <div className="space-y-6">
-            {/* Vendor Selector */}
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-                <div className="flex items-center gap-2 mb-3">
-                    <Search className="w-4 h-4 text-slate-400" />
-                    <input
-                        type="text"
-                        placeholder="Search vendor…"
-                        value={search}
-                        onChange={e => setSearch(e.target.value)}
-                        className="flex-1 text-sm border-0 outline-none text-slate-700 placeholder-slate-400"
-                    />
-                    {isPending && <span className="text-xs text-indigo-500 animate-pulse">Loading…</span>}
-                    <button
-                        onClick={handleShare}
-                        disabled={shareLoading}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors disabled:opacity-50 shrink-0"
-                        title="Copy shareable report link"
-                    >
-                        {shareCopied ? <Check className="w-3.5 h-3.5" /> : <Share2 className="w-3.5 h-3.5" />}
-                        {shareCopied ? 'Copied!' : 'Share Report'}
-                    </button>
-                </div>
-                <div className="flex flex-wrap gap-2 max-h-28 overflow-y-auto">
-                    <button
-                        onClick={() => selectVendor(null)}
-                        className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors ${selectedId === null ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
-                    >
-                        All Vendors
-                    </button>
-                    {filteredVendors.map(v => (
-                        <button
-                            key={v.id}
-                            onClick={() => selectVendor(v.id)}
-                            className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors ${selectedId === v.id ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
-                        >
-                            {v.vendor_name}
-                        </button>
-                    ))}
-                </div>
-                <p className="text-xs text-slate-400 mt-2">Showing: <span className="font-semibold text-slate-600">{selectedName}</span></p>
-            </div>
-
             {/* KPI Cards */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <KpiCard label="Total Spend" value={`$${stats.totalSpend.toLocaleString(undefined, { maximumFractionDigits: 0 })}`} icon={DollarSign} color="green" />
@@ -242,11 +153,9 @@ export default function VendorAnalyticsDashboard({ vendors, initialStats }) {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 <ChartCard title="Index Rate" className="lg:col-span-2">
                     <div className="flex gap-4 min-h-[200px]">
-                        {/* Left 2/5 — semicircle gauge */}
                         <div className="flex flex-col items-center justify-center w-2/5 shrink-0 border-r border-slate-100 pr-4">
                             <IndexGauge indexRate={stats.indexRate} />
                         </div>
-                        {/* Right 3/5 — indexed_status breakdown */}
                         <div className="flex-1 min-w-0">
                             <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Status Breakdown</p>
                             <IndexStatusBreakdown data={stats.indexStatusBreakdown || []} />
@@ -261,7 +170,7 @@ export default function VendorAnalyticsDashboard({ vendors, initialStats }) {
                 </ChartCard>
             </div>
 
-            {/* Row 2: Monthly Completions (full width) */}
+            {/* Row 2: Monthly Completions */}
             <ChartCard title="Monthly Completions">
                 {stats.monthlyCompletions.length === 0
                     ? <EmptyState label="No completed projects yet" />

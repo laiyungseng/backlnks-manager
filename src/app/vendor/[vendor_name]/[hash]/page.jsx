@@ -44,10 +44,14 @@ export default async function VendorProjectPage({ params }) {
     if (projectData?.vendor_id) {
         const { data: vendorMatch } = await supabase
             .from('vendors')
-            .select('id')
-            .ilike('vendor_name', `%${vendorNameParam.replace(/-/g, '%')}%`)
+            .select('id, vendor_name')
+            .eq('id', projectData.vendor_id)
             .maybeSingle();
-        if (!vendorMatch || vendorMatch.id !== projectData.vendor_id) {
+        if (!vendorMatch) {
+            redirect('/unauthorized');
+        }
+        const expectedSlug = vendorMatch.vendor_name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+        if (expectedSlug !== vendorNameParam) {
             redirect('/unauthorized');
         }
         vendorUuid = vendorMatch.id;

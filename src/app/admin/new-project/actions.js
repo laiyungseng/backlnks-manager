@@ -33,6 +33,7 @@ export async function createCampaignAction(prevState, formData) {
     try {
         const campaignTitle = formData.get('campaign_title')?.trim();
         const personInCharge = formData.get('person_in_charge')?.trim();
+        const clientName = formData.get('client_name')?.trim() || null;
         const plansRaw = formData.get('plans_json');
 
         if (!campaignTitle) return { success: false, message: 'Campaign title is required.' };
@@ -50,7 +51,7 @@ export async function createCampaignAction(prevState, formData) {
         // 1. Create campaign
         const { data: campaign, error: campErr } = await supabase
             .from('project_campaigns')
-            .insert({ title: campaignTitle, person_in_charge: personInCharge || null })
+            .insert({ title: campaignTitle, person_in_charge: personInCharge || null, client_name: clientName })
             .select('id').single();
 
         if (campErr) throw new Error(`Campaign creation failed: ${campErr.message}`);
@@ -112,7 +113,9 @@ export async function createCampaignAction(prevState, formData) {
                     price_type: price_type || 'per_url',
                     randomize_languages: !!randomize_languages,
                     status: 'Inprogress',
-                    created_date: new Date().toISOString()
+                    payment_status: 'pending',
+                    created_date: new Date().toISOString(),
+                    client_name: clientName
                 })
                 .select('id').single();
 

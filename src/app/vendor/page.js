@@ -54,7 +54,7 @@ export default function VendorLoginPage() {
                     Vendor Portal
                 </h1>
                 <p className="text-sm font-medium text-center text-slate-500 mb-8">
-                    Enter your registered company name to access your active placement assignments.
+                    Enter your registered vendor name to receive your access link.
                 </p>
 
                 <form onSubmit={handleSubmit} className="space-y-6">
