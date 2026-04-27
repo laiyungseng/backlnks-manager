@@ -75,7 +75,7 @@ export async function approveProject(projectId) {
     try {
         const { error } = await supabase
             .from('projects')
-            .update({ is_approved: true })
+            .update({ is_approved: true, payment_status: 'approved' })
             .eq('id', projectId);
 
         if (error) {

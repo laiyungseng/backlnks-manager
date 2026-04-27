@@ -6,6 +6,16 @@ import { getCategories } from '../categories/actions';
 import { useFormStatus } from 'react-dom';
 import { Plus, Trash2, Languages, ChevronDown, ChevronUp } from 'lucide-react';
 
+function addDaysToDateStr(dateStr, days) {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const date = new Date(y, m - 1, d);
+    date.setDate(date.getDate() + days);
+    const yr = date.getFullYear();
+    const mo = String(date.getMonth() + 1).padStart(2, '0');
+    const dy = String(date.getDate()).padStart(2, '0');
+    return `${yr}-${mo}-${dy}`;
+}
+
 function genId() {
     if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
@@ -22,6 +32,8 @@ function createEmptyPlan() {
         start_date: '',
         deadline: '',
         dripfeed_enabled: true,
+        deadlineManualOverride: false,
+        startDateManualOverride: false,
         dripfeed_period: '',
         urls_per_day: '',
         manualOverride: false,
@@ -207,13 +219,39 @@ function PlanCard({ plan, planIndex, categories, onUpdate, onRemove, canRemove }
                                 className="block w-full border border-gray-300 rounded-md shadow-sm p-2.5 text-gray-900 text-sm font-mono uppercase focus:ring-indigo-500 focus:border-indigo-500" />
                         </div>
                         <div>
-                            <label className="block text-xs font-semibold text-gray-600 mb-1">Start Date *</label>
-                            <input type="date" required value={plan.start_date} onChange={e => set('start_date', e.target.value)}
+                            <div className="flex items-center justify-between mb-1">
+                                <label className="block text-xs font-semibold text-gray-600">
+                                    Start Date *
+                                    {planIndex > 0 && !plan.startDateManualOverride && (
+                                        <span className="ml-1.5 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">Chained from Plan {planIndex}</span>
+                                    )}
+                                </label>
+                                {planIndex > 0 && plan.startDateManualOverride && (
+                                    <button type="button" onClick={() => onUpdate(plan.id, { startDateManualOverride: false })}
+                                        className="text-[10px] text-indigo-500 hover:text-indigo-700 underline">Reset to chain</button>
+                                )}
+                            </div>
+                            <input type="date" required value={plan.start_date}
+                                onChange={e => onUpdate(plan.id, planIndex > 0
+                                    ? { start_date: e.target.value, startDateManualOverride: true }
+                                    : { start_date: e.target.value })}
                                 className="block w-full border border-gray-300 rounded-md shadow-sm p-2.5 text-gray-900 text-sm focus:ring-indigo-500 focus:border-indigo-500" />
                         </div>
                         <div>
-                            <label className="block text-xs font-semibold text-gray-600 mb-1">Deadline *</label>
-                            <input type="date" required value={plan.deadline} onChange={e => set('deadline', e.target.value)}
+                            <div className="flex items-center justify-between mb-1">
+                                <label className="block text-xs font-semibold text-gray-600">
+                                    Deadline *
+                                    {plan.dripfeed_enabled && !plan.deadlineManualOverride && (
+                                        <span className="ml-1.5 text-[10px] font-bold text-indigo-500 bg-indigo-50 px-1.5 py-0.5 rounded">Auto</span>
+                                    )}
+                                </label>
+                                {plan.dripfeed_enabled && plan.deadlineManualOverride && (
+                                    <button type="button" onClick={() => onUpdate(plan.id, { deadlineManualOverride: false })}
+                                        className="text-[10px] text-indigo-500 hover:text-indigo-700 underline">Reset to auto</button>
+                                )}
+                            </div>
+                            <input type="date" required value={plan.deadline}
+                                onChange={e => onUpdate(plan.id, { deadline: e.target.value, deadlineManualOverride: true })}
                                 className="block w-full border border-gray-300 rounded-md shadow-sm p-2.5 text-gray-900 text-sm focus:ring-indigo-500 focus:border-indigo-500" />
                         </div>
                         <div className="sm:col-span-2">
@@ -259,7 +297,10 @@ function PlanCard({ plan, planIndex, categories, onUpdate, onRemove, canRemove }
                             <h3 className="text-sm font-bold text-gray-800">Drip Feed</h3>
                             <label className="inline-flex items-center cursor-pointer">
                                 <input type="checkbox" className="sr-only peer" checked={plan.dripfeed_enabled}
-                                    onChange={e => set('dripfeed_enabled', e.target.checked)} />
+                                    onChange={e => onUpdate(plan.id, {
+                                        dripfeed_enabled: e.target.checked,
+                                        ...(e.target.checked ? { deadlineManualOverride: false } : {})
+                                    })} />
                                 <div className="relative w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
                                 <span className="ml-2 text-xs font-semibold text-indigo-700">Enabled</span>
                             </label>
@@ -466,6 +507,39 @@ export default function NewProjectPage() {
         }));
     }, [plans.map(p => `${p.dripfeed_enabled}-${p.dripfeed_period}-${p.total_quantity}`).join('|')]);
 
+    // Auto-calc deadline from dripfeed + chain plan start dates from previous plan's deadline
+    useEffect(() => {
+        setPlans(prev => {
+            const next = [...prev];
+            let changed = false;
+            for (let i = 0; i < next.length; i++) {
+                const plan = { ...next[i] };
+                let planChanged = false;
+
+                // Chain start_date from previous plan's deadline + 1 day
+                if (i > 0 && !plan.startDateManualOverride) {
+                    const prevDeadline = next[i - 1].deadline;
+                    if (prevDeadline) {
+                        const newStart = addDaysToDateStr(prevDeadline, 1);
+                        if (plan.start_date !== newStart) { plan.start_date = newStart; planChanged = true; }
+                    }
+                }
+
+                // Auto-calc deadline = start_date + dripfeed_period
+                if (plan.dripfeed_enabled && !plan.deadlineManualOverride) {
+                    const period = parseInt(plan.dripfeed_period) || 0;
+                    if (plan.start_date && period) {
+                        const newDeadline = addDaysToDateStr(plan.start_date, period);
+                        if (plan.deadline !== newDeadline) { plan.deadline = newDeadline; planChanged = true; }
+                    }
+                }
+
+                if (planChanged) { next[i] = plan; changed = true; }
+            }
+            return changed ? next : prev;
+        });
+    }, [plans.map(p => `${p.start_date}|${p.deadline}|${p.dripfeed_enabled}|${p.dripfeed_period}|${p.deadlineManualOverride}|${p.startDateManualOverride}`).join('||')]);
+
     useEffect(() => {
         if (state?.success) {
             window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -504,7 +578,7 @@ export default function NewProjectPage() {
     }, [campaignTitle, personInCharge, plans]);
 
     // Serialize plans for hidden input (strip internal id from sub-items, keep for server to ignore)
-    const plansForSubmit = plans.map(({ id, manualOverride, ...rest }) => rest);
+    const plansForSubmit = plans.map(({ id, manualOverride, deadlineManualOverride, startDateManualOverride, ...rest }) => rest);
 
     return (
         <div className="max-w-4xl mx-auto py-10 px-4 sm:px-6 lg:px-8 pb-24">

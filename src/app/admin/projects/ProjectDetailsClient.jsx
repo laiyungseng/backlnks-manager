@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useTransition } from 'react';
 import Link from 'next/link';
-import { Trash2, CheckCircle2, Search, X } from 'lucide-react';
+import { Trash2, CheckCircle2, Search, X, CircleDollarSign, BadgeCheck } from 'lucide-react';
 import CopyButton from './CopyButton';
 import { deleteProject, approveProject, updateDashboardProjects, approvePaymentAction, markPaymentPendingAction } from '../actions';
 
@@ -137,10 +137,15 @@ export default function ProjectDetailsClient({ initialProjects }) {
 
     const pendingProjects = displayProjects.filter(p => !p.is_approved);
     const activeProjects = displayProjects.filter(p => p.is_approved && p.status === 'Inprogress');
+    const twoWeeksAgo = new Date();
+    twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+
     const completedProjects = displayProjects.filter(p => {
         if (!p.is_approved) return false;
         const hasPlacements = p.placements && p.placements.length > 0;
-        return p.status === 'Finalized' || hasPlacements;
+        if (!(p.status === 'Finalized' || hasPlacements)) return false;
+        const refDate = p.completed_date || p.created_date;
+        return refDate && new Date(refDate) >= twoWeeksAgo;
     });
 
     // Search filtering
@@ -155,7 +160,7 @@ export default function ProjectDetailsClient({ initialProjects }) {
     const filteredCompleted = filterBySearch(completedProjects);
     const filteredPending = filterBySearch(pendingProjects);
 
-    const renderProjectTable = (title, data, isEdit = false, collapsed = false, onToggleCollapse = null) => (
+    const renderProjectTable = (title, data, isEdit = false, collapsed = false, onToggleCollapse = null, hideMarkPending = false, showApprovalIcon = false, hideProjectStatus = false, hidePaymentIcon = false, showPaymentApproveCol = false) => (
         <div className="bg-white shadow-soft rounded-xl border border-slate-200 overflow-hidden w-full">
             <div
                 className={`px-6 py-5 border-b border-slate-100 bg-white flex items-center justify-between ${onToggleCollapse ? 'cursor-pointer hover:bg-slate-50' : ''}`}
@@ -183,8 +188,12 @@ export default function ProjectDetailsClient({ initialProjects }) {
                                 <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest bg-white">Vendor</th>
                                 <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest bg-white">Progress</th>
                                 <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest bg-white">Price</th>
+                                <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest bg-white">Date Range</th>
                                 <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest bg-white">Status</th>
                                 <th className="px-6 py-4 text-center text-[10px] font-black text-slate-400 uppercase tracking-widest bg-white">Approve</th>
+                                {showPaymentApproveCol && (
+                                    <th className="px-6 py-4 text-center text-[10px] font-black text-slate-400 uppercase tracking-widest bg-white">Approve Payment</th>
+                                )}
                                 <th className="px-6 py-4 text-right text-[10px] font-black text-slate-400 uppercase tracking-widest bg-white">Actions</th>
                             </tr>
                         </thead>
@@ -265,23 +274,50 @@ export default function ProjectDetailsClient({ initialProjects }) {
                                             )}
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap">
-                                            <div className="flex flex-col gap-1">
-                                                {(() => {
+                                            <div className="flex flex-col gap-0.5">
+                                                <span className="text-xs font-semibold text-slate-700 tabular-nums">
+                                                    {project.start_date ? new Date(project.start_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                                                </span>
+                                                <span className="text-[10px] text-slate-400">→</span>
+                                                <span className="text-xs font-semibold text-slate-700 tabular-nums">
+                                                    {project.deadline ? new Date(project.deadline).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                                                </span>
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                            <div className="flex flex-col gap-2 items-center">
+                                                {!hideProjectStatus && (() => {
                                                     const isFinalized = project.status === 'Finalized' || (project.placements && project.placements.length > 0);
                                                     let config = { bg: 'bg-indigo-50', text: 'text-indigo-600', label: 'In Progress' };
                                                     if (isFinalized) config = { bg: 'bg-emerald-50', text: 'text-emerald-700', label: 'Finalized' };
                                                     else if (project.status === 'Completed' || progressPercent === 100) config = { bg: 'bg-indigo-50', text: 'text-indigo-700', label: 'Completed' };
-                                                    else if (!project.is_approved) config = { bg: 'bg-amber-50', text: 'text-amber-700', label: 'Pending Approval' };
                                                     return (
                                                         <span className={`px-2.5 py-1 text-[10px] font-black uppercase tracking-widest rounded-md ${config.bg} ${config.text} border border-transparent w-fit`}>
                                                             {config.label}
                                                         </span>
                                                     );
                                                 })()}
-                                                {project.payment_status === 'pending' && (
-                                                    <span className="px-2.5 py-1 text-[10px] font-black uppercase tracking-widest rounded-md bg-amber-100 text-amber-700 border border-amber-200 w-fit">
-                                                        Payment Pending
-                                                    </span>
+                                                {showApprovalIcon && (
+                                                    <div className="relative group/approval">
+                                                        <BadgeCheck
+                                                            className={`w-5 h-5 cursor-default ${project.is_approved ? 'text-emerald-500' : 'text-amber-400'}`}
+                                                            strokeWidth={2}
+                                                        />
+                                                        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 text-[10px] font-bold bg-slate-900 text-white rounded whitespace-nowrap opacity-0 group-hover/approval:opacity-100 transition-opacity pointer-events-none z-20">
+                                                            {project.is_approved ? 'Project Approved' : 'Pending Approval'}
+                                                        </span>
+                                                    </div>
+                                                )}
+                                                {!hidePaymentIcon && project.payment_status && (
+                                                    <div className="relative group/payment">
+                                                        <CircleDollarSign
+                                                            className={`w-5 h-5 cursor-default ${project.payment_status === 'pending' ? 'text-amber-400' : 'text-emerald-500'}`}
+                                                            strokeWidth={2}
+                                                        />
+                                                        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 text-[10px] font-bold bg-slate-900 text-white rounded whitespace-nowrap opacity-0 group-hover/payment:opacity-100 transition-opacity pointer-events-none z-20">
+                                                            {project.payment_status === 'pending' ? 'Payment Pending' : 'Payment Approved'}
+                                                        </span>
+                                                    </div>
                                                 )}
                                             </div>
                                         </td>
@@ -294,9 +330,24 @@ export default function ProjectDetailsClient({ initialProjects }) {
                                                 </button>
                                             )}
                                         </td>
+                                        {showPaymentApproveCol && (
+                                            <td className="px-6 py-4 whitespace-nowrap text-center">
+                                                {!isEditMode && project.payment_status === 'pending' ? (
+                                                    <button
+                                                        onClick={() => handleApprovePayment(project.id)}
+                                                        className="px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-md bg-emerald-600 hover:bg-emerald-700 text-white transition-all shadow-sm"
+                                                        title="Approve payment — dates will shift to today"
+                                                    >
+                                                        Approve
+                                                    </button>
+                                                ) : (
+                                                    <span className="text-slate-300 text-xs font-bold">—</span>
+                                                )}
+                                            </td>
+                                        )}
                                         <td className="px-6 py-4 whitespace-nowrap text-right">
                                             <div className="flex items-center justify-end gap-1">
-                                                {!isEditMode && project.payment_status === 'pending' && (
+                                                {!showPaymentApproveCol && !isEditMode && project.payment_status === 'pending' && (
                                                     <button
                                                         onClick={() => handleApprovePayment(project.id)}
                                                         className="px-2.5 py-1 text-[10px] font-black uppercase tracking-widest rounded-md bg-emerald-600 hover:bg-emerald-700 text-white transition-all"
@@ -305,7 +356,7 @@ export default function ProjectDetailsClient({ initialProjects }) {
                                                         Approve Payment
                                                     </button>
                                                 )}
-                                                {!isEditMode && (!project.payment_status || project.payment_status === 'approved') && (
+                                                {!isEditMode && !hideMarkPending && (!project.payment_status || project.payment_status === 'approved') && (
                                                     <button
                                                         onClick={() => handleMarkPaymentPending(project.id)}
                                                         className="px-2.5 py-1 text-[10px] font-black uppercase tracking-widest rounded-md bg-amber-100 hover:bg-amber-200 text-amber-800 transition-all"
@@ -323,7 +374,7 @@ export default function ProjectDetailsClient({ initialProjects }) {
                                 );
                             }) : (
                                 <tr>
-                                    <td colSpan="9" className="px-6 py-12 text-center border-2 border-dashed border-slate-100 m-4 rounded-xl">
+                                    <td colSpan={showPaymentApproveCol ? 10 : 9} className="px-6 py-12 text-center border-2 border-dashed border-slate-100 m-4 rounded-xl">
                                         <p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] italic">
                                             {q ? 'No matches for current search.' : 'Archive entry empty / awaiting data feed'}
                                         </p>
@@ -425,7 +476,7 @@ export default function ProjectDetailsClient({ initialProjects }) {
             </div>
 
             {/* Tab: Active Placements */}
-            {activeTab === 'active' && renderProjectTable('Active Placements', filteredActive, isEditMode)}
+            {activeTab === 'active' && renderProjectTable('Active Placements', filteredActive, isEditMode, false, null, false, false, false, true)}
 
             {/* Tab: Completed & Pending */}
             {activeTab === 'completed' && (
@@ -435,14 +486,20 @@ export default function ProjectDetailsClient({ initialProjects }) {
                         filteredPending,
                         isEditMode,
                         isCollapsed.pending,
-                        () => setIsCollapsed(prev => ({ ...prev, pending: !prev.pending }))
+                        () => setIsCollapsed(prev => ({ ...prev, pending: !prev.pending })),
+                        false,
+                        true,
+                        true,
+                        false,
+                        true
                     )}
                     {renderProjectTable(
                         "Recently Completed & Finalized",
                         filteredCompleted,
                         false,
                         isCollapsed.completed,
-                        () => setIsCollapsed(prev => ({ ...prev, completed: !prev.completed }))
+                        () => setIsCollapsed(prev => ({ ...prev, completed: !prev.completed })),
+                        true
                     )}
                 </div>
             )}
