@@ -6,6 +6,7 @@ import { Eye, Link as LinkIcon, MoreVertical, CheckCircle2, Lock, Unlock, XCircl
 import { finalizeProjectAction, toggleProjectLockAction, closeProjectAction, toggleUrlEntryAction, togglePriorityAction } from './actions';
 import CopyButton from '../projects/CopyButton';
 import CloseProjectModal from './CloseProjectModal';
+import AnchorInfoPopup from './AnchorInfoPopup';
 
 const RISK_TIER_STYLES = {
     'NO RESPONSE':                 { bg: 'bg-orange-100', text: 'text-orange-700', border: 'border-orange-200', icon: AlertTriangle },
@@ -163,7 +164,8 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
         </div>
     );
 
-    const portalButtons = (
+    // Mobile portal buttons (full-width with text)
+    const portalButtonsMobile = (
         <>
             <button onClick={openLink} className="flex items-center gap-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 font-bold text-[10px] uppercase tracking-widest px-3 py-2 rounded-lg transition-colors flex-1 justify-center">
                 <Eye className="w-3.5 h-3.5" />
@@ -173,6 +175,20 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
                 <LinkIcon className="w-3.5 h-3.5" />
             </button>
         </>
+    );
+
+    // Desktop portal buttons (compact icon-only for narrow col-span-1)
+    const portalButtons = (
+        <div className="flex flex-col gap-1.5 w-full">
+            <button onClick={openLink} title="Open Vendor Portal" className="flex items-center justify-center gap-1 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 font-bold text-[9px] uppercase tracking-widest px-2 py-1.5 rounded-lg transition-colors w-full">
+                <Eye className="w-3 h-3" />
+                Open
+            </button>
+            <button onClick={copyLink} title="Copy Link" className="flex items-center justify-center gap-1 border border-slate-200 text-slate-400 hover:text-slate-600 hover:bg-slate-50 text-[9px] font-bold uppercase tracking-widest px-2 py-1.5 rounded-lg transition-colors w-full">
+                <LinkIcon className="w-3 h-3" />
+                Copy
+            </button>
+        </div>
     );
 
     const urlEntryToggle = (
@@ -301,6 +317,12 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
                     </div>
                 </div>
 
+                {/* Info Button Row */}
+                <div className="flex items-center gap-2 px-4 pb-1">
+                    <AnchorInfoPopup projectId={project.id} projectName={project.project_name} />
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Anchor & Target Info</span>
+                </div>
+
                 {/* Metadata Row */}
                 <div className="flex items-center gap-3 px-4 py-2">
                     <span className="text-[13px] font-bold text-slate-800">
@@ -322,7 +344,7 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
 
                 {/* Portal Access Row */}
                 <div className="flex items-center gap-2 px-4 py-2">
-                    {portalButtons}
+                    {portalButtonsMobile}
                 </div>
 
                 {/* Actions Footer */}
@@ -332,6 +354,7 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
             </div>
 
             {/* ── Desktop Row (≥ md) — 12-column grid ── */}
+            {/* Layout: [ID:2] [Name:2] [Info:1] [Region:2] [Fulfillment:2] [Portal:1] [Actions:2] = 12 */}
             <div className="hidden md:grid group grid-cols-12 items-center bg-white rounded-[12px] border border-slate-100 hover:border-slate-200 hover:shadow-sm transition-all relative">
                 {/* Col 1-2: Project ID + Category Badge */}
                 <div className="col-span-2 flex flex-col gap-1.5 px-4 py-4 border-r border-slate-100 min-w-0">
@@ -376,7 +399,12 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
                     })()}
                 </div>
 
-                {/* Col 5-6: Region / Delivery */}
+                {/* Col 5: Info Button */}
+                <div className="col-span-1 flex items-center justify-center px-2 py-4 border-r border-slate-100">
+                    <AnchorInfoPopup projectId={project.id} projectName={project.project_name} />
+                </div>
+
+                {/* Col 6-7: Region / Delivery */}
                 <div className="col-span-2 flex flex-col gap-1 px-4 py-4 border-r border-slate-100 min-w-0">
                     <span className="text-[13px] font-bold text-slate-800">
                         {project.country || 'GLOBAL'}{project.project_languages?.length > 0 && ` (${project.project_languages[0].lang_code})`}
@@ -386,7 +414,7 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
                     </span>
                 </div>
 
-                {/* Col 7-8: Fulfillment */}
+                {/* Col 8-9: Fulfillment */}
                 <div className="col-span-2 flex flex-col gap-2 px-4 py-4 border-r border-slate-100 min-w-0">
                     <div className="flex items-center gap-3">
                         <span className="text-xs font-bold text-slate-700">{completedLinks}/{totalLinks}</span>
@@ -395,8 +423,8 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
                     {progressBar}
                 </div>
 
-                {/* Col 9-10: Portal Access */}
-                <div className="col-span-2 flex items-center gap-2 px-4 py-4 border-r border-slate-100 min-w-0">
+                {/* Col 10: Portal Access (compact) */}
+                <div className="col-span-1 flex items-center justify-center px-2 py-4 border-r border-slate-100 min-w-0">
                     {portalButtons}
                 </div>
 

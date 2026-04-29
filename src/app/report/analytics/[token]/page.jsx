@@ -14,7 +14,7 @@ async function fetchReportStats(vendorId) {
         .select('id, project_id, domain_id, category, anchor_text, status, indexed_status, published_url');
     let projQ = supabase
         .from('projects')
-        .select('id, vendor_id, start_date, completed_date, price, price_type, total_quantity, status');
+        .select('id, vendor_id, project_name, start_date, completed_date, price, price_type, total_quantity, status, vendors(vendor_name)');
 
     if (vendorId) {
         placQ = placQ.eq('vendor_id', vendorId);
@@ -69,22 +69,31 @@ async function fetchReportStats(vendorId) {
 
     const projectIds = projects.map(p => p.id);
     let costPerCategory = [];
+    let costPerProject = { data: [], categories: [] };
+    let vendorCostPerProject = { data: [], vendorNames: [] };
+
     if (projectIds.length > 0) {
         const { data: targets } = await supabase
             .from('project_targets')
             .select('project_id, category, quantity_requested')
             .in('project_id', projectIds);
+
         if (targets && targets.length > 0) {
             const projectCostMap = {};
+            const projectNameMap = {};
             projects.forEach(p => {
                 const price = parseFloat(p.price) || 0;
                 projectCostMap[p.id] = p.price_type === 'package' ? price : price * (p.total_quantity || 1);
+                projectNameMap[p.id] = p.project_name || 'Unnamed';
             });
+
             const projectTotalQty = {};
-            const catCostMap = {};
             targets.forEach(t => {
                 projectTotalQty[t.project_id] = (projectTotalQty[t.project_id] || 0) + (t.quantity_requested || 0);
             });
+
+            // Cost Per Category
+            const catCostMap = {};
             targets.forEach(t => {
                 const projectCost = projectCostMap[t.project_id] || 0;
                 const total = projectTotalQty[t.project_id] || 1;
@@ -94,6 +103,52 @@ async function fetchReportStats(vendorId) {
             costPerCategory = Object.entries(catCostMap)
                 .sort((a, b) => b[1] - a[1])
                 .map(([category, cost]) => ({ category, cost: Math.round(cost * 100) / 100 }));
+
+            // Cost Per Project (stacked by category)
+            const allCategories = [...new Set(targets.map(t => t.category).filter(Boolean))];
+            const projNameCatMap = {};
+            targets.forEach(t => {
+                const name = projectNameMap[t.project_id];
+                if (!name) return;
+                const cost = projectCostMap[t.project_id] || 0;
+                const total = projectTotalQty[t.project_id] || 1;
+                const share = ((t.quantity_requested || 0) / total) * cost;
+                if (!projNameCatMap[name]) projNameCatMap[name] = {};
+                projNameCatMap[name][t.category] = (projNameCatMap[name][t.category] || 0) + share;
+            });
+            const costPerProjectData = Object.entries(projNameCatMap).map(([projectName, catMap]) => {
+                const row = { projectName };
+                let total = 0;
+                allCategories.forEach(cat => {
+                    row[cat] = Math.round((catMap[cat] || 0) * 100) / 100;
+                    total += row[cat];
+                });
+                row.totalCost = Math.round(total * 100) / 100;
+                return row;
+            }).sort((a, b) => b.totalCost - a.totalCost);
+            costPerProject = { data: costPerProjectData, categories: allCategories };
+
+            // Vendor Cost Per Project (stacked by vendor)
+            const allVendorNames = [...new Set(projects.map(p => p.vendors?.vendor_name).filter(Boolean))];
+            const projNameVendorMap = {};
+            projects.forEach(p => {
+                const name = p.project_name || 'Unnamed';
+                const vendor = p.vendors?.vendor_name || 'Unknown';
+                const cost = projectCostMap[p.id] || 0;
+                if (!projNameVendorMap[name]) projNameVendorMap[name] = {};
+                projNameVendorMap[name][vendor] = (projNameVendorMap[name][vendor] || 0) + cost;
+            });
+            const vendorCostData = Object.entries(projNameVendorMap).map(([projectName, vendorMap]) => {
+                const row = { projectName };
+                let total = 0;
+                allVendorNames.forEach(v => {
+                    row[v] = Math.round((vendorMap[v] || 0) * 100) / 100;
+                    total += row[v];
+                });
+                row.totalCost = Math.round(total * 100) / 100;
+                return row;
+            }).sort((a, b) => b.totalCost - a.totalCost);
+            vendorCostPerProject = { data: vendorCostData, vendorNames: allVendorNames };
         }
     }
 
@@ -115,12 +170,11 @@ async function fetchReportStats(vendorId) {
             count,
         }));
 
-    const statusCounts = {};
-    placements.forEach(p => {
-        const s = p.status || 'unknown';
-        statusCounts[s] = (statusCounts[s] || 0) + 1;
-    });
-    const placementStatusDist = Object.entries(statusCounts).map(([status, count]) => ({ status, count }));
+    const publishedCount = placements.filter(p => p.published_url?.trim()).length;
+    const publishedStatusDist = [
+        { status: 'Published', count: publishedCount },
+        { status: 'Not Published', count: placements.length - publishedCount },
+    ].filter(d => d.count > 0);
 
     const indexStatusMap = {};
     placements.forEach(p => {
@@ -168,7 +222,8 @@ async function fetchReportStats(vendorId) {
 
     return {
         indexRate, indexStatusBreakdown, monthlyCompletions, vendorSpeed,
-        costPerCategory, domainDiversity, anchorTextDist, placementStatusDist,
+        costPerCategory, costPerProject, vendorCostPerProject,
+        domainDiversity, anchorTextDist, publishedStatusDist,
         publishedPerCategory, employStatus, totalSpend,
         totalProjects: projects.length, totalPlacements,
     };

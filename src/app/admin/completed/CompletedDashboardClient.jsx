@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Search, CheckCircle2, XCircle, AlertTriangle, ShieldAlert } from 'lucide-react';
 import PlacementGroupCard from '../placements/PlacementGroupCard';
 import CopyButton from '../projects/CopyButton';
+import AnchorInfoPopup from '../placements/AnchorInfoPopup';
 
 // Risk tier config
 const TIER_CONFIG = {
@@ -54,6 +55,11 @@ function ClosedProjectRow({ project }) {
                         <> · Closed {new Date(project.closed_date).toLocaleDateString()}</>
                     )}
                 </p>
+            </div>
+
+            {/* Info Button */}
+            <div className="flex items-center justify-center shrink-0">
+                <AnchorInfoPopup projectId={project.id} projectName={project.project_name} />
             </div>
 
             {/* Fulfillment at time of close */}

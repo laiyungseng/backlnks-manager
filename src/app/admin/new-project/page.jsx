@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useActionState, useMemo, useRef, useEffect } from 'react';
-import { createCampaignAction } from './actions';
+import { createCampaignAction, getExistingCampaignTitles } from './actions';
 import { getCategories } from '../categories/actions';
 import { useFormStatus } from 'react-dom';
 import { Plus, Trash2, Languages, ChevronDown, ChevronUp } from 'lucide-react';
@@ -491,9 +491,11 @@ export default function NewProjectPage() {
     const [clientName, setClientName] = useState('');
     const [plans, setPlans] = useState([createEmptyPlan()]);
     const [categories, setCategories] = useState([]);
+    const [campaignSuggestions, setCampaignSuggestions] = useState([]);
 
     useEffect(() => {
         getCategories().then(res => { if (res.success) setCategories(res.categories); });
+        getExistingCampaignTitles().then(titles => setCampaignSuggestions(titles));
     }, []);
 
     // Auto-calc urls_per_day when plan fields change
@@ -619,8 +621,15 @@ export default function NewProjectPage() {
                             <label className="block text-sm font-medium text-gray-700 mb-1">Campaign Title *</label>
                             <input type="text" name="campaign_title" required value={campaignTitle}
                                 onChange={e => setCampaignTitle(e.target.value)}
+                                list="campaign-title-suggestions"
                                 placeholder="e.g. Client XYZ SEO Campaign Q2"
+                                autoComplete="off"
                                 className="block w-full border border-gray-300 rounded-md shadow-sm p-2.5 text-gray-900 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" />
+                            <datalist id="campaign-title-suggestions">
+                                {campaignSuggestions.map((title, i) => (
+                                    <option key={i} value={title} />
+                                ))}
+                            </datalist>
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Person in Charge *</label>

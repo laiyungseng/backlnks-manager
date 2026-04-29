@@ -103,12 +103,14 @@ export default function PlacementGroupCard({ group, isCompletedView }) {
                     ) : (
                         // Single campaign (most common): flat list with column headers
                         <>
+                            {/* Headers: [ID:2] [Name:2] [Info:1] [Region:2] [Fulfillment:2] [Portal:1] [Actions:2] = 12 */}
                             <div className="hidden md:grid grid-cols-12 px-6 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-200">
                                 <div className="col-span-2">Project ID</div>
                                 <div className="col-span-2">Project Name</div>
+                                <div className="col-span-1 text-center">Info</div>
                                 <div className="col-span-2">Region / Delivery</div>
                                 <div className="col-span-2">Fulfillment</div>
-                                <div className="col-span-2">Portal Access</div>
+                                <div className="col-span-1 text-center">Portal</div>
                                 <div className="col-span-2 text-right">
                                     {isCompletedView ? 'Status & Security' : 'Status & Actions'}
                                 </div>

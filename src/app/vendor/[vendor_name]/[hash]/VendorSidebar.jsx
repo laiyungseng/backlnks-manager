@@ -5,9 +5,59 @@ import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import {
     LayoutDashboard, Clock, Loader, CheckCircle2,
-    PanelLeftClose, PanelLeftOpen, LogOut, FolderOpen, ChevronRight
+    PanelLeftClose, PanelLeftOpen, LogOut, FolderOpen, ChevronRight,
+    Star, Gauge, ChevronDown
 } from 'lucide-react';
 import { vendorLogoutAction } from '@/app/vendor/actions';
+
+function ProjectLink({ p, currentHash, vendorName }) {
+    const isCurrent = p.hash === currentHash;
+    return (
+        <Link
+            href={`/vendor/${vendorName}/${p.hash}`}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${isCurrent
+                ? 'bg-indigo-50 text-indigo-700 border border-indigo-100'
+                : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+            }`}
+        >
+            <ChevronRight className={`w-3 h-3 shrink-0 ${isCurrent ? 'text-indigo-500' : 'text-gray-300'}`} />
+            <span className="truncate flex-1">{p.project_name || 'Unnamed'}</span>
+            <span className="flex items-center gap-1 shrink-0">
+                {p.is_priority && <Star className="w-3 h-3 text-amber-400 fill-amber-400" title="Priority" />}
+                {p.dripfeed_enabled && <Gauge className="w-3 h-3 text-sky-400" title="Dripfeed" />}
+                {isCurrent && <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />}
+            </span>
+        </Link>
+    );
+}
+
+function ProjectGroup({ label, icon: Icon, iconClass, items, currentHash, vendorName, defaultOpen = true }) {
+    const [open, setOpen] = useState(defaultOpen);
+    if (items.length === 0) return null;
+    return (
+        <div className="pt-2">
+            <button
+                type="button"
+                onClick={() => setOpen(v => !v)}
+                className="w-full flex items-center gap-1.5 px-3 py-1 hover:bg-gray-50 rounded-lg transition-colors"
+            >
+                <Icon className={`w-3.5 h-3.5 ${iconClass}`} />
+                <span className={`text-[10px] font-bold uppercase tracking-wider flex-1 text-left ${iconClass}`}>{label}</span>
+                <span className="text-[10px] font-mono text-gray-400 mr-1">{items.length}</span>
+                {open
+                    ? <ChevronDown className="w-3 h-3 text-gray-400" />
+                    : <ChevronRight className="w-3 h-3 text-gray-400" />}
+            </button>
+            {open && (
+                <div className="mt-0.5 space-y-0.5">
+                    {items.map(p => (
+                        <ProjectLink key={p.hash} p={p} currentHash={currentHash} vendorName={vendorName} />
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
 
 export default function VendorSidebar({ vendorName, vendorUuid, currentHash, projects }) {
     const [collapsed, setCollapsed] = useState(false);
@@ -15,6 +65,10 @@ export default function VendorSidebar({ vendorName, vendorUuid, currentHash, pro
 
     const displayName = vendorName.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
     const base = `/vendor/${vendorName}/portal/${vendorUuid}`;
+
+    const focusProjects = projects.filter(p => p.is_priority && p.status !== 'Finalized');
+    const inProgressProjects = projects.filter(p => !p.is_priority && p.status !== 'Finalized');
+    const completedProjects = projects.filter(p => p.status === 'Finalized');
 
     const navItems = [
         { label: 'Dashboard', href: `${base}/dashboard`, icon: LayoutDashboard },
@@ -59,54 +113,78 @@ export default function VendorSidebar({ vendorName, vendorUuid, currentHash, pro
                     );
                 })}
 
-                {/* Project switcher */}
+                {/* Project groups (expanded sidebar) */}
                 {projects.length > 0 && !collapsed && (
-                    <div className="pt-3">
-                        <div className="flex items-center gap-1.5 px-3 pb-1.5">
-                            <FolderOpen className="w-3.5 h-3.5 text-gray-400" />
-                            <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Projects</span>
-                        </div>
-                        <div className="space-y-0.5">
-                            {projects.map((p) => {
-                                const isCurrent = p.hash === currentHash;
-                                return (
-                                    <Link
-                                        key={p.hash}
-                                        href={`/vendor/${vendorName}/${p.hash}`}
-                                        className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${isCurrent
-                                            ? 'bg-indigo-50 text-indigo-700 border border-indigo-100'
-                                            : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                                        }`}
-                                    >
-                                        <ChevronRight className={`w-3 h-3 shrink-0 ${isCurrent ? 'text-indigo-500' : 'text-gray-300'}`} />
-                                        <span className="truncate">{p.project_name || 'Unnamed'}</span>
-                                        {isCurrent && <span className="ml-auto shrink-0 w-1.5 h-1.5 rounded-full bg-indigo-500" />}
-                                    </Link>
-                                );
-                            })}
-                        </div>
+                    <div className="pt-2 border-t border-gray-100 mt-2">
+                        <ProjectGroup
+                            label="Project Focus"
+                            icon={Star}
+                            iconClass="text-amber-500"
+                            items={focusProjects}
+                            currentHash={currentHash}
+                            vendorName={vendorName}
+                            defaultOpen={true}
+                        />
+                        <ProjectGroup
+                            label="In Progress"
+                            icon={Loader}
+                            iconClass="text-indigo-500"
+                            items={inProgressProjects}
+                            currentHash={currentHash}
+                            vendorName={vendorName}
+                            defaultOpen={true}
+                        />
+                        <ProjectGroup
+                            label="Completed"
+                            icon={CheckCircle2}
+                            iconClass="text-emerald-500"
+                            items={completedProjects}
+                            currentHash={currentHash}
+                            vendorName={vendorName}
+                            defaultOpen={false}
+                        />
                     </div>
                 )}
 
                 {/* Collapsed project dots */}
                 {projects.length > 0 && collapsed && (
                     <div className="pt-2 flex flex-col items-center gap-1">
-                        {projects.map((p) => {
-                            const isCurrent = p.hash === currentHash;
-                            return (
-                                <Link
-                                    key={p.hash}
-                                    href={`/vendor/${vendorName}/${p.hash}`}
-                                    title={p.project_name || 'Unnamed'}
-                                    className={`w-7 h-7 flex items-center justify-center rounded-lg transition-colors ${isCurrent
-                                        ? 'bg-indigo-50 text-indigo-600 border border-indigo-200'
-                                        : 'text-gray-400 hover:bg-gray-50 hover:text-gray-600'
-                                    }`}
-                                >
-                                    <FolderOpen className="w-3.5 h-3.5" />
-                                </Link>
-                            );
-                        })}
+                        {focusProjects.map(p => (
+                            <Link
+                                key={p.hash}
+                                href={`/vendor/${vendorName}/${p.hash}`}
+                                title={`[Focus] ${p.project_name || 'Unnamed'}${p.dripfeed_enabled ? ' · Dripfeed' : ''}`}
+                                className={`w-7 h-7 flex items-center justify-center rounded-lg transition-colors ${p.hash === currentHash ? 'bg-amber-50 text-amber-500 border border-amber-200' : 'text-amber-400 hover:bg-amber-50'}`}
+                            >
+                                <Star className="w-3.5 h-3.5 fill-current" />
+                            </Link>
+                        ))}
+                        {focusProjects.length > 0 && inProgressProjects.length > 0 && (
+                            <div className="w-4 border-t border-gray-200 my-0.5" />
+                        )}
+                        {inProgressProjects.map(p => (
+                            <Link
+                                key={p.hash}
+                                href={`/vendor/${vendorName}/${p.hash}`}
+                                title={`${p.project_name || 'Unnamed'}${p.dripfeed_enabled ? ' · Dripfeed' : ''}`}
+                                className={`w-7 h-7 flex items-center justify-center rounded-lg transition-colors ${p.hash === currentHash ? 'bg-indigo-50 text-indigo-600 border border-indigo-200' : 'text-gray-400 hover:bg-gray-50 hover:text-gray-600'}`}
+                            >
+                                <FolderOpen className="w-3.5 h-3.5" />
+                            </Link>
+                        ))}
+                        {completedProjects.length > 0 && (inProgressProjects.length > 0 || focusProjects.length > 0) && (
+                            <div className="w-4 border-t border-gray-200 my-0.5" />
+                        )}
+                        {completedProjects.map(p => (
+                            <Link
+                                key={p.hash}
+                                href={`/vendor/${vendorName}/${p.hash}`}
+                                title={`[Done] ${p.project_name || 'Unnamed'}`}
+                                className={`w-7 h-7 flex items-center justify-center rounded-lg transition-colors ${p.hash === currentHash ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'text-emerald-400 hover:bg-emerald-50'}`}
+                            >
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                            </Link>
+                        ))}
                     </div>
                 )}
             </nav>
@@ -125,7 +203,7 @@ export default function VendorSidebar({ vendorName, vendorUuid, currentHash, pro
                 </form>
                 <button
                     onClick={() => setCollapsed(!collapsed)}
-                    className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-gray-500 hover:text-gray-700 hover:bg-gray-50 transition-colors`}
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-gray-500 hover:text-gray-700 hover:bg-gray-50 transition-colors"
                     title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
                 >
                     {collapsed ? <PanelLeftOpen className="w-5 h-5" /> : <><PanelLeftClose className="w-5 h-5" /><span>Collapse</span></>}

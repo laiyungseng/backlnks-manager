@@ -6,6 +6,7 @@ import { parseDomainUrl } from '../../../../lib/utils';
 import { CheckCircle2, FileSpreadsheet, RefreshCw, Filter, ChevronDown, ChevronRight, Calendar, Lock, Unlock, Link, PlusCircle } from 'lucide-react';
 import { DataEditor, GridCellKind } from '@glideapps/glide-data-grid';
 import '@glideapps/glide-data-grid/dist/index.css';
+import { DropdownCell } from '@glideapps/glide-data-grid-cells';
 
 export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, dripfeedPeriod, urlsPerDay, isLocked = false, isFinalized = false, urlEntryEnabled = true, initialVersion = 1 }) {
     const [rows, setRows] = useState(initialRows || []);
@@ -327,11 +328,14 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
                 };
             case "indexed_status":
                 return {
-                    kind: GridCellKind.Text,
-                    data: dataRow.indexed_status || "",
-                    displayData: dataRow.indexed_status || "",
+                    kind: GridCellKind.Custom,
                     allowOverlay: !isLocked,
-                    readonly: isLocked
+                    copyData: dataRow.indexed_status || "",
+                    data: {
+                        kind: "dropdown-cell",
+                        allowedValues: ["", "page indexed", "page not indexed", "domain not indexed"],
+                        value: dataRow.indexed_status || "",
+                    },
                 };
             case "indexed_datetime": {
                 const raw = dataRow.indexed_datetime || "";
@@ -377,7 +381,9 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
         const originalIdx = rows.findIndex(r => r.id === dataRow.id);
         if (originalIdx === -1) return;
 
-        let valToSet = newValue.data;
+        let valToSet = newValue.kind === GridCellKind.Custom
+            ? (newValue.data?.value ?? '')
+            : newValue.data;
 
         // If manual URL entry is enabled, ensure typed/pasted URLs into domain_url are cleanly parsed
         if (field === 'domain_url') {
@@ -892,6 +898,7 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
                             smoothScrollX={true}
                             smoothScrollY={true}
                             rowMarkers="both"
+                            customRenderers={[DropdownCell]}
                         />
                     )}
                 </div>

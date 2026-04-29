@@ -25,6 +25,17 @@ async function resolveVendor(supabase, vendorName) {
     return newV.id;
 }
 
+export async function getExistingCampaignTitles() {
+    try { await requireAdmin(); } catch { return []; }
+    const supabase = getServerSupabase();
+    const { data } = await supabase
+        .from('project_campaigns')
+        .select('title')
+        .order('created_at', { ascending: false })
+        .limit(200);
+    return [...new Set((data || []).map(r => r.title).filter(Boolean))];
+}
+
 export async function createCampaignAction(prevState, formData) {
     try { await requireAdmin(); } catch { return { success: false, message: 'Unauthorized.' }; }
 

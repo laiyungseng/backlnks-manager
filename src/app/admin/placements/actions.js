@@ -147,6 +147,35 @@ export async function toggleUrlEntryAction(projectId, newValue) {
     return { success: true };
 }
 
+export async function getAnchorInfoAction(projectId) {
+    if (!projectId) return { success: false, anchorTexts: [], targetUrls: [] };
+
+    const supabase = getServerSupabase();
+
+    // Anchor texts from finalized placements
+    const { data: placementRows } = await supabase
+        .from('placements')
+        .select('anchor_text')
+        .eq('project_id', projectId);
+
+    const finalizedAnchors = (placementRows || []).map(p => p.anchor_text).filter(Boolean);
+
+    // Anchor texts + target URLs from projects_hub.targets
+    const { data: hub } = await supabase
+        .from('projects_hub')
+        .select('targets')
+        .eq('project_id', projectId)
+        .single();
+
+    const targetRows = Array.isArray(hub?.targets) ? hub.targets : [];
+    const stagingAnchors = targetRows.map(r => r.anchor_text).filter(Boolean);
+    const targetUrls = [...new Set(targetRows.map(r => r.target_url).filter(Boolean))];
+
+    const anchorTexts = [...new Set([...finalizedAnchors, ...stagingAnchors])];
+
+    return { success: true, anchorTexts, targetUrls };
+}
+
 export async function closeProjectAction(projectId, vendorId, reason) {
     if (!projectId || !vendorId) {
         return { success: false, message: 'Invalid project or vendor reference.' };
