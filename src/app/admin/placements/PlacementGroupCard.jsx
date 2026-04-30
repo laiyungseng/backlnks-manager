@@ -47,8 +47,10 @@ export default function PlacementGroupCard({ group, isCompletedView }) {
     const campaignEntries = Object.entries(campaignGroups);
     const isMultiCampaign = campaignEntries.length > 1;
 
+    const vendorSlug = vendorName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+
     return (
-        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm mb-6 transition-all border-l-4 border-l-indigo-500">
+        <div id={`vendor-${vendorSlug}`} className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm mb-6 transition-all border-l-4 border-l-indigo-500">
             {/* Vendor Header */}
             <div className={`p-6 flex items-center justify-between transition-colors ${isCompletedView ? 'bg-emerald-50/10' : 'bg-white'}`}>
                 <div className="flex items-center gap-5">
@@ -103,15 +105,14 @@ export default function PlacementGroupCard({ group, isCompletedView }) {
                     ) : (
                         // Single campaign (most common): flat list with column headers
                         <>
-                            {/* Headers: [ID:2] [Name:2] [Info:1] [Region:2] [Fulfillment:2] [Portal:1] [Actions:2] = 12 */}
+                            {/* Headers: [ID:2] [Name+Info:3] [Region:1] [Fulfillment:2] [Portal:1] [Actions:3] = 12 */}
                             <div className="hidden md:grid grid-cols-12 px-6 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-200">
                                 <div className="col-span-2">Project ID</div>
-                                <div className="col-span-2">Project Name</div>
-                                <div className="col-span-1 text-center">Info</div>
-                                <div className="col-span-2">Region / Delivery</div>
+                                <div className="col-span-3">Project Name</div>
+                                <div className="col-span-1">Region</div>
                                 <div className="col-span-2">Fulfillment</div>
                                 <div className="col-span-1 text-center">Portal</div>
-                                <div className="col-span-2 text-right">
+                                <div className="col-span-3 text-right">
                                     {isCompletedView ? 'Status & Security' : 'Status & Actions'}
                                 </div>
                             </div>

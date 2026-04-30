@@ -203,6 +203,60 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
         setTimeout(() => setFeedback({ type: '', message: '' }), 3000);
     }, [isLocked]);
 
+    const [showBulkIndexModal, setShowBulkIndexModal] = useState(false);
+    const [bulkIndexText, setBulkIndexText] = useState('');
+    const [bulkIndexMode, setBulkIndexMode] = useState('empty');
+
+    const ALLOWED_INDEX_VALUES = ['', 'page indexed', 'page not indexed', 'domain not indexed'];
+
+    const normalizeIndexStatus = (raw) => {
+        const v = (raw || '').toLowerCase().trim();
+        if (!v) return '';
+        if (v === 'page indexed' || v === 'indexed') return 'page indexed';
+        if (v === 'page not indexed' || v === 'not indexed') return 'page not indexed';
+        if (v === 'domain not indexed') return 'domain not indexed';
+        // best-effort partial match
+        if (v.includes('domain')) return 'domain not indexed';
+        if (v.includes('not')) return 'page not indexed';
+        if (v.includes('index')) return 'page indexed';
+        return '';
+    };
+
+    const handleBulkIndexApply = useCallback(() => {
+        if (isLocked) return;
+        const values = bulkIndexText
+            .split('\n')
+            .map(v => normalizeIndexStatus(v));
+
+        if (values.length === 0) return;
+
+        setRows(prevRows => {
+            const newRows = [...prevRows];
+            const targets = bulkIndexMode === 'empty'
+                ? newRows.map((r, idx) => ({ r, idx })).filter(({ r }) => !r.indexed_status || r.indexed_status.trim() === '')
+                : newRows.map((r, idx) => ({ r, idx }));
+
+            values.forEach((val, i) => {
+                if (i >= targets.length) return;
+                const { idx } = targets[i];
+                newRows[idx] = {
+                    ...newRows[idx],
+                    indexed_status: val,
+                    indexed_datetime: val ? new Date().toISOString() : '',
+                };
+            });
+            return newRows;
+        });
+
+        setIsDirty(true);
+        isDirtyRef.current = true;
+        setShowBulkIndexModal(false);
+        setBulkIndexText('');
+        const filled = values.filter(v => v).length;
+        setFeedback({ type: 'success', message: `${filled} index status value(s) applied.` });
+        setTimeout(() => setFeedback({ type: '', message: '' }), 3000);
+    }, [bulkIndexText, bulkIndexMode, isLocked]);
+
     // Apply exact-match Filters for the dropdowns
     const filteredRows = useMemo(() => {
         if (!isFilterActive) return rows;
@@ -756,6 +810,15 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
                             <PlusCircle className="w-4 h-4" />
                             Add Extra Placement
                         </button>
+
+                        <button
+                            onClick={() => setShowBulkIndexModal(true)}
+                            disabled={isLocked}
+                            className="flex items-center justify-center sm:justify-start gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md text-sm font-bold hover:bg-emerald-100 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            <FileSpreadsheet className="w-4 h-4" />
+                            Paste Index Status
+                        </button>
                     </div>
 
                     <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
@@ -908,6 +971,86 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
                     {isFilterActive && <span>Filters refer to Target Authority, Anchor Text, Last Published, and Remarks</span>}
                 </div>
             </div>
+
+            {/* Bulk Index Status Paste Modal */}
+
+            {showBulkIndexModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
+                    <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden">
+                        {/* Header */}
+                        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-0.5">Bulk Fill</p>
+                            <p className="text-sm font-bold text-slate-800">Paste Index Status from Sheet</p>
+                        </div>
+
+                        {/* Body */}
+                        <div className="px-6 py-5 space-y-4">
+                            {/* Allowed values hint */}
+                            <div className="flex flex-wrap gap-1.5">
+                                {['page indexed', 'page not indexed', 'domain not indexed'].map(v => (
+                                    <span key={v} className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded text-[10px] font-bold uppercase tracking-widest">
+                                        {v}
+                                    </span>
+                                ))}
+                            </div>
+                            <p className="text-[10px] text-slate-400">Values are matched case-insensitively. Blank lines are skipped.</p>
+
+                            {/* Fill mode */}
+                            <div className="flex gap-2">
+                                {[
+                                    { val: 'empty', label: 'Empty rows only' },
+                                    { val: 'all', label: 'Overwrite all rows' },
+                                ].map(opt => (
+                                    <button
+                                        key={opt.val}
+                                        onClick={() => setBulkIndexMode(opt.val)}
+                                        className={`flex-1 py-2 rounded-lg border text-[11px] font-black uppercase tracking-widest transition-colors ${
+                                            bulkIndexMode === opt.val
+                                                ? 'bg-emerald-600 text-white border-emerald-600'
+                                                : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+                                        }`}
+                                    >
+                                        {opt.label}
+                                    </button>
+                                ))}
+                            </div>
+
+                            {/* Textarea */}
+                            <textarea
+                                value={bulkIndexText}
+                                onChange={e => setBulkIndexText(e.target.value)}
+                                placeholder={"page indexed\npage not indexed\ndomain not indexed\n..."}
+                                rows={8}
+                                className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm font-mono text-slate-700 resize-none focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 bg-slate-50"
+                            />
+
+                            {/* Row count preview */}
+                            {bulkIndexText.trim() && (
+                                <p className="text-[11px] text-slate-500 font-semibold">
+                                    {bulkIndexText.split('\n').filter(v => v.trim()).length} row(s) will be applied
+                                </p>
+                            )}
+                        </div>
+
+                        {/* Footer */}
+                        <div className="px-6 py-4 border-t border-slate-100 flex gap-3 justify-end">
+                            <button
+                                onClick={() => { setShowBulkIndexModal(false); setBulkIndexText(''); }}
+                                className="px-4 py-2 text-sm font-bold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleBulkIndexApply}
+                                disabled={!bulkIndexText.trim()}
+                                className="px-4 py-2 text-sm font-black text-white bg-emerald-600 border border-emerald-600 rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                                Apply
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

@@ -7,6 +7,7 @@ import { finalizeProjectAction, toggleProjectLockAction, closeProjectAction, tog
 import CopyButton from '../projects/CopyButton';
 import CloseProjectModal from './CloseProjectModal';
 import AnchorInfoPopup from './AnchorInfoPopup';
+import CampaignSiblingsPopup from './CampaignSiblingsPopup';
 
 const RISK_TIER_STYLES = {
     'NO RESPONSE':                 { bg: 'bg-orange-100', text: 'text-orange-700', border: 'border-orange-200', icon: AlertTriangle },
@@ -231,13 +232,13 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
                 <button
                     onClick={handleFinalize}
                     disabled={isFinalizing}
-                    className="px-4 py-2 bg-emerald-50 text-emerald-600 border border-emerald-100 hover:bg-emerald-100 rounded-lg font-black text-[10px] uppercase tracking-widest transition-all shadow-sm flex items-center gap-1.5 justify-center min-w-[90px]"
+                    className="px-3 py-1.5 bg-emerald-50 text-emerald-600 border border-emerald-100 hover:bg-emerald-100 rounded-lg font-black text-[10px] uppercase tracking-widest transition-all shadow-sm flex items-center gap-1 justify-center min-w-[76px]"
                 >
                     <CheckCircle2 className="w-3.5 h-3.5" />
                     {isFinalizing ? '...' : 'Process'}
                 </button>
             ) : (
-                <button disabled className="px-4 py-2 bg-slate-50 text-slate-400 border border-slate-100 rounded-lg font-black text-[10px] uppercase tracking-widest opacity-60 flex items-center gap-1.5 justify-center min-w-[90px] cursor-not-allowed">
+                <button disabled className="px-3 py-1.5 bg-slate-50 text-slate-400 border border-slate-100 rounded-lg font-black text-[10px] uppercase tracking-widest opacity-60 flex items-center gap-1 justify-center min-w-[76px] cursor-not-allowed">
                     <CheckCircle2 className="w-3.5 h-3.5" />
                     Process
                 </button>
@@ -320,7 +321,8 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
                 {/* Info Button Row */}
                 <div className="flex items-center gap-2 px-4 pb-1">
                     <AnchorInfoPopup projectId={project.id} projectName={project.project_name} />
-                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Anchor & Target Info</span>
+                    <CampaignSiblingsPopup projectId={project.id} projectName={project.project_name} />
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Anchor & Campaign Info</span>
                 </div>
 
                 {/* Metadata Row */}
@@ -354,82 +356,87 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
             </div>
 
             {/* ── Desktop Row (≥ md) — 12-column grid ── */}
-            {/* Layout: [ID:2] [Name:2] [Info:1] [Region:2] [Fulfillment:2] [Portal:1] [Actions:2] = 12 */}
+            {/* Layout: [ID:2] [Name+Info:3] [Region:1] [Fulfillment:2] [Portal:1] [Actions:3] = 12 */}
             <div className="hidden md:grid group grid-cols-12 items-center bg-white rounded-[12px] border border-slate-100 hover:border-slate-200 hover:shadow-sm transition-all relative">
                 {/* Col 1-2: Project ID + Category Badge */}
-                <div className="col-span-2 flex flex-col gap-1.5 px-4 py-4 border-r border-slate-100 min-w-0">
-                    <div className="flex items-center gap-1">
+                <div className="col-span-2 flex flex-col gap-1.5 px-3 py-3 border-r border-slate-100 min-w-0 overflow-hidden">
+                    <div className="flex items-center gap-1 min-w-0">
                         <span className="text-xs font-mono text-slate-500 cursor-help truncate" title={project.id}>
                             {project.id?.substring(0, 6)}...
                         </span>
                         <CopyButton textToCopy={project.id} />
                     </div>
-                    <div className="flex flex-wrap gap-1">
+                    <div className="flex gap-1 min-w-0">
                         {chipLabels.slice(0, 1).map((lbl, i) => (
-                            <span key={i} className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded text-[9px] font-black tracking-widest uppercase truncate max-w-[100px]">
+                            <span key={i} className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded text-[9px] font-black tracking-widest uppercase truncate max-w-[90px]">
                                 {lbl}
                             </span>
                         ))}
                     </div>
                 </div>
 
-                {/* Col 3-4: Project Name + Date / Status Badge */}
-                <div className="col-span-2 flex flex-col gap-1 px-4 py-4 border-r border-slate-100 min-w-0">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="text-sm font-bold text-slate-900 line-clamp-1" title={project.project_name}>
-                            {project.project_name || 'Unnamed Project'}
-                        </span>
-                        {project.created_date && (
-                            <span className="text-[10px] font-semibold text-slate-400 shrink-0">
-                                {new Date(project.created_date).toLocaleDateString()}
+                {/* Col 3-5: Project Name + Date / Status Badge + Info Button (merged) */}
+                <div className="col-span-3 flex items-center gap-2 px-3 py-3 border-r border-slate-100 min-w-0 overflow-hidden">
+                    {/* Name / badges — flex-1 so info button doesn't get squashed */}
+                    <div className="flex flex-col gap-1 flex-1 min-w-0 overflow-hidden">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="text-sm font-bold text-slate-900 truncate min-w-0" title={project.project_name}>
+                                {project.project_name || 'Unnamed Project'}
                             </span>
-                        )}
+                            {project.created_date && (
+                                <span className="text-[10px] font-semibold text-slate-400 shrink-0 whitespace-nowrap">
+                                    {new Date(project.created_date).toLocaleDateString()}
+                                </span>
+                            )}
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                            <span className={`px-2 py-0.5 text-[9px] font-black rounded uppercase tracking-widest self-start whitespace-nowrap ${statusStyle.bg}`}>
+                                {statusStyle.label}
+                            </span>
+                            {riskTier && riskStyle && (() => {
+                                const RiskIcon = riskStyle.icon;
+                                return (
+                                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-[9px] font-black rounded-md border uppercase tracking-widest self-start whitespace-nowrap ${riskStyle.bg} ${riskStyle.text} ${riskStyle.border}`}>
+                                        <RiskIcon className="w-2.5 h-2.5" />
+                                        {riskTier}
+                                    </span>
+                                );
+                            })()}
+                        </div>
                     </div>
-                    <span className={`px-2 py-0.5 text-[9px] font-black rounded uppercase tracking-widest self-start ${statusStyle.bg}`}>
-                        {statusStyle.label}
-                    </span>
-                    {riskTier && riskStyle && (() => {
-                        const RiskIcon = riskStyle.icon;
-                        return (
-                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-[9px] font-black rounded-md border uppercase tracking-widest self-start mt-0.5 ${riskStyle.bg} ${riskStyle.text} ${riskStyle.border}`}>
-                                <RiskIcon className="w-2.5 h-2.5" />
-                                {riskTier}
-                            </span>
-                        );
-                    })()}
+                    {/* Info buttons pinned to the right edge of this cell */}
+                    <div className="flex flex-col gap-1 shrink-0 pl-1">
+                        <AnchorInfoPopup projectId={project.id} projectName={project.project_name} />
+                        <CampaignSiblingsPopup projectId={project.id} projectName={project.project_name} />
+                    </div>
                 </div>
 
-                {/* Col 5: Info Button */}
-                <div className="col-span-1 flex items-center justify-center px-2 py-4 border-r border-slate-100">
-                    <AnchorInfoPopup projectId={project.id} projectName={project.project_name} />
-                </div>
-
-                {/* Col 6-7: Region / Delivery */}
-                <div className="col-span-2 flex flex-col gap-1 px-4 py-4 border-r border-slate-100 min-w-0">
-                    <span className="text-[13px] font-bold text-slate-800">
+                {/* Col 6: Region / Delivery */}
+                <div className="col-span-1 flex flex-col gap-0.5 px-1.5 py-1.5 border-r border-slate-100 min-w-0 overflow-hidden">
+                    <span className="text-[13px] font-bold text-slate-800 truncate">
                         {project.country || 'GLOBAL'}{project.project_languages?.length > 0 && ` (${project.project_languages[0].lang_code})`}
                     </span>
-                    <span className="text-[11px] font-semibold text-indigo-600 italic">
+                    <span className="text-[11px] font-semibold text-indigo-600 italic truncate">
                         {project.dripfeed_enabled ? `${project.urls_per_day} URL/day (${project.dripfeed_period || 0} days)` : 'No Dripfeed'}
                     </span>
                 </div>
 
-                {/* Col 8-9: Fulfillment */}
-                <div className="col-span-2 flex flex-col gap-2 px-4 py-4 border-r border-slate-100 min-w-0">
-                    <div className="flex items-center gap-3">
+                {/* Col 7-8: Fulfillment */}
+                <div className="col-span-2 flex flex-col gap-2 px-3 py-3 border-r border-slate-100 min-w-0">
+                    <div className="flex items-center gap-2">
                         <span className="text-xs font-bold text-slate-700">{completedLinks}/{totalLinks}</span>
                         <span className="text-xs font-bold text-slate-500">{percentage}%</span>
                     </div>
                     {progressBar}
                 </div>
 
-                {/* Col 10: Portal Access (compact) */}
-                <div className="col-span-1 flex items-center justify-center px-2 py-4 border-r border-slate-100 min-w-0">
+                {/* Col 9: Portal Access */}
+                <div className="col-span-1 flex items-center justify-center px-1.5 py-3 border-r border-slate-100 min-w-0 overflow-hidden">
                     {portalButtons}
                 </div>
 
-                {/* Col 11-12: Status & Actions */}
-                <div className="col-span-2 flex items-center gap-2 justify-end px-4 py-4 min-w-0">
+                {/* Col 10-12: Status & Actions */}
+                <div className="col-span-3 flex items-center gap-1.5 justify-end px-3 py-3 min-w-0">
                     {actionButtons}
                 </div>
             </div>

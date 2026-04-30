@@ -3,8 +3,9 @@
 import { useState, useActionState, useMemo, useRef, useEffect } from 'react';
 import { createCampaignAction, getExistingCampaignTitles } from './actions';
 import { getCategories } from '../categories/actions';
+import { getAvailablePackagesAction } from '../backlinks-package/actions';
 import { useFormStatus } from 'react-dom';
-import { Plus, Trash2, Languages, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Trash2, Languages, ChevronDown, ChevronUp, Package, Loader2 } from 'lucide-react';
 
 function addDaysToDateStr(dateStr, days) {
     const [y, m, d] = dateStr.split('-').map(Number);
@@ -39,6 +40,7 @@ function createEmptyPlan() {
         manualOverride: false,
         price: 0,
         price_type: 'per_url',
+        package_id: null,
         randomize_languages: false,
         remarks: '',
         total_quantity: 0,
@@ -93,8 +95,9 @@ function SubmitButton({ isValid }) {
     );
 }
 
-function PlanCard({ plan, planIndex, categories, onUpdate, onRemove, canRemove }) {
+function PlanCard({ plan, planIndex, categories, onUpdate, onRemove, canRemove, vendorPackages, allPlans, onLoadPackages }) {
     const [collapsed, setCollapsed] = useState(false);
+    const [packagesLoading, setPackagesLoading] = useState(false);
 
     const masterQty = parseInt(plan.total_quantity) || 0;
     const planQty = getPlanQuantity(plan);
@@ -179,6 +182,24 @@ function PlanCard({ plan, planIndex, categories, onUpdate, onRemove, canRemove }
             return !u.hostname.includes('.');
         } catch { return true; }
     };
+
+    // Load packages for this plan's vendor when price_type = 'package' and vendor is set
+    useEffect(() => {
+        if (plan.price_type !== 'package' || !plan.vendor_name?.trim()) return;
+        if (vendorPackages[plan.vendor_name]) return; // already cached
+        setPackagesLoading(true);
+        onLoadPackages(plan.vendor_name).finally(() => setPackagesLoading(false));
+    }, [plan.price_type, plan.vendor_name]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    const availablePackages = vendorPackages[plan.vendor_name] || [];
+
+    // Compute effective remaining per package (subtract cross-plan usage in this form)
+    function getEffectiveRemaining(pkg) {
+        const otherUsage = (allPlans || [])
+            .filter(p => p.id !== plan.id && p.package_id === pkg.id)
+            .reduce((s, p) => s + (parseInt(p.total_quantity) || 0), 0);
+        return Math.max(0, pkg.remaining_quantity - otherUsage);
+    }
 
     return (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
@@ -279,16 +300,92 @@ function PlanCard({ plan, planIndex, categories, onUpdate, onRemove, canRemove }
                                     className="pl-7 block w-full border border-gray-300 rounded-md p-2.5 text-sm font-mono focus:ring-indigo-500 focus:border-indigo-500" placeholder="0.00" />
                             </div>
                             <div className="flex bg-gray-100 rounded-lg p-1">
-                                <button type="button" onClick={() => set('price_type', 'per_url')}
+                                <button type="button" onClick={() => onUpdate(plan.id, { price_type: 'per_url', package_id: null })}
                                     className={`flex-1 text-xs font-semibold py-1.5 px-2 rounded-md transition-colors ${plan.price_type === 'per_url' ? 'bg-white shadow-sm text-indigo-700' : 'text-gray-500'}`}>
                                     Per URL
                                 </button>
-                                <button type="button" onClick={() => set('price_type', 'package')}
+                                <button type="button" onClick={() => {
+                                    onUpdate(plan.id, { price_type: 'package' });
+                                    if (plan.vendor_name?.trim()) onLoadPackages(plan.vendor_name);
+                                }}
                                     className={`flex-1 text-xs font-semibold py-1.5 px-2 rounded-md transition-colors ${plan.price_type === 'package' ? 'bg-white shadow-sm text-indigo-700' : 'text-gray-500'}`}>
                                     Package
                                 </button>
                             </div>
                         </div>
+                    </div>
+
+                    {/* Package Selection — enabled only when price_type = 'package' */}
+                    <div className={`rounded-lg p-4 border transition-all ${plan.price_type === 'package' ? 'bg-indigo-50 border-indigo-200' : 'bg-gray-50 border-gray-200 opacity-50 pointer-events-none'}`}>
+                        <div className="flex items-center gap-2 mb-3">
+                            <Package className="w-4 h-4 text-indigo-500" />
+                            <h3 className="text-sm font-bold text-gray-800">Package Selection</h3>
+                            {plan.price_type !== 'package' && (
+                                <span className="text-[10px] text-gray-400 font-semibold">— select "Package" pricing to enable</span>
+                            )}
+                        </div>
+                        {plan.price_type === 'package' && (
+                            <>
+                                {!plan.vendor_name?.trim() ? (
+                                    <p className="text-xs text-amber-600 font-semibold">Enter a vendor name above to load available packages.</p>
+                                ) : packagesLoading ? (
+                                    <div className="flex items-center gap-2 text-xs text-slate-400">
+                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                        Loading packages for {plan.vendor_name}…
+                                    </div>
+                                ) : availablePackages.length === 0 ? (
+                                    <p className="text-xs text-slate-400 italic">No packages found for <strong>{plan.vendor_name}</strong>. Add packages in the Backlink Packages page first.</p>
+                                ) : (
+                                    <div className="flex flex-col gap-1">
+                                        <label className="text-xs font-semibold text-gray-600 mb-1">Select Package *</label>
+                                        <select
+                                            value={plan.package_id || ''}
+                                            onChange={e => set('package_id', e.target.value || null)}
+                                            className="block w-full border border-indigo-200 rounded-md p-2.5 text-sm text-gray-900 bg-white focus:ring-indigo-500 focus:border-indigo-500"
+                                        >
+                                            <option value="">— Choose a package —</option>
+                                            {availablePackages.map(pkg => {
+                                                const effRemaining = getEffectiveRemaining(pkg);
+                                                const isSufficient = effRemaining >= (parseInt(plan.total_quantity) || 0);
+                                                return (
+                                                    <option
+                                                        key={pkg.id}
+                                                        value={pkg.id}
+                                                        disabled={effRemaining <= 0}
+                                                    >
+                                                        {pkg.code} | {pkg.vendor_name} | {effRemaining}/{pkg.total_quantity}
+                                                        {effRemaining <= 0 ? ' (exhausted)' : !isSufficient ? ' ⚠ insufficient qty' : ''}
+                                                    </option>
+                                                );
+                                            })}
+                                        </select>
+                                        {plan.package_id && (() => {
+                                            const sel = availablePackages.find(p => p.id === plan.package_id);
+                                            if (!sel) return null;
+                                            const eff = getEffectiveRemaining(sel);
+                                            const qty = parseInt(plan.total_quantity) || 0;
+                                            const placementCategories = (plan.project_info_groups || []).map(g => (g.category || '').toLowerCase());
+                                            const pkgCategory = (sel.category || '').toLowerCase();
+                                            const categoryMismatch = pkgCategory && placementCategories.length > 0 && !placementCategories.includes(pkgCategory);
+                                            return (
+                                                <>
+                                                    <div className={`mt-2 text-xs font-semibold px-3 py-1.5 rounded-lg ${eff >= qty ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
+                                                        {eff >= qty
+                                                            ? `✓ ${eff} remaining — sufficient for ${qty} qty`
+                                                            : `⚠ Only ${eff} remaining — insufficient for ${qty} qty`}
+                                                    </div>
+                                                    {categoryMismatch && (
+                                                        <div className="mt-2 text-xs font-semibold px-3 py-1.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-200">
+                                                            ⚠ Package category (<strong>{sel.category}</strong>) doesn't match any placement group in this plan. You can still proceed if this is intentional.
+                                                        </div>
+                                                    )}
+                                                </>
+                                            );
+                                        })()}
+                                    </div>
+                                )}
+                            </>
+                        )}
                     </div>
 
                     {/* Drip Feed */}
@@ -492,6 +589,7 @@ export default function NewProjectPage() {
     const [plans, setPlans] = useState([createEmptyPlan()]);
     const [categories, setCategories] = useState([]);
     const [campaignSuggestions, setCampaignSuggestions] = useState([]);
+    const [vendorPackages, setVendorPackages] = useState({}); // { [vendorName]: Package[] }
 
     useEffect(() => {
         getCategories().then(res => { if (res.success) setCategories(res.categories); });
@@ -553,6 +651,13 @@ export default function NewProjectPage() {
         }
     }, [state?.success, state?.results]);
 
+    const loadVendorPackages = async (vendorName) => {
+        if (!vendorName?.trim()) return;
+        if (vendorPackages[vendorName]) return; // already loaded
+        const pkgs = await getAvailablePackagesAction(vendorName);
+        setVendorPackages(prev => ({ ...prev, [vendorName]: pkgs }));
+    };
+
     const updatePlan = (planId, fieldOrPatch, value) => {
         setPlans(prev => prev.map(p => {
             if (p.id !== planId) return p;
@@ -575,6 +680,18 @@ export default function NewProjectPage() {
             if (langSum !== masterQty || targetSum !== masterQty) return false;
             if (!(plan.languages || []).every(l => l.code.trim())) return false;
             if (!(plan.project_info_groups || []).every(g => g.category !== 'NULL')) return false;
+            if (plan.price_type === 'package') {
+                if (!plan.package_id) return false;
+                const pkgList = vendorPackages[plan.vendor_name] || [];
+                const pkg = pkgList.find(p => p.id === plan.package_id);
+                if (pkg) {
+                    const otherUsage = plans
+                        .filter(p => p.id !== plan.id && p.package_id === plan.package_id)
+                        .reduce((s, p) => s + (parseInt(p.total_quantity) || 0), 0);
+                    const effRemaining = Math.max(0, pkg.remaining_quantity - otherUsage);
+                    if (effRemaining < masterQty) return false;
+                }
+            }
             return true;
         });
     }, [campaignTitle, personInCharge, plans]);
@@ -662,7 +779,10 @@ export default function NewProjectPage() {
                             categories={categories}
                             onUpdate={updatePlan}
                             onRemove={removePlan}
-                            canRemove={plans.length > 1} />
+                            canRemove={plans.length > 1}
+                            vendorPackages={vendorPackages}
+                            allPlans={plans}
+                            onLoadPackages={loadVendorPackages} />
                     ))}
                 </div>
 

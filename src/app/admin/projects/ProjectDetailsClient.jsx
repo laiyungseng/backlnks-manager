@@ -274,15 +274,39 @@ export default function ProjectDetailsClient({ initialProjects }) {
                                             )}
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap">
-                                            <div className="flex flex-col gap-0.5">
-                                                <span className="text-xs font-semibold text-slate-700 tabular-nums">
-                                                    {project.start_date ? new Date(project.start_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
-                                                </span>
-                                                <span className="text-[10px] text-slate-400">→</span>
-                                                <span className="text-xs font-semibold text-slate-700 tabular-nums">
-                                                    {project.deadline ? new Date(project.deadline).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
-                                                </span>
-                                            </div>
+                                            {isEditMode ? (
+                                                <div className="flex flex-col gap-2">
+                                                    <div className="flex flex-col gap-0.5">
+                                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Start Date</span>
+                                                        <input
+                                                            type="date"
+                                                            value={project.start_date ? project.start_date.substring(0, 10) : ''}
+                                                            onChange={e => handleFieldChange(project.id, 'start_date', e.target.value || null)}
+                                                            className="px-2 py-1 border border-slate-200 focus:ring-2 focus:ring-indigo-500 rounded-md text-xs outline-none w-36"
+                                                        />
+                                                    </div>
+                                                    <div className="flex flex-col gap-0.5">
+                                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">End Date</span>
+                                                        <input
+                                                            type="date"
+                                                            value={project.deadline ? project.deadline.substring(0, 10) : ''}
+                                                            onChange={e => handleFieldChange(project.id, 'deadline', e.target.value || null)}
+                                                            className="px-2 py-1 border border-slate-200 focus:ring-2 focus:ring-indigo-500 rounded-md text-xs outline-none w-36"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="flex flex-col gap-0.5">
+                                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Start</span>
+                                                    <span className="text-xs font-semibold text-slate-700 tabular-nums">
+                                                        {project.start_date ? new Date(project.start_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                                                    </span>
+                                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">End</span>
+                                                    <span className="text-xs font-semibold text-slate-700 tabular-nums">
+                                                        {project.deadline ? new Date(project.deadline).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                                                    </span>
+                                                </div>
+                                            )}
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap">
                                             <div className="flex flex-col gap-2 items-center">

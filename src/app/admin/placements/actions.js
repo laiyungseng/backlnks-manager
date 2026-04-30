@@ -176,6 +176,39 @@ export async function getAnchorInfoAction(projectId) {
     return { success: true, anchorTexts, targetUrls };
 }
 
+export async function getCampaignSiblingsAction(projectId) {
+    if (!projectId) return [];
+
+    const supabase = getServerSupabase();
+
+    // Find the campaign_id for this project via project_plans
+    const { data: planRow } = await supabase
+        .from('project_plans')
+        .select('campaign_id')
+        .eq('project_id', projectId)
+        .single();
+
+    if (!planRow?.campaign_id) return [];
+
+    // Fetch all sibling plans under the same campaign
+    const { data: siblings } = await supabase
+        .from('project_plans')
+        .select('project_id, projects ( id, project_name, status, vendors ( vendor_name ) )')
+        .eq('campaign_id', planRow.campaign_id);
+
+    if (!siblings) return [];
+
+    return siblings
+        .map(s => s.projects)
+        .filter(Boolean)
+        .map(p => ({
+            id: p.id,
+            project_name: p.project_name || 'Unnamed Project',
+            status: p.status || 'Inprogress',
+            vendor_name: p.vendors?.vendor_name || 'Unknown',
+        }));
+}
+
 export async function closeProjectAction(projectId, vendorId, reason) {
     if (!projectId || !vendorId) {
         return { success: false, message: 'Invalid project or vendor reference.' };

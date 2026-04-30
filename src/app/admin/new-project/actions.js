@@ -3,6 +3,7 @@
 import { getServerSupabase } from '@/lib/supabase-server';
 import { getSession } from '@/lib/session';
 import crypto from 'crypto';
+import { syncFinishedAtAction } from '../backlinks-package/actions';
 
 async function requireAdmin() {
     const session = await getSession();
@@ -74,7 +75,7 @@ export async function createCampaignAction(prevState, formData) {
             const {
                 vendor_name, country, start_date, deadline,
                 dripfeed_enabled, dripfeed_period, urls_per_day,
-                price, price_type, randomize_languages, remarks,
+                price, price_type, package_id, randomize_languages, remarks,
                 languages, project_info_groups
             } = plan;
 
@@ -122,6 +123,7 @@ export async function createCampaignAction(prevState, formData) {
                     url_entry_enabled: false,
                     price: parseFloat(price) || 0,
                     price_type: price_type || 'per_url',
+                    package_id: (price_type === 'package' && package_id) ? package_id : null,
                     randomize_languages: !!randomize_languages,
                     status: 'Inprogress',
                     payment_status: 'pending',
@@ -203,6 +205,12 @@ export async function createCampaignAction(prevState, formData) {
 
         if (results.length === 0) {
             return { success: false, message: 'No valid plans were processed.' };
+        }
+
+        // Auto-set finished_at on any packages that just became exhausted
+        const usedPackageIds = [...new Set(plans.map(p => p.package_id).filter(Boolean))];
+        if (usedPackageIds.length > 0) {
+            await syncFinishedAtAction(usedPackageIds);
         }
 
         return {

@@ -39,17 +39,17 @@ function ClosedProjectRow({ project }) {
     const completedLinks = hub.completed_count ?? 0;
 
     return (
-        <div className="group flex flex-wrap items-center gap-4 px-5 py-4 bg-white rounded-2xl border border-red-100 hover:border-red-200 transition-all">
+        <div className="group flex flex-wrap items-center gap-3 px-4 py-3 bg-white rounded-2xl border border-red-100 hover:border-red-200 transition-all">
             {/* Project Name + ID */}
-            <div className="flex-[2] min-w-[180px]">
-                <p className="text-sm font-bold text-slate-800 line-clamp-1">{project.project_name || 'Unnamed Project'}</p>
-                <div className="flex items-center mt-0.5">
-                    <span className="font-mono text-[10px] text-slate-400 cursor-help" title={project.id}>
+            <div className="flex-[2] min-w-[160px] max-w-[280px] overflow-hidden">
+                <p className="text-sm font-bold text-slate-800 truncate" title={project.project_name}>{project.project_name || 'Unnamed Project'}</p>
+                <div className="flex items-center mt-0.5 min-w-0">
+                    <span className="font-mono text-[10px] text-slate-400 cursor-help truncate" title={project.id}>
                         {project.id?.substring(0, 8)}...
                     </span>
                     <CopyButton textToCopy={project.id} />
                 </div>
-                <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
+                <p className="text-[10px] text-slate-400 font-semibold mt-0.5 truncate">
                     Created {project.created_date ? new Date(project.created_date).toLocaleDateString() : '—'}
                     {project.closed_date && (
                         <> · Closed {new Date(project.closed_date).toLocaleDateString()}</>
@@ -57,8 +57,8 @@ function ClosedProjectRow({ project }) {
                 </p>
             </div>
 
-            {/* Info Button */}
-            <div className="flex items-center justify-center shrink-0">
+            {/* Info Button — fixed width, no shrink */}
+            <div className="flex items-center justify-center shrink-0 px-1">
                 <AnchorInfoPopup projectId={project.id} projectName={project.project_name} />
             </div>
 

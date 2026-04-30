@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { usePathname, useParams } from 'next/navigation';
 import Link from 'next/link';
-import { FileSpreadsheet, Loader, CheckCircle2, Clock, PanelLeftClose, PanelLeftOpen, LogOut, LayoutDashboard, ArrowUp } from 'lucide-react';
+import { FileSpreadsheet, Loader, CheckCircle2, Clock, PanelLeftClose, PanelLeftOpen, LogOut, LayoutDashboard, ArrowUp, Package } from 'lucide-react';
 import { vendorLogoutAction } from '@/app/vendor/actions';
 
 export default function VendorPortalLayout({ children }) {
@@ -23,6 +23,7 @@ export default function VendorPortalLayout({ children }) {
         { label: 'Pending Payment', href: `/vendor/${vendorName}/portal/${vendorUuid}/pending`, icon: Clock, match: '/pending' },
         { label: 'In Progress', href: `/vendor/${vendorName}/portal/${vendorUuid}/inprogress`, icon: Loader, match: '/inprogress' },
         { label: 'Completed', href: `/vendor/${vendorName}/portal/${vendorUuid}/completed`, icon: CheckCircle2, match: '/completed' },
+        { label: 'Backlink Packages', href: `/vendor/${vendorName}/portal/${vendorUuid}/backlinks-package`, icon: Package, match: '/backlinks-package' },
     ];
 
     const isActive = (match) => pathname.includes(match);
