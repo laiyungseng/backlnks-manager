@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { saveVendorProgressDelta, toggleUrlEntryMode } from './actions';
 import { parseDomainUrl } from '../../../../lib/utils';
-import { CheckCircle2, FileSpreadsheet, RefreshCw, Filter, ChevronDown, ChevronRight, Calendar, Lock, Unlock, Link, PlusCircle } from 'lucide-react';
+import { CheckCircle2, FileSpreadsheet, RefreshCw, Filter, ChevronDown, ChevronRight, Calendar, Lock, Unlock, Link, PlusCircle, AlertCircle } from 'lucide-react';
 import { DataEditor, GridCellKind } from '@glideapps/glide-data-grid';
 import '@glideapps/glide-data-grid/dist/index.css';
 import { DropdownCell } from '@glideapps/glide-data-grid-cells';
@@ -17,6 +17,10 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
     const [version, setVersion] = useState(initialVersion);
     const isDirtyRef = useRef(isDirty);
     const lastSavedRowsRef = useRef(initialRows || []);
+
+    // Local Cache State
+    const [hasUnsavedCache, setHasUnsavedCache] = useState(false);
+    const [cachedRows, setCachedRows] = useState(null);
 
     // Live Toggle State
     const [localUrlEntryEnabled, setLocalUrlEntryEnabled] = useState(urlEntryEnabled);
@@ -60,6 +64,42 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
         const now = new Date();
         return now.toISOString().replace('T', ' ').substring(0, 19);
     };
+
+    // Auto-Recovery from Local Cache
+    useEffect(() => {
+        try {
+            const cacheKey = `df_vendor_cache_${projectHash}`;
+            const cachedDataStr = localStorage.getItem(cacheKey);
+            if (cachedDataStr) {
+                const cachedData = JSON.parse(cachedDataStr);
+                // Check if cached rows differ from initialRows
+                if (cachedData && cachedData.rows && JSON.stringify(cachedData.rows) !== JSON.stringify(initialRows)) {
+                    setHasUnsavedCache(true);
+                    setCachedRows(cachedData.rows);
+                } else {
+                    localStorage.removeItem(cacheKey);
+                }
+            }
+        } catch (e) {
+            console.error("Failed to read local cache", e);
+        }
+    }, [projectHash, initialRows]);
+
+    // Immediate Local Cache Writing
+    useEffect(() => {
+        if (!isDirty || !projectHash) return;
+        try {
+            const cacheKey = `df_vendor_cache_${projectHash}`;
+            const payload = {
+                timestamp: new Date().toISOString(),
+                version: version,
+                rows: rows
+            };
+            localStorage.setItem(cacheKey, JSON.stringify(payload));
+        } catch (e) {
+            console.error("Failed to write to local cache", e);
+        }
+    }, [rows, isDirty, projectHash, version]);
 
     const handleSaveProgress = useCallback(async (isAutoSave = false) => {
         setIsSaving(true);
@@ -112,6 +152,7 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
                 isDirtyRef.current = false;
                 setVersion(v => v + 1);
                 lastSavedRowsRef.current = [...rows];
+                try { localStorage.removeItem(`df_vendor_cache_${projectHash}`); } catch (e) {}
             } else {
                 setFeedback({ type: 'error', message: result.message });
             }
@@ -673,6 +714,37 @@ export default function VendorForm({ initialRows, projectHash, dripfeedEnabled, 
 
     return (
         <div className="mt-8 space-y-6">
+
+            {/* Local Cache Recovery Banner */}
+            {hasUnsavedCache && (
+                <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 p-4 bg-blue-50 border border-blue-200 rounded-xl shadow-sm">
+                    <div className="flex items-center gap-3">
+                        <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0" />
+                        <div>
+                            <p className="text-sm font-semibold text-blue-900">Unsaved changes found</p>
+                            <p className="text-xs text-blue-700">We found unsaved data from your last session that wasn't uploaded.</p>
+                        </div>
+                    </div>
+                    <div className="flex gap-2 w-full md:w-auto">
+                        <button onClick={() => {
+                            setRows(cachedRows);
+                            setIsDirty(true);
+                            isDirtyRef.current = true;
+                            setHasUnsavedCache(false);
+                            setFeedback({ type: 'success', message: 'Cached data restored. It will be uploaded shortly.' });
+                        }} className="flex-1 md:flex-none px-4 py-2 text-xs font-bold text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors shadow-sm">
+                            Restore Data
+                        </button>
+                        <button onClick={() => {
+                            try { localStorage.removeItem(`df_vendor_cache_${projectHash}`); } catch(e){}
+                            setHasUnsavedCache(false);
+                            setCachedRows(null);
+                        }} className="flex-1 md:flex-none px-4 py-2 text-xs font-bold text-blue-700 bg-blue-100 rounded-md hover:bg-blue-200 transition-colors border border-blue-200">
+                            Discard
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {/* Lock Banner */}
             {isLocked && (

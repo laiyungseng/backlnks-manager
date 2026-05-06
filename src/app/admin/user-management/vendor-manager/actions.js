@@ -2,7 +2,7 @@
 
 import { getServerSupabase } from '@/lib/supabase-server';
 import { getSession } from '@/lib/session';
-import { vendorSchema } from '../../../schemas/vendorSchema';
+import { vendorSchema } from '@/schemas/vendorSchema';
 
 async function requireAdmin() {
     const session = await getSession();

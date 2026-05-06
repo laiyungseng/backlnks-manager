@@ -3,7 +3,7 @@
 import { getServerSupabase } from '@/lib/supabase-server';
 import { getSession } from '@/lib/session';
 import crypto from 'crypto';
-import { syncFinishedAtAction } from '../backlinks-package/actions';
+import { syncFinishedAtAction } from '../catalog/backlink-packages/actions';
 
 async function requireAdmin() {
     const session = await getSession();

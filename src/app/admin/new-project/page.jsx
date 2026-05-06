@@ -2,8 +2,8 @@
 
 import { useState, useActionState, useMemo, useRef, useEffect } from 'react';
 import { createCampaignAction, getExistingCampaignTitles } from './actions';
-import { getCategories } from '../categories/actions';
-import { getAvailablePackagesAction } from '../backlinks-package/actions';
+import { getCategories } from '../catalog/categories/actions';
+import { getAvailablePackagesAction } from '../catalog/backlink-packages/actions';
 import { useFormStatus } from 'react-dom';
 import { Plus, Trash2, Languages, ChevronDown, ChevronUp, Package, Loader2 } from 'lucide-react';
 

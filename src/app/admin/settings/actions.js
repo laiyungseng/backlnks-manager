@@ -116,11 +116,11 @@ export async function checkConnectionAction() {
 /**
  * Changes the admin password. Hashes with bcrypt before storing.
  */
-export async function changePasswordAction(currentPassword, newPassword) {
+export async function changePasswordAction(username, currentPassword, newPassword) {
     const session = await requireAdmin();
 
-    if (!currentPassword || !newPassword) {
-        return { success: false, message: 'Both current and new password are required.' };
+    if (!username || !currentPassword || !newPassword) {
+        return { success: false, message: 'Username, current password, and new password are required.' };
     }
     if (newPassword.length < 12) {
         return { success: false, message: 'New password must be at least 12 characters.' };
@@ -130,11 +130,16 @@ export async function changePasswordAction(currentPassword, newPassword) {
         const supabase = getServerSupabase();
         const { data, error } = await supabase
             .from('admin_users')
-            .select('password_hash')
+            .select('password_hash, username')
             .eq('id', session.id)
             .single();
 
-        if (error || !data) return { success: false, message: 'Could not verify current password.' };
+        if (error || !data) return { success: false, message: 'Could not verify current credentials.' };
+
+        // Cross-check username
+        if (data.username !== username) {
+            return { success: false, message: 'Invalid username.' };
+        }
 
         let currentOk = false;
         if (data.password_hash) {

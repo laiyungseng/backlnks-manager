@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, PlusCircle, ClipboardList, CheckCircle2, Settings, PanelLeftClose, PanelLeftOpen, Blocks, Users, Globe, List, Activity, Tag, BarChart2, AlertCircle, Package } from 'lucide-react';
+import { LayoutDashboard, PlusCircle, ClipboardList, CheckCircle2, Settings, PanelLeftClose, PanelLeftOpen, Blocks, Users, Globe, List, Activity, Tag, BarChart2, AlertCircle, Package, Lock, ChevronLeft } from 'lucide-react';
 import { logoutAction } from '@/app/admin/settings/actions';
 
 export default function AdminLayout({ children }) {
@@ -16,23 +16,50 @@ export default function AdminLayout({ children }) {
         router.push('/login');
     };
 
-    const navigation = [
+    const mainNavigation = [
         { name: 'Dashboard', href: '/admin', icon: LayoutDashboard },
         { name: 'Project Details', href: '/admin/projects', icon: List },
         { name: 'Pending Payment', href: '/admin/pending-payment', icon: AlertCircle },
         { name: 'Kickoff Project', href: '/admin/new-project', icon: PlusCircle },
         { name: 'Active Placements', href: '/admin/placements', icon: ClipboardList },
         { name: 'Completed & Closed', href: '/admin/completed', icon: CheckCircle2 },
-        { name: 'Schema Builder', href: '/admin/schema-builder', icon: Blocks },
-        { name: 'Vendor Manager', href: '/admin/vendor-manager', icon: Users },
-        { name: 'Client Manager', href: '/admin/client-manager', icon: Users },
+        { name: 'User Management', href: '/admin/user-management', icon: Users },
         { name: 'Domains Manager', href: '/admin/domains-manager', icon: Globe },
-        { name: 'Vendor Log', href: '/admin/vendor-log', icon: Activity },
-        { name: 'Categories', href: '/admin/categories', icon: Tag },
-        { name: 'Backlink Packages', href: '/admin/backlinks-package', icon: Package },
+        { name: 'Catalog', href: '/admin/catalog', icon: Tag },
         { name: 'Analytics', href: '/admin/vendor-analytics', icon: BarChart2 },
         { name: 'Settings', href: '/admin/settings', icon: Settings },
     ];
+
+    const settingsNavigation = [
+        { name: 'Database Configuration', href: '/admin/settings/database-configuration', icon: Settings },
+        { name: 'Schema Builder', href: '/admin/settings/schema-builder', icon: Blocks },
+        { name: 'Change Password', href: '/admin/settings/change-password', icon: Lock },
+    ];
+
+    const userManagementNavigation = [
+        { name: 'Vendor Manager', href: '/admin/user-management/vendor-manager', icon: Users },
+        { name: 'Client Manager', href: '/admin/user-management/client-manager', icon: Users },
+        { name: 'Vendor Log', href: '/admin/user-management/vendor-log', icon: Activity },
+    ];
+
+    const catalogNavigation = [
+        { name: 'Categories', href: '/admin/catalog/categories', icon: Tag },
+        { name: 'Backlink Packages', href: '/admin/catalog/backlink-packages', icon: Package },
+    ];
+
+    let currentNavigation = mainNavigation;
+    let showBackButton = false;
+
+    if (pathname.startsWith('/admin/settings')) {
+        currentNavigation = settingsNavigation;
+        showBackButton = true;
+    } else if (pathname.startsWith('/admin/user-management')) {
+        currentNavigation = userManagementNavigation;
+        showBackButton = true;
+    } else if (pathname.startsWith('/admin/catalog')) {
+        currentNavigation = catalogNavigation;
+        showBackButton = true;
+    }
 
     return (
         <div className="min-h-screen bg-slate-50 flex font-sans">
@@ -55,8 +82,20 @@ export default function AdminLayout({ children }) {
 
                 {/* Navigation Links */}
                 <div className="flex-1 px-3 py-8 space-y-1 overflow-y-auto">
-                    {navigation.map((item) => {
-                        const isActive = pathname === item.href;
+                    {showBackButton && (
+                        <div className="mb-6 pb-2 border-b border-slate-800">
+                            <Link href="/admin" className={`flex items-center px-4 py-3 rounded-lg text-sm font-bold text-slate-400 hover:bg-slate-800 hover:text-white transition-all duration-200 ${isCollapsed ? 'justify-center' : 'gap-3'}`} title={isCollapsed ? 'Back to Admin' : undefined}>
+                                <ChevronLeft className="w-5 h-5 flex-shrink-0" />
+                                {!isCollapsed && <span className="whitespace-nowrap">Back to Admin</span>}
+                            </Link>
+                        </div>
+                    )}
+                    {currentNavigation.map((item) => {
+                        let isActive = pathname.includes(item.href) && (item.href.split('/').length > 2 ? pathname === item.href : true);
+                        if (item.href === '/admin') {
+                             // strict exact match for dashboard
+                             isActive = pathname === '/admin';
+                        }
                         const Icon = item.icon;
                         return (
                             <Link
