@@ -135,9 +135,9 @@ export default function CompletedDashboardClient({ finalizedProjects, closedProj
 
     // --- Finalized grouping ---
     const groupedFinalized = finalizedProjects.reduce((acc, project) => {
-        const vendorName = project.vendors?.vendor_name || 'Generic Vendor';
-        if (!acc[vendorName]) acc[vendorName] = { id: vendorName, vendorName, projects: [] };
-        acc[vendorName].projects.push(project);
+        const projectTitle = project.project_name || 'Unnamed Project';
+        if (!acc[projectTitle]) acc[projectTitle] = { id: projectTitle, projectTitle, projects: [] };
+        acc[projectTitle].projects.push(project);
         return acc;
     }, {});
 
@@ -163,15 +163,19 @@ export default function CompletedDashboardClient({ finalizedProjects, closedProj
         const term = searchTerm.toLowerCase();
         if (activeTab === 'finalized') {
             finalizedGroups = finalizedGroups.map(group => {
-                const groupMatch = group.vendorName.toLowerCase().includes(term);
+                const groupMatch = group.projectTitle.toLowerCase().includes(term);
                 const matchingProjects = group.projects.filter(p => {
                     const nameMatch = (p.project_name || '').toLowerCase().includes(term);
+                    const vendorMatch = (p.vendors?.vendor_name || '').toLowerCase().includes(term);
+                    const campaignMatch = (p.project_plans || []).some(plan =>
+                        (plan.campaign_id || '').toLowerCase().includes(term)
+                    );
                     const targets = p.projects_hub?.[0]?.targets || [];
                     const keywordMatch = targets.some(t =>
                         (t.anchor_text || '').toLowerCase().includes(term) ||
                         (t.category || '').toLowerCase().includes(term)
                     );
-                    return nameMatch || keywordMatch;
+                    return nameMatch || vendorMatch || campaignMatch || keywordMatch;
                 });
                 if (groupMatch) return group;
                 if (matchingProjects.length > 0) return { ...group, projects: matchingProjects };

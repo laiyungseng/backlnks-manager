@@ -37,7 +37,8 @@ async function fetchProjects(supabase) {
             projects_hub ( hash, targets, is_locked, vendor_staging_data ),
             placements ( id ),
             project_languages ( lang_code, ratio ),
-            project_targets ( category, sheet_name )
+            project_targets ( category, sheet_name ),
+            project_plans ( id, campaign_id, step_order, category, plan_info, created_at, start_date, end_date, total_quantity )
         `)
         .order('created_date', { ascending: false });
 
@@ -58,7 +59,8 @@ async function fetchProjects(supabase) {
         const indexed_count = staging.filter(s =>
             s.indexed_status && s.indexed_status.trim().length > 0
         ).length;
-        const { vendor_staging_data: _dropped, ...hubWithoutBlob } = hub;
+        const hubWithoutBlob = { ...hub };
+        delete hubWithoutBlob.vendor_staging_data;
         return {
             ...project,
             projects_hub: [{ ...hubWithoutBlob, completed_count, indexed_count }],
@@ -129,6 +131,7 @@ export async function GET() {
                 .channel('admin-dashboard-realtime')
                 .on('postgres_changes', { event: '*', schema: 'public', table: 'projects_hub' }, pushLatest)
                 .on('postgres_changes', { event: '*', schema: 'public', table: 'projects' }, pushLatest)
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'project_plans' }, pushLatest)
                 .subscribe((status) => {
                     console.log(`[Realtime] Dashboard subscription: ${status}`);
                 });

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Eye, Link as LinkIcon, MoreVertical, CheckCircle2, Lock, Unlock, XCircle, AlertTriangle, ShieldAlert, Star } from 'lucide-react';
+import { Eye, Link as LinkIcon, MoreVertical, CheckCircle2, Lock, Unlock, XCircle, AlertTriangle, ShieldAlert, Star, Globe2 } from 'lucide-react';
 import { finalizeProjectAction, toggleProjectLockAction, closeProjectAction, toggleUrlEntryAction, togglePriorityAction } from './actions';
 import CopyButton from '../projects/CopyButton';
 import CloseProjectModal from './CloseProjectModal';
@@ -151,6 +151,10 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
         return { label: 'IN PROGRESS', bg: 'bg-amber-100 text-amber-700' };
     };
     const statusStyle = getStatusStyle();
+    const identityStatusClass = statusStyle.label === 'IN PROGRESS'
+        ? 'bg-orange-100 text-orange-600 border-orange-200'
+        : 'bg-indigo-100 text-indigo-600 border-indigo-200';
+    const formatExecutionDate = (value) => value ? String(value).split('T')[0] : 'N/A';
 
     const chipLabels = [...new Set(hubTargets.map(t =>
         t.category || t._parent_category || t.sheet_name || t._parent_sheet_name || 'GENERIC'
@@ -288,8 +292,8 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
                 {/* Information Block */}
                 <div className="px-4 pb-2">
                     <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
-                        <span className="text-base font-bold text-slate-900 line-clamp-1" title={project.project_name}>
-                            {project.project_name || 'Unnamed Project'}
+                        <span className="text-[13px] font-black text-indigo-600 uppercase tracking-tight truncate" title={vendorName}>
+                            {vendorName}
                         </span>
                         {project.created_date && (
                             <span className="text-[10px] font-semibold text-slate-400">
@@ -327,10 +331,11 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
 
                 {/* Metadata Row */}
                 <div className="flex items-center gap-3 px-4 py-2">
-                    <span className="text-[13px] font-bold text-slate-800">
+                    <span className="inline-flex items-center gap-1.5 text-[13px] font-bold text-slate-800">
+                        <Globe2 className="w-3.5 h-3.5 text-slate-400" />
                         {project.country || 'GLOBAL'}{project.project_languages?.length > 0 && ` (${project.project_languages[0].lang_code})`}
                     </span>
-                    <span className="text-[11px] font-semibold text-indigo-600 italic">
+                    <span className="px-2 py-1 rounded-md bg-indigo-50 text-[11px] font-bold text-indigo-600 truncate">
                         {project.dripfeed_enabled ? `${project.urls_per_day} URL/day (${project.dripfeed_period || 0} days)` : 'No Dripfeed'}
                     </span>
                 </div>
@@ -356,10 +361,10 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
             </div>
 
             {/* ── Desktop Row (≥ md) — 12-column grid ── */}
-            {/* Layout: [ID:2] [Name+Info:3] [Region:1] [Fulfillment:2] [Portal:1] [Actions:3] = 12 */}
+            {/* Layout: [ID:1] [Vendor+Dates:3] [Assets:1] [Region:2] [Progress:2] [Actions:3] = 12 */}
             <div className="hidden md:grid group grid-cols-12 items-center bg-white rounded-[12px] border border-slate-100 hover:border-slate-200 hover:shadow-sm transition-all relative">
-                {/* Col 1-2: Project ID + Category Badge */}
-                <div className="col-span-2 flex flex-col gap-1.5 px-3 py-3 border-r border-slate-100 min-w-0 overflow-hidden">
+                {/* Col 1: Project ID + Category Badge */}
+                <div className="col-span-1 flex flex-col gap-1.5 px-3 py-3 border-r border-slate-100 min-w-0 overflow-hidden">
                     <div className="flex items-center gap-1 min-w-0">
                         <span className="text-xs font-mono text-slate-500 cursor-help truncate" title={project.id}>
                             {project.id?.substring(0, 6)}...
@@ -375,28 +380,21 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
                     </div>
                 </div>
 
-                {/* Col 3-5: Project Name + Date / Status Badge + Info Button (merged) */}
-                <div className="col-span-3 flex items-center gap-2 px-3 py-3 border-r border-slate-100 min-w-0 overflow-hidden">
+                {/* Col 2-4: Vendor identity + execution range */}
+                <div className="col-span-3 grid grid-cols-[128px_1px_118px] items-center gap-4 px-3 py-3 border-r border-slate-100 min-w-0 overflow-hidden">
                     {/* Name / badges — flex-1 so info button doesn't get squashed */}
-                    <div className="flex flex-col gap-1 flex-1 min-w-0 overflow-hidden">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                            <span className="text-sm font-bold text-slate-900 truncate min-w-0" title={project.project_name}>
-                                {project.project_name || 'Unnamed Project'}
-                            </span>
-                            {project.created_date && (
-                                <span className="text-[10px] font-semibold text-slate-400 shrink-0 whitespace-nowrap">
-                                    {new Date(project.created_date).toLocaleDateString()}
-                                </span>
-                            )}
-                        </div>
+                    <div className="flex flex-col gap-1 min-h-[38px] justify-center overflow-hidden">
+                        <span className="text-[13px] font-black text-indigo-600 uppercase tracking-tight truncate" title={vendorName}>
+                            {vendorName}
+                        </span>
                         <div className="flex flex-wrap gap-1">
-                            <span className={`px-2 py-0.5 text-[9px] font-black rounded uppercase tracking-widest self-start whitespace-nowrap ${statusStyle.bg}`}>
+                            <span className={`px-2 py-0.5 text-[8px] font-bold rounded-full border uppercase tracking-tight self-start whitespace-nowrap ${identityStatusClass}`}>
                                 {statusStyle.label}
                             </span>
                             {riskTier && riskStyle && (() => {
                                 const RiskIcon = riskStyle.icon;
                                 return (
-                                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-[9px] font-black rounded-md border uppercase tracking-widest self-start whitespace-nowrap ${riskStyle.bg} ${riskStyle.text} ${riskStyle.border}`}>
+                                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-[8px] font-bold rounded-full border uppercase tracking-tight self-start whitespace-nowrap ${riskStyle.bg} ${riskStyle.text} ${riskStyle.border}`}>
                                         <RiskIcon className="w-2.5 h-2.5" />
                                         {riskTier}
                                     </span>
@@ -404,24 +402,35 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
                             })()}
                         </div>
                     </div>
-                    {/* Info buttons pinned to the right edge of this cell */}
-                    <div className="flex flex-col gap-1 shrink-0 pl-1">
-                        <AnchorInfoPopup projectId={project.id} projectName={project.project_name} />
-                        <CampaignSiblingsPopup projectId={project.id} projectName={project.project_name} />
+                    <div className="w-px h-8 bg-slate-100" />
+                    <div className="grid grid-rows-2 items-center gap-1 justify-start">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight whitespace-nowrap">
+                            <span className="font-black text-slate-300">S: </span>{formatExecutionDate(project.start_date)}
+                        </span>
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight whitespace-nowrap">
+                            <span className="font-black text-slate-300">E: </span>{formatExecutionDate(project.deadline)}
+                        </span>
                     </div>
                 </div>
 
-                {/* Col 6: Region / Delivery */}
-                <div className="col-span-1 flex flex-col gap-0.5 px-1.5 py-1.5 border-r border-slate-100 min-w-0 overflow-hidden">
-                    <span className="text-[13px] font-bold text-slate-800 truncate">
+                {/* Col 5: Assets */}
+                <div className="col-span-1 flex items-center justify-center gap-2 px-2 py-3 border-r border-slate-100 min-w-0 overflow-hidden">
+                    <AnchorInfoPopup projectId={project.id} projectName={project.project_name} />
+                    <CampaignSiblingsPopup projectId={project.id} projectName={project.project_name} />
+                </div>
+
+                {/* Col 6-7: Region / Configuration */}
+                <div className="col-span-2 flex flex-col gap-1 px-3 py-3 border-r border-slate-100 min-w-0 overflow-hidden">
+                    <span className="inline-flex items-center gap-1.5 text-[13px] font-bold text-slate-800 truncate">
+                        <Globe2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                         {project.country || 'GLOBAL'}{project.project_languages?.length > 0 && ` (${project.project_languages[0].lang_code})`}
                     </span>
-                    <span className="text-[11px] font-semibold text-indigo-600 italic truncate">
+                    <span className="w-fit max-w-full px-2 py-1 rounded-md bg-indigo-50 text-[11px] font-bold text-indigo-600 truncate">
                         {project.dripfeed_enabled ? `${project.urls_per_day} URL/day (${project.dripfeed_period || 0} days)` : 'No Dripfeed'}
                     </span>
                 </div>
 
-                {/* Col 7-8: Fulfillment */}
+                {/* Col 8-9: Progress */}
                 <div className="col-span-2 flex flex-col gap-2 px-3 py-3 border-r border-slate-100 min-w-0">
                     <div className="flex items-center gap-2">
                         <span className="text-xs font-bold text-slate-700">{completedLinks}/{totalLinks}</span>
@@ -430,13 +439,9 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
                     {progressBar}
                 </div>
 
-                {/* Col 9: Portal Access */}
-                <div className="col-span-1 flex items-center justify-center px-1.5 py-3 border-r border-slate-100 min-w-0 overflow-hidden">
-                    {portalButtons}
-                </div>
-
-                {/* Col 10-12: Status & Actions */}
+                {/* Col 10-12: Actions */}
                 <div className="col-span-3 flex items-center gap-1.5 justify-end px-3 py-3 min-w-0">
+                    {portalButtons}
                     {actionButtons}
                 </div>
             </div>

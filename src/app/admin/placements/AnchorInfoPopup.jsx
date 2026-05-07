@@ -25,10 +25,6 @@ export default function AnchorInfoPopup({ projectId, projectName }) {
 
         // Prefer below; flip above if not enough room
         const spaceBelow = window.innerHeight - rect.bottom;
-        const top = spaceBelow >= 260
-            ? rect.bottom + 6
-            : rect.top - 6; // will use translateY(-100%) when above
-
         setPopupStyle({
             position: 'fixed',
             top: spaceBelow >= 260 ? rect.bottom + 6 : rect.top - 6,
@@ -187,7 +183,7 @@ export default function AnchorInfoPopup({ projectId, projectName }) {
                     open
                         ? 'bg-indigo-50 text-indigo-600 border-indigo-200'
                         : 'bg-slate-50 text-slate-400 border-slate-200 hover:bg-indigo-50 hover:text-indigo-500 hover:border-indigo-200'
-                }`}
+                } w-9 h-9 flex items-center justify-center`}
             >
                 <Info className="w-3.5 h-3.5" />
             </button>

@@ -17,8 +17,8 @@ function getStatusStyle(status) {
     return STATUS_STYLE[status] || STATUS_STYLE['Inprogress'];
 }
 
-function toVendorSlug(vendorName) {
-    return (vendorName || '').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+function toProjectSlug(projectName) {
+    return (projectName || '').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
 }
 
 export default function CampaignSiblingsPopup({ projectId, projectName }) {
@@ -86,10 +86,10 @@ export default function CampaignSiblingsPopup({ projectId, projectName }) {
         }
     }
 
-    function handleNavigate(vendorName) {
-        const slug = toVendorSlug(vendorName);
+    function handleNavigate(projectName) {
+        const slug = toProjectSlug(projectName);
         setOpen(false);
-        router.push(`/admin/placements#vendor-${slug}`);
+        router.push(`/admin/placements#project-${slug}`);
     }
 
     const popup = open && (
@@ -136,7 +136,7 @@ export default function CampaignSiblingsPopup({ projectId, projectName }) {
                                 >
                                     <div className="flex-1 min-w-0">
                                         <button
-                                            onClick={() => !isCurrent && handleNavigate(s.vendor_name)}
+                                            onClick={() => !isCurrent && handleNavigate(s.project_name)}
                                             disabled={isCurrent}
                                             className={`text-xs font-bold truncate block w-full text-left ${
                                                 isCurrent
@@ -156,7 +156,7 @@ export default function CampaignSiblingsPopup({ projectId, projectName }) {
                                         </span>
                                         {!isCurrent && (
                                             <button
-                                                onClick={() => handleNavigate(s.vendor_name)}
+                                                onClick={() => handleNavigate(s.project_name)}
                                                 title="Go to vendor in Active Placements"
                                                 className="p-1 text-slate-300 hover:text-indigo-500 transition-colors"
                                             >
@@ -184,7 +184,7 @@ export default function CampaignSiblingsPopup({ projectId, projectName }) {
                     open
                         ? 'bg-indigo-50 text-indigo-600 border-indigo-200'
                         : 'bg-slate-50 text-slate-400 border-slate-200 hover:bg-indigo-50 hover:text-indigo-500 hover:border-indigo-200'
-                }`}
+                } w-9 h-9 flex items-center justify-center`}
             >
                 <GitBranch className="w-3.5 h-3.5" />
             </button>
