@@ -132,12 +132,12 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
     const vendorName = project.vendors?.vendor_name || 'unknown';
     const vendorSlug = vendorName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
     const copyLink = () => {
-        const fullUrl = `${window.location.origin}/vendor/${vendorSlug}/${representativeHash}`;
+        const fullUrl = `${window.location.origin}/vendor/${vendorSlug}/portal/${project.vendor_id}/project/${representativeHash}`;
         navigator.clipboard.writeText(fullUrl);
         alert('Vendor Portal Link copied to clipboard!');
     };
     const openLink = () => {
-        const fullUrl = `${window.location.origin}/vendor/${vendorSlug}/${representativeHash}`;
+        const fullUrl = `${window.location.origin}/vendor/${vendorSlug}/portal/${project.vendor_id}/project/${representativeHash}`;
         window.open(fullUrl, '_blank');
     };
 

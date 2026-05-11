@@ -15,15 +15,17 @@ function formatPrice(price, priceType, qty) {
     return `$${(p * qty).toFixed(2)} ($${p.toFixed(2)}/url)`;
 }
 
-function VendorCard({ vendorName, items, totalPrice }) {
+function VendorCard({ vendorName, items }) {
     const [open, setOpen] = useState(true);
     const [projects, setProjects] = useState(items);
     const [isPending, startTransition] = useTransition();
 
     function handleApprove(projectId) {
         startTransition(async () => {
-            await approvePaymentAction(projectId);
-            setProjects(prev => prev.filter(p => p.id !== projectId));
+            const result = await approvePaymentAction(projectId);
+            if (!result?.success) return;
+            const approvedIds = new Set(result.approvedProjectIds?.length ? result.approvedProjectIds : [projectId]);
+            setProjects(prev => prev.filter(p => !approvedIds.has(p.id)));
         });
     }
 

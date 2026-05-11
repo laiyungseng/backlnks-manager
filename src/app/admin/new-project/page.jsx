@@ -17,6 +17,39 @@ function addDaysToDateStr(dateStr, days) {
     return `${yr}-${mo}-${dy}`;
 }
 
+function normalizePlanDates(plans) {
+    const next = plans.map(plan => ({ ...plan }));
+    let changed = false;
+
+    for (let i = 0; i < next.length; i++) {
+        const plan = next[i];
+
+        if (i > 0 && !plan.startDateManualOverride) {
+            const prevDeadline = next[i - 1].deadline;
+            if (prevDeadline) {
+                const newStart = addDaysToDateStr(prevDeadline, 1);
+                if (plan.start_date !== newStart) {
+                    plan.start_date = newStart;
+                    changed = true;
+                }
+            }
+        }
+
+        if (plan.dripfeed_enabled && !plan.deadlineManualOverride) {
+            const period = parseInt(plan.dripfeed_period) || 0;
+            if (plan.start_date && period) {
+                const newDeadline = addDaysToDateStr(plan.start_date, period);
+                if (plan.deadline !== newDeadline) {
+                    plan.deadline = newDeadline;
+                    changed = true;
+                }
+            }
+        }
+    }
+
+    return changed ? next : plans;
+}
+
 function genId() {
     if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
@@ -609,35 +642,7 @@ export default function NewProjectPage() {
 
     // Auto-calc deadline from dripfeed + chain plan start dates from previous plan's deadline
     useEffect(() => {
-        setPlans(prev => {
-            const next = [...prev];
-            let changed = false;
-            for (let i = 0; i < next.length; i++) {
-                const plan = { ...next[i] };
-                let planChanged = false;
-
-                // Chain start_date from previous plan's deadline + 1 day
-                if (i > 0 && !plan.startDateManualOverride) {
-                    const prevDeadline = next[i - 1].deadline;
-                    if (prevDeadline) {
-                        const newStart = addDaysToDateStr(prevDeadline, 1);
-                        if (plan.start_date !== newStart) { plan.start_date = newStart; planChanged = true; }
-                    }
-                }
-
-                // Auto-calc deadline = start_date + dripfeed_period
-                if (plan.dripfeed_enabled && !plan.deadlineManualOverride) {
-                    const period = parseInt(plan.dripfeed_period) || 0;
-                    if (plan.start_date && period) {
-                        const newDeadline = addDaysToDateStr(plan.start_date, period);
-                        if (plan.deadline !== newDeadline) { plan.deadline = newDeadline; planChanged = true; }
-                    }
-                }
-
-                if (planChanged) { next[i] = plan; changed = true; }
-            }
-            return changed ? next : prev;
-        });
+        setPlans(prev => normalizePlanDates(prev));
     }, [plans.map(p => `${p.start_date}|${p.deadline}|${p.dripfeed_enabled}|${p.dripfeed_period}|${p.deadlineManualOverride}|${p.startDateManualOverride}`).join('||')]);
 
     useEffect(() => {
@@ -666,7 +671,7 @@ export default function NewProjectPage() {
         }));
     };
 
-    const addPlan = () => setPlans(prev => [...prev, createEmptyPlan()]);
+    const addPlan = () => setPlans(prev => normalizePlanDates([...prev, createEmptyPlan()]));
     const removePlan = (planId) => setPlans(prev => prev.filter(p => p.id !== planId));
 
     const isFormValid = useMemo(() => {
@@ -696,8 +701,23 @@ export default function NewProjectPage() {
         });
     }, [campaignTitle, personInCharge, plans]);
 
-    // Serialize plans for hidden input (strip internal id from sub-items, keep for server to ignore)
-    const plansForSubmit = plans.map(({ id, manualOverride, deadlineManualOverride, startDateManualOverride, ...rest }) => rest);
+    // Serialize plans for hidden input. Apply a final dripfeed deadline recompute here so the
+    // submitted JSON always reflects the auto-calc, even if a render race left state stale.
+    const plansForSubmit = normalizePlanDates(plans).map(plan => {
+        const out = { ...plan };
+        const deadlineManualOverride = out.deadlineManualOverride;
+        delete out.id;
+        delete out.manualOverride;
+        delete out.deadlineManualOverride;
+        delete out.startDateManualOverride;
+        if (out.dripfeed_enabled && !deadlineManualOverride && out.start_date) {
+            const period = parseInt(out.dripfeed_period) || 0;
+            if (period > 0) {
+                out.deadline = addDaysToDateStr(out.start_date, period);
+            }
+        }
+        return out;
+    });
 
     return (
         <div className="max-w-4xl mx-auto py-10 px-4 sm:px-6 lg:px-8 pb-24">
@@ -714,7 +734,7 @@ export default function NewProjectPage() {
                             <div key={i}>
                                 <p className="text-xs font-semibold text-green-700 mb-1">Plan {i + 1}: {r.planLabel}</p>
                                 <code className="block p-2 bg-green-100 rounded text-green-900 border border-green-300 select-all overflow-x-auto font-mono text-xs">
-                                    {typeof window !== 'undefined' ? `${window.location.origin}/vendor/${r.vendorSlug}/${r.hash}` : `/vendor/${r.vendorSlug}/${r.hash}`}
+                                    {typeof window !== 'undefined' ? `${window.location.origin}/vendor/${r.vendorSlug}/portal/${r.vendorUuid}/project/${r.hash}` : `/vendor/${r.vendorSlug}/portal/${r.vendorUuid}/project/${r.hash}`}
                                 </code>
                             </div>
                         ))}

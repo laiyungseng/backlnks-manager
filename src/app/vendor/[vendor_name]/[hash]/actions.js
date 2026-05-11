@@ -37,6 +37,21 @@ export async function establishVendorSession(hash) {
 
     if (!hash || typeof hash !== 'string') return { success: false };
 
+    // Early return — if a valid vendor session cookie already exists AND it owns this hash,
+    // skip the cookie re-mint to avoid the cascade of unnecessary DB reads + Set-Cookie writes.
+    const existing = await verifyVendorSession(supabase);
+    if (existing?.vendorId) {
+        const { data: hubOwner } = await supabase
+            .from('projects_hub')
+            .select('project_id, projects ( vendor_id )')
+            .eq('hash', hash)
+            .maybeSingle();
+        const ownerVendorId = hubOwner?.projects?.vendor_id;
+        if (ownerVendorId && ownerVendorId === existing.vendorId) {
+            return { success: true, cached: true };
+        }
+    }
+
     const { data: hub } = await supabase
         .from('projects_hub')
         .select('project_id')
@@ -413,7 +428,8 @@ export async function saveVendorProgressDelta(hash, delta, completedCount, known
             return { success: false, message: 'Validation Error: Please ensure all provided URLs are valid format.' };
         }
 
-        const validDelta = validatedData.data;
+        // Strip immutable project-definition columns — vendor must not overwrite these
+        const validDelta = validatedData.data.map(({ target_url, anchor_text, language, ...rest }) => rest);
 
         // Fetch hub metadata — intentionally excludes vendor_staging_data to save bandwidth
         const { data: projectList, error: checkError } = await supabase

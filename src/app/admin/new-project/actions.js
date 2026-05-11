@@ -70,14 +70,37 @@ export async function createCampaignAction(prevState, formData) {
 
         const results = [];
 
+        // Safety: if dripfeed is on with a valid period and the submitted deadline is
+        // missing or equals start_date, recompute deadline = start_date + period days.
+        const computeDeadlineSafely = (startDate, dl, dripOn, dripPeriod) => {
+            if (!startDate) return dl;
+            if (!dripOn) return dl;
+            const period = parseInt(dripPeriod) || 0;
+            if (period <= 0) return dl;
+            const needsFix = !dl || dl === startDate;
+            if (!needsFix) return dl;
+            try {
+                const [y, m, d] = startDate.split('-').map(Number);
+                const dt = new Date(y, m - 1, d);
+                dt.setDate(dt.getDate() + period);
+                const yr = dt.getFullYear();
+                const mo = String(dt.getMonth() + 1).padStart(2, '0');
+                const dy = String(dt.getDate()).padStart(2, '0');
+                return `${yr}-${mo}-${dy}`;
+            } catch {
+                return dl;
+            }
+        };
+
         // 2. Process each plan sequentially
         for (const plan of plans) {
             const {
-                vendor_name, country, start_date, deadline,
+                vendor_name, country, start_date,
                 dripfeed_enabled, dripfeed_period, urls_per_day,
                 price, price_type, package_id, randomize_languages, remarks,
                 languages, project_info_groups
             } = plan;
+            const deadline = computeDeadlineSafely(start_date, plan.deadline, dripfeed_enabled, dripfeed_period);
 
             if (!vendor_name?.trim()) continue;
 
@@ -200,7 +223,7 @@ export async function createCampaignAction(prevState, formData) {
                 if (planErr) console.warn(`[Kickoff] project_plans insert warning: ${planErr.message}`);
             }
 
-            results.push({ hash: projectHash, vendorSlug, planLabel: vendor_name.trim() });
+            results.push({ hash: projectHash, vendorSlug, vendorUuid: vendorId, planLabel: vendor_name.trim() });
         }
 
         if (results.length === 0) {

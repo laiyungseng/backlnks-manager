@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 
-export default function CurrentProjectIndicator({ vendorName, activeProjects }) {
+export default function CurrentProjectIndicator({ vendorName, vendorUuid, activeProjects }) {
     const [currentProject, setCurrentProject] = useState(null);
 
     useEffect(() => {
@@ -29,7 +29,7 @@ export default function CurrentProjectIndicator({ vendorName, activeProjects }) 
                 </span>
             </div>
             <Link
-                href={`/vendor/${vendorName}/${currentProject.hash}`}
+                href={vendorUuid ? `/vendor/${vendorName}/portal/${vendorUuid}/project/${currentProject.hash}` : `/vendor/${vendorName}/${currentProject.hash}`}
                 className="text-xs font-bold bg-indigo-50 border border-indigo-100 text-indigo-600 px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition-colors shadow-sm"
             >
                 Return

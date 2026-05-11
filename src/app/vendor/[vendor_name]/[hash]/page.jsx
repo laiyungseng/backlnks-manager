@@ -4,6 +4,7 @@ import VendorForm from './VendorForm';
 import VendorSessionSetter from './VendorSessionSetter';
 import VendorSidebar from './VendorSidebar';
 import { writeAuditLog } from '@/lib/auditLog';
+import { generateVendorRows } from '@/lib/vendorRowGenerator';
 
 export const dynamic = 'force-dynamic';
 
@@ -67,113 +68,111 @@ export default async function VendorProjectPage({ params }) {
         });
     }
 
-    // Fetch sibling projects for this vendor (for sidebar project switcher)
+    // Fetch sibling projects for this vendor (for sidebar campaign switcher)
     let siblingProjects = [];
     if (vendorUuid) {
         const { data: siblings } = await supabase
             .from('projects')
-            .select('id, project_name, status, is_approved, is_priority, dripfeed_enabled, projects_hub ( hash )')
+            .select(`
+                id, project_name, status, is_approved, is_priority, dripfeed_enabled,
+                created_date, start_date,
+                projects_hub ( hash ),
+                project_plans ( campaign_id, project_campaigns ( id, title ) ),
+                project_targets ( category )
+            `)
             .eq('vendor_id', vendorUuid)
             .order('created_date', { ascending: false });
 
         siblingProjects = (siblings || [])
             .filter(p => p.is_approved)
-            .map(p => ({
-                project_name: p.project_name,
-                hash: p.projects_hub?.[0]?.hash || null,
-                is_priority: p.is_priority || false,
-                dripfeed_enabled: p.dripfeed_enabled || false,
-                status: p.status || 'Inprogress',
-            }))
+            .map(p => {
+                const planRow = p.project_plans?.[0] || null;
+                const campaign = planRow?.project_campaigns || null;
+                return {
+                    id: p.id,
+                    project_name: p.project_name,
+                    hash: p.projects_hub?.[0]?.hash || null,
+                    is_priority: p.is_priority || false,
+                    dripfeed_enabled: p.dripfeed_enabled || false,
+                    status: p.status || 'Inprogress',
+                    created_date: p.created_date || null,
+                    start_date: p.start_date || null,
+                    campaign_id: planRow?.campaign_id || null,
+                    campaign_title: campaign?.title || null,
+                    category: p.project_targets?.[0]?.category || null,
+                };
+            })
             .filter(p => p.hash);
     }
 
     const isFinalized = projectData?.status === 'Finalized';
 
+    // Find the campaign this project belongs to, then fetch all sibling plans (= other projects under the same campaign)
+    const { data: ownCampaignRow } = await supabase
+        .from('project_plans')
+        .select('campaign_id')
+        .eq('project_id', projectId)
+        .maybeSingle();
+    const campaignId = ownCampaignRow?.campaign_id || null;
+
+    let siblingPlans = [];
+    if (campaignId && vendorUuid) {
+        const { data: siblingProjectIds } = await supabase
+            .from('project_plans')
+            .select('project_id')
+            .eq('campaign_id', campaignId);
+        const ids = [...new Set((siblingProjectIds || []).map(r => r.project_id).filter(Boolean))];
+        if (ids.length > 0) {
+            const { data: siblingProjects } = await supabase
+                .from('projects')
+                .select(`
+                    id, project_name, status, deadline, start_date, created_date, is_priority,
+                    project_targets ( category ),
+                    projects_hub ( hash, vendor_staging_data, targets )
+                `)
+                .in('id', ids)
+                .eq('vendor_id', vendorUuid)
+                .order('created_date', { ascending: true });
+
+            siblingPlans = (siblingProjects || [])
+                .map((p, idx) => {
+                    const hub = p.projects_hub?.[0] || {};
+                    if (!hub.hash) return null;
+                    const targets = Array.isArray(hub.targets) ? hub.targets : [];
+                    const staging = Array.isArray(hub.vendor_staging_data) ? hub.vendor_staging_data : [];
+                    const total = targets.reduce((acc, t) => acc + (parseInt(t.quantity || '0', 10)), 0);
+                    const completed = staging.filter(s => s.published_url && s.published_url.trim().length > 0).length;
+                    let status = 'pending';
+                    if (p.status === 'Finalized') status = 'done';
+                    else if (total > 0 && completed >= total) status = 'done';
+                    else if (completed > 0) status = 'progress';
+                    return {
+                        order: idx,
+                        hash: hub.hash,
+                        label: `Plan ${idx + 1}`,
+                        category: p.project_targets?.[0]?.category || null,
+                        startDate: p.start_date || null,
+                        deadline: p.deadline || null,
+                        isPriority: !!p.is_priority,
+                        completed,
+                        total,
+                        status,
+                    };
+                })
+                .filter(Boolean);
+        }
+    }
+
     // Parse targets from JSONB Hub
     const targetsData = Array.isArray(projectsHub.targets) ? projectsHub.targets : [];
 
-    // Parse language distribution from normalized project_languages
-    const languages = (projectData?.project_languages || []).map(l => ({ 'lang-code': l.lang_code, ratio: l.ratio }));
-
-    // Create linear pool of languages based on precise quantities
-    const languagePool = [];
-    if (languages.length > 0) {
-        languages.forEach(lang => {
-            const qty = parseInt(lang.ratio || '0', 10);
-            for (let i = 0; i < qty; i++) {
-                languagePool.push(lang['lang-code']?.toUpperCase() || 'EN');
-            }
-        });
-    }
-
-    // Expand Target Rows with sequential linear language assignment
-    let generatedRows = [];
-    let globalLangIndex = 0;
-
-    if (targetsData && targetsData.length > 0) {
-        targetsData.forEach((target, tIdx) => {
-            const targetId = target.target_id || `idx-${tIdx}`; // Synthetic target ID fallback
-            const targetQty = parseInt(target.quantity || '0', 10); // Parse string quantity from JSON
-
-            for (let i = 0; i < targetQty; i++) {
-                const assignedLang = languagePool.length > 0 
-                  ? (languagePool[globalLangIndex] || languagePool[languagePool.length - 1]) 
-                  : (projectData?.language?.toUpperCase() || 'EN');
-                
-                // Track language advancement
-                if (languagePool.length > 0) {
-                    globalLangIndex++;
-                }
-
-                // ID formats to retain backward compatibility with old staging data
-                const rowId = `${targetId}-${assignedLang}-qty-${i}`;
-                const legacyRowId = `${targetId}-qty-${generatedRows.length}`;
-                const legacyNoLangRowId = `${targetId}-qty-${i}`;
-                const undefinedEraRowId = `${targetId}-undefined-qty-${i}`;
-                
-                const savedRow = Array.isArray(existingStagingData)
-                    ? (existingStagingData.find(st => st.id === rowId)
-                        || existingStagingData.find(st => st.id === legacyRowId)
-                        || existingStagingData.find(st => st.id === legacyNoLangRowId)
-                        || existingStagingData.find(st => st.id === undefinedEraRowId))
-                    : null;
-
-                generatedRows.push({
-                    id: rowId,
-                    target_id: targetId,
-                    tIdx: tIdx,
-                    langIdx: languagePool.indexOf(assignedLang), // Generic grouping info
-                    target_url: target.target_url,
-                    anchor_text: target.anchor_text,
-                    language: assignedLang,
-                    domain_url: savedRow?.domain_url || '',
-                    published_url: savedRow?.published_url || '',
-                    published_date: savedRow?.published_date || '',
-                    remark: savedRow?.remark || '',
-                    indexed_status: savedRow?.indexed_status || '',
-                    indexed_datetime: savedRow?.indexed_datetime || '',
-                });
-            }
-        });
-    }
-
-    // Apply deterministic randomization if enabled
-    if (projectData?.randomize_languages && generatedRows.length > 0) {
-        generatedRows.sort((a, b) => {
-            const hashA = [...a.id].reduce((acc, char) => (acc * 31 + char.charCodeAt(0)) | 0, 0);
-            const hashB = [...b.id].reduce((acc, char) => (acc * 31 + char.charCodeAt(0)) | 0, 0);
-            return hashA - hashB;
-        });
-    } else if (generatedRows.length > 0) {
-        // Group by Target sequence first, then language within each target
-        generatedRows.sort((a, b) => {
-            if (a.tIdx !== b.tIdx) {
-                return (a.tIdx || 0) - (b.tIdx || 0);
-            }
-            return (a.langIdx || 0) - (b.langIdx || 0);
-        });
-    }
+    const generatedRows = generateVendorRows({
+        targets: targetsData,
+        languages: projectData?.project_languages || [],
+        fallbackLanguage: projectData?.language,
+        existingStagingData,
+        randomizeLanguages: !!projectData?.randomize_languages,
+    });
 
     return (
         <div className="flex h-screen bg-gray-50 overflow-hidden">
@@ -186,8 +185,8 @@ export default async function VendorProjectPage({ params }) {
                     projects={siblingProjects}
                 />
             )}
-            <main className="flex-1 min-w-0 overflow-y-auto">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-12">
+            <main id="vendor-main" className="flex-1 min-w-0 overflow-y-auto">
+                <div className="max-w-none px-4 sm:px-6 lg:px-8 py-8 pb-12">
                     <div className="bg-white shadow-sm rounded-xl border border-gray-200 p-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
                         <div>
                             <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
@@ -203,6 +202,8 @@ export default async function VendorProjectPage({ params }) {
                     <VendorForm
                         initialRows={generatedRows}
                         projectHash={hash}
+                        siblingPlans={siblingPlans}
+                        vendorName={vendorNameParam}
                         dripfeedEnabled={projectData?.dripfeed_enabled}
                         dripfeedPeriod={projectData?.dripfeed_period}
                         urlsPerDay={projectData?.urls_per_day}

@@ -1,14 +1,15 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { usePathname, useParams } from 'next/navigation';
 import Link from 'next/link';
-import { FileSpreadsheet, Loader, CheckCircle2, Clock, PanelLeftClose, PanelLeftOpen, LogOut, LayoutDashboard, ArrowUp, Package } from 'lucide-react';
+import { Loader, CheckCircle2, Clock, PanelLeftClose, PanelLeftOpen, LogOut, LayoutDashboard, ArrowUp, Package } from 'lucide-react';
 import { vendorLogoutAction } from '@/app/vendor/actions';
+import ActiveFiltersBar from './_lib/ActiveFiltersBar';
+import StickyProjectTab from './_lib/StickyProjectTab';
 
 export default function VendorPortalLayout({ children }) {
     const [collapsed, setCollapsed] = useState(false);
-    const [lastProjectHash, setLastProjectHash] = useState('');
     const [showScrollTop, setShowScrollTop] = useState(false);
     const mainRef = useRef(null);
     const pathname = usePathname();
@@ -29,11 +30,6 @@ export default function VendorPortalLayout({ children }) {
     const isActive = (match) => pathname.includes(match);
 
     useEffect(() => {
-        const savedHash = localStorage.getItem(`lastProjectHash_${vendorName}`);
-        if (savedHash) setLastProjectHash(savedHash);
-    }, [vendorName]);
-
-    useEffect(() => {
         const el = mainRef.current;
         if (!el) return;
         const onScroll = () => setShowScrollTop(el.scrollTop > 300);
@@ -44,6 +40,7 @@ export default function VendorPortalLayout({ children }) {
     return (
         <div className="flex h-screen bg-gray-50 overflow-hidden">
             <aside className={`${collapsed ? 'w-16' : 'w-64'} bg-white border-r border-gray-200 flex flex-col transition-all duration-300 shrink-0 sticky top-0 h-screen z-20`}>
+                {/* Header */}
                 <div className="h-16 px-4 flex items-center gap-2 border-b border-gray-100 shrink-0">
                     <div className="bg-indigo-600 w-8 h-8 rounded flex items-center justify-center text-sm font-bold text-white shadow shrink-0">
                         DF
@@ -56,18 +53,8 @@ export default function VendorPortalLayout({ children }) {
                     )}
                 </div>
 
-                <nav className="flex-1 px-2 py-4 space-y-1">
-                    {lastProjectHash && (
-                        <Link
-                            href={`/vendor/${vendorName}/${lastProjectHash}`}
-                            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-gray-600 hover:bg-gray-50 hover:text-gray-900 ${collapsed ? 'justify-center' : ''}`}
-                            title={collapsed ? 'Current Project' : undefined}
-                        >
-                            <FileSpreadsheet className="w-4 h-4 shrink-0" />
-                            {!collapsed && <span>Current Project</span>}
-                        </Link>
-                    )}
-
+                {/* Fixed nav zone */}
+                <nav className="px-2 pt-4 pb-2 shrink-0 space-y-1">
                     {navItems.map((item) => {
                         const Icon = item.icon;
                         const active = isActive(item.match);
@@ -75,9 +62,10 @@ export default function VendorPortalLayout({ children }) {
                             <Link
                                 key={item.href}
                                 href={item.href}
-                                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${collapsed ? 'justify-center' : ''} ${active
-                                    ? 'bg-indigo-50 text-indigo-700 border border-indigo-100'
-                                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${collapsed ? 'justify-center' : ''} ${
+                                    active
+                                        ? 'bg-indigo-50 text-indigo-700 border border-indigo-100'
+                                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                                 }`}
                                 title={collapsed ? item.label : undefined}
                             >
@@ -88,6 +76,9 @@ export default function VendorPortalLayout({ children }) {
                     })}
                 </nav>
 
+                <div className="flex-1" />
+
+                {/* Footer */}
                 <div className="px-2 py-3 border-t border-gray-100 shrink-0 space-y-1">
                     <form action={vendorLogoutAction}>
                         <button
@@ -110,7 +101,11 @@ export default function VendorPortalLayout({ children }) {
             </aside>
 
             <main ref={mainRef} className="flex-1 min-w-0 overflow-y-auto">
+                <Suspense fallback={null}>
+                    <ActiveFiltersBar />
+                </Suspense>
                 {children}
+                <StickyProjectTab />
                 {showScrollTop && (
                     <button
                         onClick={() => mainRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}

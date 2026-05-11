@@ -45,12 +45,14 @@ export default async function VendorInProgressPage({ params }) {
             is_approved,
             country,
             deadline,
+            start_date,
             total_quantity,
             created_date,
             language,
             is_priority,
             project_languages ( lang_code, ratio ),
             project_targets ( category ),
+            project_plans ( campaign_id, project_campaigns ( id, title ) ),
             projects_hub ( hash, vendor_staging_data, is_locked, targets ),
             placements ( id )
         `)
@@ -66,8 +68,8 @@ export default async function VendorInProgressPage({ params }) {
 
     return (
         <div className="max-w-6xl mx-auto px-6 py-8 pb-20 relative">
-            <CurrentProjectIndicator vendorName={vendorName} activeProjects={activeProjects} />
-            <InProgressProjectList projects={activeProjects} vendorName={vendorName} displayName={displayName} />
+            <CurrentProjectIndicator vendorName={vendorName} vendorUuid={vendorUuid} activeProjects={activeProjects} />
+            <InProgressProjectList projects={activeProjects} vendorName={vendorName} vendorUuid={vendorUuid} displayName={displayName} />
         </div>
     );
 }
