@@ -4,6 +4,8 @@ import { useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { ChevronLeft } from 'lucide-react';
 
+const LAST_PROJECT_EVENT = 'vendor:last-project-change';
+
 export default function ProjectPageHeader({ projectName, deadline, hash, children }) {
     const router = useRouter();
     const params = useParams();
@@ -17,6 +19,7 @@ export default function ProjectPageHeader({ projectName, deadline, hash, childre
             else localStorage.removeItem(`lastProjectName_${vendorName}`);
             if (deadline) localStorage.setItem(`lastProjectDeadline_${vendorName}`, deadline);
             else localStorage.removeItem(`lastProjectDeadline_${vendorName}`);
+            window.dispatchEvent(new Event(LAST_PROJECT_EVENT));
         } catch {}
     }, [vendorName, hash, projectName, deadline]);
 

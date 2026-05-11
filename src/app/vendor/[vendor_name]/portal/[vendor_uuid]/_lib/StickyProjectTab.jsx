@@ -5,6 +5,7 @@ import { useRouter, useParams, usePathname } from 'next/navigation';
 import { ChevronLeft } from 'lucide-react';
 
 const EMPTY_PROJECT = JSON.stringify({ hash: '', projectName: '', deadline: '' });
+const LAST_PROJECT_EVENT = 'vendor:last-project-change';
 
 function readStoredProject(vendorName) {
     if (!vendorName || typeof window === 'undefined') return EMPTY_PROJECT;
@@ -23,7 +24,15 @@ export default function StickyProjectTab() {
     const vendorName = params?.vendor_name || '';
     const vendorUuid = params?.vendor_uuid || '';
     const storedProjectSnapshot = useSyncExternalStore(
-        () => () => {},
+        (onStoreChange) => {
+            window.addEventListener('storage', onStoreChange);
+            window.addEventListener(LAST_PROJECT_EVENT, onStoreChange);
+
+            return () => {
+                window.removeEventListener('storage', onStoreChange);
+                window.removeEventListener(LAST_PROJECT_EVENT, onStoreChange);
+            };
+        },
         () => readStoredProject(vendorName),
         () => EMPTY_PROJECT
     );
