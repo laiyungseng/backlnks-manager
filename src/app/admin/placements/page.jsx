@@ -42,6 +42,10 @@ export default function PlacementsMonitoringPage() {
         };
     }, []);
 
+    function handleProjectFinalized(projectId) {
+        setProjects(prev => prev.filter(project => project.id !== projectId));
+    }
+
     // Filter: Only show active projects (exclude Finalized, Closed, and projects with committed placements)
     const activeProjects = (projects || []).filter(p => {
         const hasPlacements = p.placements && p.placements.length > 0;
@@ -165,7 +169,12 @@ export default function PlacementsMonitoringPage() {
             <div className="space-y-6">
                 {groupArray.length > 0 ? (
                     groupArray.map((group) => (
-                        <PlacementGroupCard key={group.id} group={group} isCompletedView={false} />
+                        <PlacementGroupCard
+                            key={group.id}
+                            group={group}
+                            isCompletedView={false}
+                            onProjectFinalized={handleProjectFinalized}
+                        />
                     ))
                 ) : (
                     <div className="text-center py-40 bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200">

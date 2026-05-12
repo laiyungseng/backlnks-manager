@@ -29,7 +29,7 @@ function computeRiskTier(lastActivityIso, createdDateIso) {
     return null;
 }
 
-export default function PlacementProjectRow({ project, isCompletedView }) {
+export default function PlacementProjectRow({ project, isCompletedView, onProjectFinalized }) {
     const router = useRouter();
     const representativeHash = project.projects_hub?.[0]?.hash;
 
@@ -65,7 +65,10 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
         try {
             const res = await finalizeProjectAction(representativeHash);
             if (!res.success) alert(`Error Finalizing: ${res.message}`);
-            else router.refresh();
+            else {
+                onProjectFinalized?.(project.id);
+                router.refresh();
+            }
         } catch {
             alert('Crash triggering processor.');
         } finally {

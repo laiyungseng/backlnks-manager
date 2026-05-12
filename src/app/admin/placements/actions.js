@@ -89,6 +89,8 @@ export async function finalizeProjectAction(projectHash) {
 
     // Clear entire admin cache tree to instantly update UI
     revalidatePath('/admin', 'layout');
+    revalidatePath('/admin/completed');
+    revalidatePath('/admin/placements');
 
     return result;
 }

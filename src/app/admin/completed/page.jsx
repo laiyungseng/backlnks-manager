@@ -10,6 +10,8 @@ export default async function CompletedPlacementsPage() {
             id,
             owner,
             created_date,
+            start_date,
+            deadline,
             completed_date,
             closed_date,
             status,
@@ -38,7 +40,8 @@ export default async function CompletedPlacementsPage() {
             if (!hub) return p;
             const staging = Array.isArray(hub.vendor_staging_data) ? hub.vendor_staging_data : [];
             const completed_count = staging.filter(s => s.published_url && s.published_url.trim().length > 0).length;
-            const { vendor_staging_data: _dropped, ...hubWithoutBlob } = hub;
+            const hubWithoutBlob = { ...hub };
+            delete hubWithoutBlob.vendor_staging_data;
             return { ...p, projects_hub: [{ ...hubWithoutBlob, completed_count }] };
         });
 
@@ -50,7 +53,8 @@ export default async function CompletedPlacementsPage() {
             if (!hub) return p;
             const staging = Array.isArray(hub.vendor_staging_data) ? hub.vendor_staging_data : [];
             const completed_count = staging.filter(s => s.published_url && s.published_url.trim().length > 0).length;
-            const { vendor_staging_data: _dropped, ...hubWithoutBlob } = hub;
+            const hubWithoutBlob = { ...hub };
+            delete hubWithoutBlob.vendor_staging_data;
             return { ...p, projects_hub: [{ ...hubWithoutBlob, completed_count }] };
         });
 
