@@ -190,10 +190,12 @@ async function resolveVendor(supabase, vendorName) {
 export async function updateDashboardProjects(projectsArray) {
     try { await requireAdmin(); } catch { return { success: false, message: 'Unauthorized.' }; }
     if (!Array.isArray(projectsArray) || projectsArray.length === 0) return { success: true };
+    const projectsToUpdate = projectsArray.filter(p => p?.id);
+    if (projectsToUpdate.length === 0) return { success: true };
 
     const supabase = getServerSupabase();
     try {
-        for (const p of projectsArray) {
+        for (const p of projectsToUpdate) {
             // Resolve vendor_id if vendor name was edited
             const updatePayload = {
                 project_name: p.project_name,
@@ -231,7 +233,7 @@ export async function updateDashboardProjects(projectsArray) {
         }
 
         revalidatePath('/admin', 'layout');
-        return { success: true, message: 'Changes saved successfully.' };
+        return { success: true, message: `${projectsToUpdate.length} project update${projectsToUpdate.length === 1 ? '' : 's'} saved successfully.` };
     } catch (error) {
         console.error('Server error updating projects:', error);
         return { success: false, message: 'An unexpected error occurred while saving edits.' };

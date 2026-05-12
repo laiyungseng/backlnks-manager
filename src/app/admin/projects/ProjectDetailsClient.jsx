@@ -58,6 +58,16 @@ function formatDate(value) {
     return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
+function formatTitleWithDate(dateStr, title) {
+    if (!dateStr) return title || 'Unnamed';
+    const date = new Date(dateStr);
+    if (Number.isNaN(date.getTime())) return title || 'Unnamed';
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const dd = String(date.getDate()).padStart(2, '0');
+    return `${yyyy}.${mm}.${dd}-${title || 'Unnamed'}`;
+}
+
 function getProjectStatusConfig(project, progressPercent) {
     const isFinalized = project.status === 'Finalized' || (project.placements && project.placements.length > 0);
     if (isFinalized) return { bg: 'bg-emerald-50', text: 'text-emerald-700', label: 'Finalized' };
@@ -120,11 +130,13 @@ function groupProjectsByCampaign(projects) {
     projects.forEach(project => {
         const key = getCampaignKey(project);
         if (!map.has(key)) {
+            const createdAt = getPrimaryPlan(project).created_at || project.created_date;
             map.set(key, {
                 key,
                 label: getCampaignLabel(project),
                 projectTitle: project.project_name || 'Unnamed Project',
-                createdAt: getPrimaryPlan(project).created_at || project.created_date,
+                createdAt,
+                displayTitle: formatTitleWithDate(createdAt, project.project_name || 'Unnamed Project'),
                 projects: [],
             });
         }
@@ -152,6 +164,7 @@ export default function ProjectDetailsClient({ initialProjects }) {
     const [isCollapsed, setIsCollapsed] = useState({ pending: false, completed: true });
     const [isEditMode, setIsEditMode] = useState(false);
     const [editedProjects, setEditedProjects] = useState([]);
+    const [dirtyProjectIds, setDirtyProjectIds] = useState(() => new Set());
     const [isSaving, setIsSaving] = useState(false);
     const [, startTransition] = useTransition();
     const [expandedCampaigns, setExpandedCampaigns] = useState({});
@@ -189,20 +202,31 @@ export default function ProjectDetailsClient({ initialProjects }) {
             ...p,
             vendorNameEdit: p.vendors?.vendor_name || '',
         })));
+        setDirtyProjectIds(new Set());
         setIsEditMode(true);
     };
 
     const handleCancelEdit = () => {
         setIsEditMode(false);
         setEditedProjects([]);
+        setDirtyProjectIds(new Set());
     };
 
     const handleSaveEdits = async () => {
+        if (dirtyProjectIds.size === 0) {
+            setIsEditMode(false);
+            setEditedProjects([]);
+            return;
+        }
+
         setIsSaving(true);
-        const res = await updateDashboardProjects(editedProjects);
+        const changedProjects = editedProjects.filter(project => dirtyProjectIds.has(project.id));
+        const res = await updateDashboardProjects(changedProjects);
         if (res.success) {
             setProjects([...editedProjects]);
             setIsEditMode(false);
+            setEditedProjects([]);
+            setDirtyProjectIds(new Set());
         } else {
             alert(`Failed to save edits: ${res.message}`);
         }
@@ -213,6 +237,7 @@ export default function ProjectDetailsClient({ initialProjects }) {
         setEditedProjects(prev => prev.map(p =>
             p.id === projectId ? { ...p, [field]: value } : p
         ));
+        setDirtyProjectIds(prev => new Set(prev).add(projectId));
     };
 
     const handleCategoryChange = (projectId, oldCategory, newCategoryValue) => {
@@ -222,6 +247,7 @@ export default function ProjectDetailsClient({ initialProjects }) {
             }
             return p;
         }));
+        setDirtyProjectIds(prev => new Set(prev).add(projectId));
     };
 
     const handleApprove = (projectId) => {
@@ -359,7 +385,7 @@ export default function ProjectDetailsClient({ initialProjects }) {
                         <span className="text-[9px] font-black text-indigo-600 uppercase tracking-widest">{stepLabel}</span>
                         {isEditMode
                             ? <input type="text" value={project.project_name || ''} onChange={(e) => handleFieldChange(project.id, 'project_name', e.target.value)} className="w-40 px-3 py-1.5 border border-slate-200 focus:ring-2 focus:ring-indigo-500 rounded-md font-medium text-sm outline-none" />
-                            : <span>{project.project_name}</span>}
+                            : <span title={formatTitleWithDate(project.created_date, project.project_name)}>{formatTitleWithDate(project.created_date, project.project_name)}</span>}
                     </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">{renderCategoryCell(project)}</td>
@@ -505,7 +531,7 @@ export default function ProjectDetailsClient({ initialProjects }) {
                 </td>
                 <td className="px-6 py-5 whitespace-nowrap">
                     <div className="flex flex-col">
-                        <span className="text-sm font-black text-slate-900 truncate max-w-[220px]" title={group.projectTitle}>{group.projectTitle}</span>
+                        <span className="text-sm font-black text-slate-900 truncate max-w-[220px]" title={group.displayTitle}>{group.displayTitle}</span>
                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{group.projects.length} {group.projects.length === 1 ? 'Plan' : 'Plans'}</span>
                     </div>
                 </td>
@@ -657,7 +683,7 @@ export default function ProjectDetailsClient({ initialProjects }) {
                                 Cancel
                             </button>
                             <button onClick={handleSaveEdits} disabled={isSaving} className="px-5 py-2.5 text-xs font-black text-white bg-emerald-500 rounded-lg hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-500/20 uppercase tracking-widest">
-                                {isSaving ? 'Saving...' : 'Save Changes'}
+                                {isSaving ? 'Saving...' : dirtyProjectIds.size > 0 ? `Save ${dirtyProjectIds.size} Change${dirtyProjectIds.size === 1 ? '' : 's'}` : 'Done'}
                             </button>
                         </>
                     ) : (
