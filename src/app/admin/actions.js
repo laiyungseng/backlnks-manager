@@ -3,6 +3,7 @@
 import { getServerSupabase } from '@/lib/supabase-server';
 import { getSession } from '@/lib/session';
 import { revalidatePath } from 'next/cache';
+import crypto from 'crypto';
 
 async function requireAdmin() {
     const session = await getSession();
@@ -185,6 +186,204 @@ async function resolveVendor(supabase, vendorName) {
         .from('vendors').insert({ vendor_name: vendorName }).select('id').single();
     if (error) throw new Error(`Failed to create vendor: ${error.message}`);
     return newV.id;
+}
+
+function normalizeDateInput(value) {
+    return value ? String(value).substring(0, 10) : null;
+}
+
+function computePlanTotal(groups) {
+    return (groups || []).reduce((acc, group) =>
+        acc + (group.placement_target || []).reduce((sum, target) => sum + (parseInt(target.ratio || '0', 10) || 0), 0), 0);
+}
+
+function flattenPlanTargets(groups) {
+    const targets = [];
+    (groups || []).forEach(group => {
+        (group.placement_target || []).forEach(target => {
+            const quantity = parseInt(target.ratio || '0', 10) || 0;
+            if (!target.target_url && !target.anchor_text && quantity <= 0) return;
+            targets.push({
+                anchor_text: target.anchor_text || '',
+                target_url: target.target_url || '',
+                quantity: String(quantity),
+                category: group.category || 'NULL',
+                sheet_name: group.sheet_name || null,
+                created_at: new Date().toISOString()
+            });
+        });
+    });
+    return targets;
+}
+
+async function fetchProjectDetailsRow(supabase, projectId) {
+    const { data, error } = await supabase
+        .from('projects')
+        .select(`
+            id, owner, created_date, completed_date,
+            project_name, country, total_quantity,
+            status, is_approved, start_date, deadline, price, price_type,
+            dripfeed_enabled, dripfeed_period, urls_per_day, payment_status,
+            vendors ( vendor_name ),
+            projects_hub ( targets, vendor_staging_data ),
+            placements ( id ),
+            project_languages ( lang_code, ratio ),
+            project_targets ( category, sheet_name ),
+            project_plans ( id, campaign_id, step_order, category, plan_info, created_at, start_date, end_date, total_quantity )
+        `)
+        .eq('id', projectId)
+        .single();
+    if (error) throw error;
+    return data;
+}
+
+export async function addPlanToCampaignAction(campaignId, planPayload) {
+    try { await requireAdmin(); } catch { return { success: false, message: 'Unauthorized.' }; }
+    if (!campaignId) return { success: false, message: 'Campaign ID is missing.' };
+    if (!planPayload || typeof planPayload !== 'object') return { success: false, message: 'Plan payload is missing.' };
+
+    const supabase = getServerSupabase();
+    let projectId = null;
+
+    try {
+        const { data: campaign, error: campaignError } = await supabase
+            .from('project_campaigns')
+            .select('id, title, person_in_charge, client_name')
+            .eq('id', campaignId)
+            .single();
+        if (campaignError || !campaign) throw new Error('Campaign not found.');
+
+        const vendorName = planPayload.vendor_name?.trim();
+        if (!vendorName) return { success: false, message: 'Vendor name is required.' };
+
+        const groups = Array.isArray(planPayload.project_info_groups) ? planPayload.project_info_groups : [];
+        const flattenedTargets = flattenPlanTargets(groups);
+        if (flattenedTargets.length === 0) return { success: false, message: 'At least one target row is required.' };
+
+        const totalQuantity = computePlanTotal(groups);
+        if (totalQuantity <= 0) return { success: false, message: 'Plan quantity must be greater than zero.' };
+
+        const languages = Array.isArray(planPayload.languages) ? planPayload.languages : [];
+        const validLanguages = languages
+            .map(lang => ({ code: (lang.code || '').trim().toUpperCase(), ratio: parseInt(lang.ratio || '0', 10) || 0 }))
+            .filter(lang => lang.code && lang.ratio > 0);
+
+        const vendorId = await resolveVendor(supabase, vendorName);
+        const startDate = normalizeDateInput(planPayload.start_date);
+        const deadline = normalizeDateInput(planPayload.deadline);
+        const activateImmediately = !!planPayload.activate_immediately;
+        const projectHash = crypto.randomBytes(32).toString('hex');
+
+        const { data: existingPlans, error: existingPlansError } = await supabase
+            .from('project_plans')
+            .select('step_order')
+            .eq('campaign_id', campaignId);
+        if (existingPlansError) throw existingPlansError;
+        const nextStepOrder = (existingPlans || []).reduce((max, plan) => Math.max(max, plan.step_order ?? 0), -1) + 1;
+
+        const { data: project, error: projectError } = await supabase
+            .from('projects')
+            .insert({
+                project_name: campaign.title,
+                owner: campaign.person_in_charge || '',
+                start_date: startDate,
+                deadline,
+                vendor_id: vendorId,
+                country: (planPayload.country || 'GLOBAL').toUpperCase(),
+                language: validLanguages[0]?.code || 'EN',
+                total_quantity: totalQuantity,
+                remarks: planPayload.remarks || null,
+                dripfeed_enabled: !!planPayload.dripfeed_enabled,
+                dripfeed_period: planPayload.dripfeed_enabled ? (planPayload.dripfeed_period || null) : null,
+                urls_per_day: planPayload.dripfeed_enabled ? (parseInt(planPayload.urls_per_day || '0', 10) || null) : null,
+                url_entry_enabled: false,
+                price: parseFloat(planPayload.price || 0) || 0,
+                price_type: planPayload.price_type || 'per_url',
+                package_id: null,
+                randomize_languages: !!planPayload.randomize_languages,
+                status: 'Inprogress',
+                is_approved: activateImmediately,
+                payment_status: activateImmediately ? 'approved' : 'pending',
+                created_date: new Date().toISOString(),
+                client_name: campaign.client_name || null
+            })
+            .select('id')
+            .single();
+        if (projectError) throw new Error(`Project insert failed: ${projectError.message}`);
+        projectId = project.id;
+
+        const rollback = async () => {
+            if (!projectId) return;
+            await supabase.from('project_languages').delete().eq('project_id', projectId);
+            await supabase.from('project_targets').delete().eq('project_id', projectId);
+            await supabase.from('projects_hub').delete().eq('project_id', projectId);
+            await supabase.from('project_plans').delete().eq('project_id', projectId);
+            await supabase.from('projects').delete().eq('id', projectId);
+        };
+
+        if (validLanguages.length > 0) {
+            const { error: languageError } = await supabase.from('project_languages').insert(
+                validLanguages.map(lang => ({ project_id: projectId, lang_code: lang.code, ratio: lang.ratio }))
+            );
+            if (languageError) { await rollback(); throw new Error(`Languages insert failed: ${languageError.message}`); }
+        }
+
+        const { error: targetError } = await supabase.from('project_targets').insert(
+            flattenedTargets.map(target => ({
+                project_id: projectId,
+                category: target.category || 'NULL',
+                anchor_text: target.anchor_text,
+                target_url: target.target_url,
+                quantity_requested: parseInt(target.quantity, 10),
+                sheet_name: target.sheet_name
+            }))
+        );
+        if (targetError) { await rollback(); throw new Error(`Targets insert failed: ${targetError.message}`); }
+
+        const { error: hubError } = await supabase.from('projects_hub').insert({
+            project_id: projectId,
+            hash: projectHash,
+            targets: flattenedTargets,
+            vendor_staging_data: null,
+            is_locked: false
+        });
+        if (hubError) { await rollback(); throw new Error(`Hub insert failed: ${hubError.message}`); }
+
+        const planRows = groups.map((group, idx) => ({
+            campaign_id: campaignId,
+            project_id: projectId,
+            step_order: nextStepOrder + idx,
+            category: group.category || null,
+            plan_info: group.sheet_name || null,
+            vendor_id: vendorId,
+            country: (planPayload.country || 'GLOBAL').toUpperCase(),
+            start_date: startDate,
+            end_date: deadline,
+            dripfeed_enabled: !!planPayload.dripfeed_enabled,
+            dripfeed_period: planPayload.dripfeed_enabled ? String(planPayload.dripfeed_period || '') : null,
+            links_per_day: planPayload.dripfeed_enabled ? (parseInt(planPayload.urls_per_day || '0', 10) || null) : null,
+            total_quantity: (group.placement_target || []).reduce((sum, target) => sum + (parseInt(target.ratio || '0', 10) || 0), 0)
+        }));
+
+        const { error: planError } = await supabase.from('project_plans').insert(planRows);
+        if (planError) { await rollback(); throw new Error(`Plan link insert failed: ${planError.message}`); }
+
+        const hydratedProject = await fetchProjectDetailsRow(supabase, projectId);
+
+        revalidatePath('/admin', 'layout');
+        revalidatePath('/admin/projects');
+        revalidatePath('/admin/placements');
+        revalidatePath('/admin/completed');
+
+        return {
+            success: true,
+            message: activateImmediately ? 'Plan added and activated.' : 'Plan added as pending.',
+            project: hydratedProject
+        };
+    } catch (error) {
+        console.error('Server error adding campaign plan:', error);
+        return { success: false, message: error.message || 'An unexpected error occurred while adding the plan.' };
+    }
 }
 
 export async function updateDashboardProjects(projectsArray) {

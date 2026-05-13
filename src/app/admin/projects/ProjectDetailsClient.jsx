@@ -9,12 +9,14 @@ import {
     ChevronRight,
     CircleDollarSign,
     FolderKanban,
+    Plus,
     Search,
     Trash2,
     X,
 } from 'lucide-react';
 import CopyButton from './CopyButton';
-import { deleteProject, approveProject, updateDashboardProjects, approvePaymentAction, markPaymentPendingAction } from '../actions';
+import { deleteProject, approveProject, updateDashboardProjects, approvePaymentAction, markPaymentPendingAction, addPlanToCampaignAction } from '../actions';
+import { getCategories } from '../catalog/categories/actions';
 
 function getPlanRows(project) {
     return Array.isArray(project.project_plans)
@@ -66,6 +68,60 @@ function formatTitleWithDate(dateStr, title) {
     const mm = String(date.getMonth() + 1).padStart(2, '0');
     const dd = String(date.getDate()).padStart(2, '0');
     return `${yyyy}.${mm}.${dd}-${title || 'Unnamed'}`;
+}
+
+function genLocalId() {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+    return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function createTargetRow() {
+    return { id: genLocalId(), anchor_text: '', target_url: '', ratio: 1 };
+}
+
+function createInfoGroup() {
+    return {
+        id: genLocalId(),
+        sheet_name: '',
+        category: 'NULL',
+        placement_target: [createTargetRow()],
+    };
+}
+
+function createLanguageRow() {
+    return { id: genLocalId(), code: 'EN', ratio: 1 };
+}
+
+function createAddPlanForm() {
+    const today = new Date().toISOString().substring(0, 10);
+    return {
+        vendor_name: '',
+        country: 'GLOBAL',
+        start_date: today,
+        deadline: today,
+        dripfeed_enabled: true,
+        dripfeed_period: '',
+        urls_per_day: '',
+        price: 0,
+        price_type: 'per_url',
+        randomize_languages: false,
+        remarks: '',
+        activate_immediately: false,
+        languages: [createLanguageRow()],
+        project_info_groups: [createInfoGroup()],
+    };
+}
+
+function calculateDeadlineFromPeriod(startDate, period) {
+    if (!startDate || period === '') return null;
+    const days = parseInt(period, 10);
+    if (!Number.isFinite(days) || days < 0) return null;
+
+    const start = new Date(`${startDate}T00:00:00`);
+    if (Number.isNaN(start.getTime())) return null;
+
+    start.setDate(start.getDate() + days);
+    return start.toISOString().substring(0, 10);
 }
 
 function getProjectStatusConfig(project, progressPercent) {
@@ -130,9 +186,11 @@ function groupProjectsByCampaign(projects) {
     projects.forEach(project => {
         const key = getCampaignKey(project);
         if (!map.has(key)) {
-            const createdAt = getPrimaryPlan(project).created_at || project.created_date;
+            const primaryPlan = getPrimaryPlan(project);
+            const createdAt = primaryPlan.created_at || project.created_date;
             map.set(key, {
                 key,
+                campaignId: primaryPlan.campaign_id || null,
                 label: getCampaignLabel(project),
                 projectTitle: project.project_name || 'Unnamed Project',
                 createdAt,
@@ -168,6 +226,10 @@ export default function ProjectDetailsClient({ initialProjects }) {
     const [isSaving, setIsSaving] = useState(false);
     const [, startTransition] = useTransition();
     const [expandedCampaigns, setExpandedCampaigns] = useState({});
+    const [addPlanCampaign, setAddPlanCampaign] = useState(null);
+    const [addPlanForm, setAddPlanForm] = useState(createAddPlanForm);
+    const [categories, setCategories] = useState([]);
+    const [isAddingPlan, setIsAddingPlan] = useState(false);
     const deletedIdsRef = useRef(new Set());
 
     useEffect(() => {
@@ -197,6 +259,14 @@ export default function ProjectDetailsClient({ initialProjects }) {
         return () => source.close();
     }, []);
 
+    useEffect(() => {
+        let cancelled = false;
+        getCategories().then(result => {
+            if (!cancelled && result?.success) setCategories(result.categories || []);
+        });
+        return () => { cancelled = true; };
+    }, []);
+
     const handleEnterEditMode = () => {
         setEditedProjects(JSON.parse(JSON.stringify(projects)).map(p => ({
             ...p,
@@ -210,6 +280,7 @@ export default function ProjectDetailsClient({ initialProjects }) {
         setIsEditMode(false);
         setEditedProjects([]);
         setDirtyProjectIds(new Set());
+        setAddPlanCampaign(null);
     };
 
     const handleSaveEdits = async () => {
@@ -299,6 +370,116 @@ export default function ProjectDetailsClient({ initialProjects }) {
                 alert(`Failed to mark pending: ${res.message}`);
             }
         });
+    };
+
+    const openAddPlanModal = (group) => {
+        const summary = summarizeCampaign(group.projects);
+        setAddPlanCampaign({ ...group, summary });
+        setAddPlanForm(prev => ({
+            ...createAddPlanForm(),
+            country: group.projects[0]?.country || 'GLOBAL',
+            start_date: summary.latestEnd ? new Date(summary.latestEnd).toISOString().substring(0, 10) : prev.start_date,
+            deadline: summary.latestEnd ? new Date(summary.latestEnd).toISOString().substring(0, 10) : prev.deadline,
+        }));
+    };
+
+    const closeAddPlanModal = () => {
+        if (isAddingPlan) return;
+        setAddPlanCampaign(null);
+        setAddPlanForm(createAddPlanForm());
+    };
+
+    const updateAddPlanField = (field, value) => {
+        setAddPlanForm(prev => {
+            const next = { ...prev, [field]: value };
+            if (field === 'start_date' || field === 'dripfeed_period') {
+                const deadline = calculateDeadlineFromPeriod(next.start_date, next.dripfeed_period);
+                if (deadline) next.deadline = deadline;
+            }
+            return next;
+        });
+    };
+
+    const updateLanguage = (id, field, value) => {
+        setAddPlanForm(prev => ({
+            ...prev,
+            languages: prev.languages.map(lang => lang.id === id ? { ...lang, [field]: value } : lang),
+        }));
+    };
+
+    const addLanguage = () => {
+        setAddPlanForm(prev => ({ ...prev, languages: [...prev.languages, createLanguageRow()] }));
+    };
+
+    const removeLanguage = (id) => {
+        setAddPlanForm(prev => ({ ...prev, languages: prev.languages.filter(lang => lang.id !== id) }));
+    };
+
+    const updateGroup = (groupId, field, value) => {
+        setAddPlanForm(prev => ({
+            ...prev,
+            project_info_groups: prev.project_info_groups.map(group => group.id === groupId ? { ...group, [field]: value } : group),
+        }));
+    };
+
+    const addGroup = () => {
+        setAddPlanForm(prev => ({ ...prev, project_info_groups: [...prev.project_info_groups, createInfoGroup()] }));
+    };
+
+    const removeGroup = (groupId) => {
+        setAddPlanForm(prev => ({ ...prev, project_info_groups: prev.project_info_groups.filter(group => group.id !== groupId) }));
+    };
+
+    const updateTarget = (groupId, targetId, field, value) => {
+        setAddPlanForm(prev => ({
+            ...prev,
+            project_info_groups: prev.project_info_groups.map(group => group.id === groupId
+                ? {
+                    ...group,
+                    placement_target: group.placement_target.map(target => target.id === targetId ? { ...target, [field]: value } : target)
+                }
+                : group),
+        }));
+    };
+
+    const addTarget = (groupId) => {
+        setAddPlanForm(prev => ({
+            ...prev,
+            project_info_groups: prev.project_info_groups.map(group => group.id === groupId
+                ? { ...group, placement_target: [...group.placement_target, createTargetRow()] }
+                : group),
+        }));
+    };
+
+    const removeTarget = (groupId, targetId) => {
+        setAddPlanForm(prev => ({
+            ...prev,
+            project_info_groups: prev.project_info_groups.map(group => group.id === groupId
+                ? { ...group, placement_target: group.placement_target.filter(target => target.id !== targetId) }
+                : group),
+        }));
+    };
+
+    const handleAddPlanSubmit = async (event) => {
+        event.preventDefault();
+        if (!addPlanCampaign?.campaignId) return;
+        setIsAddingPlan(true);
+        const result = await addPlanToCampaignAction(addPlanCampaign.campaignId, addPlanForm);
+        if (result.success && result.project) {
+            const nextProject = {
+                ...result.project,
+                vendorNameEdit: result.project.vendors?.vendor_name || '',
+            };
+            setProjects(prev => [nextProject, ...prev]);
+            if (isEditMode) setEditedProjects(prev => [nextProject, ...prev]);
+            setExpandedCampaigns(prev => ({ ...prev, [addPlanCampaign.key]: true }));
+            if (!nextProject.is_approved) setActiveTab('completed');
+            setAddPlanCampaign(null);
+            setAddPlanForm(createAddPlanForm());
+        } else {
+            alert(`Failed to add plan: ${result.message}`);
+        }
+        setIsAddingPlan(false);
     };
 
     const displayProjects = isEditMode ? editedProjects : projects;
@@ -583,9 +764,23 @@ export default function ProjectDetailsClient({ initialProjects }) {
                     </td>
                 )}
                 <td className="px-6 py-5 whitespace-nowrap text-right">
-                    <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
-                        {isExpanded ? 'Expanded' : 'Collapsed'}
-                    </span>
+                    {isEditMode && group.campaignId ? (
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                openAddPlanModal(group);
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 transition-colors shadow-sm"
+                        >
+                            <Plus className="w-3.5 h-3.5" />
+                            Add Plan
+                        </button>
+                    ) : (
+                        <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
+                            {isExpanded ? 'Expanded' : 'Collapsed'}
+                        </span>
+                    )}
                 </td>
             </tr>
         );
@@ -770,6 +965,156 @@ export default function ProjectDetailsClient({ initialProjects }) {
                         () => setIsCollapsed(prev => ({ ...prev, completed: !prev.completed })),
                         true
                     )}
+                </div>
+            )}
+
+            {addPlanCampaign && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-slate-900/40 backdrop-blur-md">
+                    <form onSubmit={handleAddPlanSubmit} className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl overflow-hidden animate-in zoom-in duration-200">
+                        <div className="px-8 py-5 border-b border-slate-100 flex items-center justify-between">
+                            <div>
+                                <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">Add Plan</h3>
+                                <p className="text-xs font-semibold text-slate-400 mt-1">{addPlanCampaign.displayTitle}</p>
+                            </div>
+                            <button type="button" onClick={closeAddPlanModal} className="text-slate-400 hover:text-slate-900 transition-colors p-2">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <div className="px-8 py-6 overflow-y-auto max-h-[72vh] bg-slate-50/40 space-y-6">
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                <label className="flex flex-col gap-1.5">
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Vendor</span>
+                                    <input required value={addPlanForm.vendor_name} onChange={e => updateAddPlanField('vendor_name', e.target.value)} className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-white" />
+                                </label>
+                                <label className="flex flex-col gap-1.5">
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Country</span>
+                                    <input value={addPlanForm.country} onChange={e => updateAddPlanField('country', e.target.value)} className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-white" />
+                                </label>
+                                <label className="flex flex-col gap-1.5">
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Start</span>
+                                    <input type="date" required value={addPlanForm.start_date} onChange={e => updateAddPlanField('start_date', e.target.value)} className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-white" />
+                                </label>
+                                <label className="flex flex-col gap-1.5">
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Deadline</span>
+                                    <input type="date" required value={addPlanForm.deadline} onChange={e => updateAddPlanField('deadline', e.target.value)} className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-white" />
+                                </label>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                                <label className="flex items-center gap-3 bg-white border border-slate-200 rounded-lg px-3 py-2">
+                                    <input type="checkbox" checked={addPlanForm.dripfeed_enabled} onChange={e => updateAddPlanField('dripfeed_enabled', e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+                                    <span className="text-xs font-black uppercase tracking-widest text-slate-600">Dripfeed</span>
+                                </label>
+                                <label className="flex flex-col gap-1.5">
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Period</span>
+                                    <input type="number" min="0" value={addPlanForm.dripfeed_period} onChange={e => updateAddPlanField('dripfeed_period', e.target.value)} className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-white" />
+                                </label>
+                                <label className="flex flex-col gap-1.5">
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">URLs / Day</span>
+                                    <input type="number" min="0" value={addPlanForm.urls_per_day} onChange={e => updateAddPlanField('urls_per_day', e.target.value)} className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-white" />
+                                </label>
+                                <label className="flex flex-col gap-1.5">
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Price</span>
+                                    <input type="number" min="0" step="0.01" value={addPlanForm.price} onChange={e => updateAddPlanField('price', e.target.value)} className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-white" />
+                                </label>
+                                <label className="flex flex-col gap-1.5">
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Price Type</span>
+                                    <select value={addPlanForm.price_type} onChange={e => updateAddPlanField('price_type', e.target.value)} className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+                                        <option value="per_url">Per URL</option>
+                                        <option value="package">Package</option>
+                                    </select>
+                                </label>
+                            </div>
+
+                            <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Languages</span>
+                                    <button type="button" onClick={addLanguage} className="text-[10px] font-black uppercase tracking-widest text-indigo-600 hover:text-indigo-800">Add Language</button>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    {addPlanForm.languages.map(lang => (
+                                        <div key={lang.id} className="flex items-center gap-2">
+                                            <input value={lang.code} onChange={e => updateLanguage(lang.id, 'code', e.target.value)} className="w-24 px-3 py-2 border border-slate-200 rounded-lg text-sm uppercase outline-none focus:ring-2 focus:ring-indigo-500" placeholder="EN" />
+                                            <input type="number" min="0" value={lang.ratio} onChange={e => updateLanguage(lang.id, 'ratio', e.target.value)} className="w-24 px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
+                                            {addPlanForm.languages.length > 1 && (
+                                                <button type="button" onClick={() => removeLanguage(lang.id)} className="p-2 text-slate-400 hover:text-red-600">
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="space-y-4">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Target Groups</span>
+                                    <button type="button" onClick={addGroup} className="text-[10px] font-black uppercase tracking-widest text-indigo-600 hover:text-indigo-800">Add Group</button>
+                                </div>
+                                {addPlanForm.project_info_groups.map(group => (
+                                    <div key={group.id} className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+                                        <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-3">
+                                            <input value={group.sheet_name} onChange={e => updateGroup(group.id, 'sheet_name', e.target.value)} className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Sheet name" />
+                                            <select value={group.category} onChange={e => updateGroup(group.id, 'category', e.target.value)} className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-white" aria-label="Category">
+                                                {categories.length === 0 ? (
+                                                    <option value={group.category}>{group.category || 'Loading categories...'}</option>
+                                                ) : (
+                                                    categories.map(category => (
+                                                        <option key={category.id} value={category.name}>{category.name}</option>
+                                                    ))
+                                                )}
+                                            </select>
+                                            {addPlanForm.project_info_groups.length > 1 && (
+                                                <button type="button" onClick={() => removeGroup(group.id)} className="px-3 py-2 text-xs font-bold text-red-600 bg-red-50 rounded-lg">Remove</button>
+                                            )}
+                                        </div>
+                                        <div className="space-y-2">
+                                            <div className="hidden md:grid grid-cols-[1.2fr_1.4fr_90px_auto] gap-2 px-1">
+                                                <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Anchor Text</span>
+                                                <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Target URL</span>
+                                                <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Quantity</span>
+                                                <span />
+                                            </div>
+                                            {group.placement_target.map(target => (
+                                                <div key={target.id} className="grid grid-cols-1 md:grid-cols-[1.2fr_1.4fr_90px_auto] gap-2">
+                                                    <input required value={target.anchor_text} onChange={e => updateTarget(group.id, target.id, 'anchor_text', e.target.value)} className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Anchor text" aria-label="Anchor text" />
+                                                    <input required value={target.target_url} onChange={e => updateTarget(group.id, target.id, 'target_url', e.target.value)} className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Target URL" aria-label="Target URL" />
+                                                    <input required type="number" min="1" value={target.ratio} onChange={e => updateTarget(group.id, target.id, 'ratio', e.target.value)} className="px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Qty" aria-label="Quantity" title="Quantity" />
+                                                    {group.placement_target.length > 1 && (
+                                                        <button type="button" onClick={() => removeTarget(group.id, target.id)} className="p-2 text-slate-400 hover:text-red-600">
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <button type="button" onClick={() => addTarget(group.id)} className="text-[10px] font-black uppercase tracking-widest text-indigo-600 hover:text-indigo-800">Add Target</button>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <label className="flex items-center gap-3 bg-white border border-slate-200 rounded-lg px-3 py-3">
+                                    <input type="checkbox" checked={addPlanForm.randomize_languages} onChange={e => updateAddPlanField('randomize_languages', e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+                                    <span className="text-xs font-black uppercase tracking-widest text-slate-600">Randomize Languages</span>
+                                </label>
+                                <label className="flex items-center gap-3 bg-white border border-slate-200 rounded-lg px-3 py-3">
+                                    <input type="checkbox" checked={addPlanForm.activate_immediately} onChange={e => updateAddPlanField('activate_immediately', e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" />
+                                    <span className="text-xs font-black uppercase tracking-widest text-slate-600">Activate Immediately</span>
+                                </label>
+                            </div>
+
+                            <textarea value={addPlanForm.remarks} onChange={e => updateAddPlanField('remarks', e.target.value)} className="w-full min-h-20 px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-white" placeholder="Remarks" />
+                        </div>
+
+                        <div className="bg-white px-8 py-4 border-t border-slate-100 flex justify-end gap-3">
+                            <button type="button" onClick={closeAddPlanModal} disabled={isAddingPlan} className="px-5 py-2.5 text-xs font-bold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all uppercase tracking-widest disabled:opacity-50">Cancel</button>
+                            <button type="submit" disabled={isAddingPlan} className="px-5 py-2.5 text-xs font-black text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-500/20 uppercase tracking-widest disabled:opacity-50">
+                                {isAddingPlan ? 'Adding...' : addPlanForm.activate_immediately ? 'Add & Activate' : 'Add Pending Plan'}
+                            </button>
+                        </div>
+                    </form>
                 </div>
             )}
 

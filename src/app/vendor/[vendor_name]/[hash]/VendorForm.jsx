@@ -21,6 +21,8 @@ const ALWAYS_READONLY = new Set([1, 2, 3, 6, 8]);
 const MUTATION_ID = 'sheet.mutation.set-range-values';
 const READONLY_STYLE = 'readonly';
 const INDEXED_STATUS_OPTIONS = ['page indexed', 'page not indexed', 'domain not indexed'];
+const CACHE_PREFIX = 'df_vendor_cache_';
+const PENDING_PREFIX = 'df_vendor_pending_hashes_';
 
 function normalizeIndexStatus(raw) {
     const v = (raw || '').toLowerCase().trim();
@@ -52,6 +54,65 @@ function formatIndexedDatetime(raw) {
             hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
         });
     } catch { return raw; }
+}
+
+function getPendingCacheKey(vendorUuid, vendorName) {
+    return `${PENDING_PREFIX}${vendorUuid || vendorName || 'default'}`;
+}
+
+function readPendingHashes(vendorUuid, vendorName) {
+    try {
+        const raw = localStorage.getItem(getPendingCacheKey(vendorUuid, vendorName));
+        const parsed = JSON.parse(raw || '[]');
+        return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+    } catch {
+        return [];
+    }
+}
+
+function writePendingHashes(vendorUuid, vendorName, hashes) {
+    try {
+        const key = getPendingCacheKey(vendorUuid, vendorName);
+        const unique = [...new Set((hashes || []).filter(Boolean))];
+        if (unique.length === 0) localStorage.removeItem(key);
+        else localStorage.setItem(key, JSON.stringify(unique));
+    } catch { /* noop */ }
+}
+
+function addPendingHash(vendorUuid, vendorName, hash) {
+    if (!hash) return;
+    writePendingHashes(vendorUuid, vendorName, [...readPendingHashes(vendorUuid, vendorName), hash]);
+}
+
+function removePendingHash(vendorUuid, vendorName, hash) {
+    if (!hash) return;
+    writePendingHashes(vendorUuid, vendorName, readPendingHashes(vendorUuid, vendorName).filter(h => h !== hash));
+}
+
+function buildRowsPayload(sourceRows) {
+    return (sourceRows || [])
+        .filter(r => {
+            const isNewRow = typeof r.id === 'string' && r.id.startsWith('new-');
+            if (!isNewRow) return true;
+            return !!(r.target_url || r.anchor_text || r.published_url || r.domain_url || r.remark || r.indexed_status);
+        })
+        .map(r => ({
+            id: r.id,
+            target_id: r.target_id,
+            target_url: r.target_url,
+            anchor_text: r.anchor_text,
+            language: r.language || '',
+            domain_url: r.domain_url || '',
+            published_url: r.published_url || '',
+            published_date: r.published_date || '',
+            remark: r.remark || '',
+            indexed_status: r.indexed_status || '',
+            indexed_datetime: r.indexed_datetime || '',
+        }));
+}
+
+function completedRowsCount(sourceRows) {
+    return (sourceRows || []).filter(r => r.published_url?.trim() && r.published_date?.trim()).length;
 }
 
 // ---------------------------------------------------------------------------
@@ -151,8 +212,54 @@ export default function VendorForm({ initialRows, projectHash, siblingPlans = []
         try {
             const cacheKey = `df_vendor_cache_${projectHash}`;
             localStorage.setItem(cacheKey, JSON.stringify({ timestamp: new Date().toISOString(), version, rows }));
+            addPendingHash(vendorUuid, vendorName, projectHash);
         } catch (e) { console.error('Failed to write to local cache', e); }
-    }, [rows, isDirty, projectHash, version]);
+    }, [rows, isDirty, projectHash, version, vendorUuid, vendorName]);
+
+    const flushCachedProjects = useCallback(async (excludeHash = null) => {
+        const pendingHashes = readPendingHashes(vendorUuid, vendorName).filter(h => h && h !== excludeHash);
+        if (pendingHashes.length === 0) return { attempted: 0, saved: 0, failed: 0 };
+
+        let saved = 0;
+        let failed = 0;
+        for (const hash of pendingHashes) {
+            try {
+                const cacheKey = `${CACHE_PREFIX}${hash}`;
+                const cachedData = JSON.parse(localStorage.getItem(cacheKey) || 'null');
+                if (!cachedData?.rows || !Array.isArray(cachedData.rows)) {
+                    removePendingHash(vendorUuid, vendorName, hash);
+                    localStorage.removeItem(cacheKey);
+                    continue;
+                }
+
+                const payload = buildRowsPayload(cachedData.rows);
+                if (payload.length === 0) {
+                    removePendingHash(vendorUuid, vendorName, hash);
+                    localStorage.removeItem(cacheKey);
+                    continue;
+                }
+
+                const result = await saveVendorProgressDelta(
+                    hash,
+                    payload,
+                    completedRowsCount(cachedData.rows),
+                    cachedData.version
+                );
+
+                if (result?.success) {
+                    saved += 1;
+                    removePendingHash(vendorUuid, vendorName, hash);
+                    localStorage.removeItem(cacheKey);
+                } else {
+                    failed += 1;
+                }
+            } catch (e) {
+                failed += 1;
+            }
+        }
+
+        return { attempted: pendingHashes.length, saved, failed };
+    }, [vendorUuid, vendorName]);
 
     const handleSaveProgress = useCallback(async (isAutoSave = false) => {
         setIsSaving(true);
@@ -188,12 +295,13 @@ export default function VendorForm({ initialRows, projectHash, siblingPlans = []
             }
 
             if (delta.length === 0) {
+                await flushCachedProjects(projectHash);
                 setIsDirty(false);
                 isDirtyRef.current = false;
                 return;
             }
 
-            const currentCompletedCount = rows.filter(r => r.published_url?.trim() && r.published_date?.trim()).length;
+            const currentCompletedCount = completedRowsCount(rows);
             const result = await saveVendorProgressDelta(projectHash, delta, currentCompletedCount, version);
 
             if (result.conflict) {
@@ -209,6 +317,16 @@ export default function VendorForm({ initialRows, projectHash, siblingPlans = []
                 setVersion(v => v + 1);
                 lastSavedRowsRef.current = [...rows];
                 try { localStorage.removeItem(`df_vendor_cache_${projectHash}`); } catch (e) {}
+                removePendingHash(vendorUuid, vendorName, projectHash);
+                const flushResult = await flushCachedProjects(projectHash);
+                if (!isAutoSave && flushResult.saved > 0) {
+                    setFeedback({
+                        type: 'success',
+                        message: flushResult.failed > 0
+                            ? `${result.message} Also uploaded ${flushResult.saved} cached project(s); ${flushResult.failed} still pending.`
+                            : `${result.message} Also uploaded ${flushResult.saved} cached project(s).`
+                    });
+                }
             } else {
                 setFeedback({ type: 'error', message: result.message });
             }
@@ -218,7 +336,7 @@ export default function VendorForm({ initialRows, projectHash, siblingPlans = []
             setIsSaving(false);
             if (!isAutoSave && feedback.type !== 'error') setTimeout(() => setFeedback({ type: '', message: '' }), 4000);
         }
-    }, [rows, projectHash, feedback.type, version]);
+    }, [rows, projectHash, feedback.type, version, vendorUuid, vendorName, flushCachedProjects]);
 
     useEffect(() => { isDirtyRef.current = isDirty; }, [isDirty]);
 
@@ -739,7 +857,7 @@ export default function VendorForm({ initialRows, projectHash, siblingPlans = []
                         <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0" />
                         <div>
                             <p className="text-sm font-semibold text-blue-900">Unsaved changes found</p>
-                            <p className="text-xs text-blue-700">We found unsaved data from your last session that wasn't uploaded.</p>
+                            <p className="text-xs text-blue-700">We found unsaved data from your last session that was not uploaded.</p>
                         </div>
                     </div>
                     <div className="flex gap-2 w-full md:w-auto">
