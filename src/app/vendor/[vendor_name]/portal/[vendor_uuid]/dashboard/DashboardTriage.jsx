@@ -5,7 +5,12 @@ import TriageStrip from './TriageStrip';
 import TodaysFocus from './TodaysFocus';
 
 export default function DashboardTriage({ overdue, dueToday, newAssignments, pendingIndex, vendorName, vendorUuid }) {
-    const [activeFilter, setActiveFilter] = useState(null);
+    const [activeFilter, setActiveFilter] = useState('overdue');
+    const [isCollapsed, setIsCollapsed] = useState(true);
+
+    function handleToggleCollapsed() {
+        setIsCollapsed(prev => !prev);
+    }
 
     const counts = {
         overdue: overdue.length,
@@ -29,15 +34,23 @@ export default function DashboardTriage({ overdue, dueToday, newAssignments, pen
 
     return (
         <>
-            <TriageStrip counts={counts} activeFilter={activeFilter} onSelect={handleSelect} />
-            <TodaysFocus
-                overdue={filteredData.overdue}
-                dueToday={filteredData.dueToday}
-                newAssignments={filteredData.newAssignments}
-                pendingIndex={filteredData.pendingIndex}
-                vendorName={vendorName}
-                vendorUuid={vendorUuid}
+            <TriageStrip
+                counts={counts}
+                activeFilter={activeFilter}
+                onSelect={handleSelect}
+                isCollapsed={isCollapsed}
+                onToggleCollapsed={handleToggleCollapsed}
             />
+            {!isCollapsed && (
+                <TodaysFocus
+                    overdue={filteredData.overdue}
+                    dueToday={filteredData.dueToday}
+                    newAssignments={filteredData.newAssignments}
+                    pendingIndex={filteredData.pendingIndex}
+                    vendorName={vendorName}
+                    vendorUuid={vendorUuid}
+                />
+            )}
         </>
     );
 }

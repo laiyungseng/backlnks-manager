@@ -23,6 +23,20 @@ const READONLY_STYLE = 'readonly';
 const INDEXED_STATUS_OPTIONS = ['page indexed', 'page not indexed', 'domain not indexed'];
 const CACHE_PREFIX = 'df_vendor_cache_';
 const PENDING_PREFIX = 'df_vendor_pending_hashes_';
+const sheetMemoryCache = new Map();
+let univerModulesPromise = null;
+
+function loadUniverModules() {
+    if (!univerModulesPromise) {
+        univerModulesPromise = Promise.all([
+            import('@univerjs/presets'),
+            import('@univerjs/presets/preset-sheets-core'),
+            import('@univerjs/presets/preset-sheets-data-validation'),
+            import('@univerjs/presets/preset-sheets-core/locales/en-US'),
+        ]);
+    }
+    return univerModulesPromise;
+}
 
 function normalizeIndexStatus(raw) {
     const v = (raw || '').toLowerCase().trim();
@@ -130,6 +144,7 @@ export default function VendorForm({ initialRows, projectHash, siblingPlans = []
     const [version, setVersion] = useState(initialVersion);
     const isDirtyRef = useRef(isDirty);
     const lastSavedRowsRef = useRef(initialRows || []);
+    const activeProjectHashRef = useRef(projectHash);
 
     // Local Cache State
     const [hasUnsavedCache, setHasUnsavedCache] = useState(false);
@@ -141,6 +156,9 @@ export default function VendorForm({ initialRows, projectHash, siblingPlans = []
     // Filter Features States
     const [isFilterActive, setIsFilterActive] = useState(false);
     const [filters, setFilters] = useState({ target_url: '', anchor_text: '', published_url: '', remark: '', indexed_status: '' });
+    const [showBulkIndexModal, setShowBulkIndexModal] = useState(false);
+    const [bulkIndexText, setBulkIndexText] = useState('');
+    const [bulkIndexMode, setBulkIndexMode] = useState('empty');
 
     // Univer refs
     const univerAPIRef = useRef(null);
@@ -149,6 +167,7 @@ export default function VendorForm({ initialRows, projectHash, siblingPlans = []
     const isWritingBackRef = useRef(0); // counter: >0 means programmatic write in flight
     const isInitializedRef = useRef(false);
     const prevFilteredLengthRef = useRef(0);
+    const isLockedRef = useRef(isLocked);
 
     // Snapshot of row IDs present at mount — anything not in this set was added by the user
     // via Univer typing and should bypass readonly on target_url / anchor_text / language cols.
@@ -160,6 +179,73 @@ export default function VendorForm({ initialRows, projectHash, siblingPlans = []
     const localUrlEntryEnabledRef = useRef(localUrlEntryEnabled);
     useEffect(() => { rowsRef.current = rows; }, [rows]);
     useEffect(() => { localUrlEntryEnabledRef.current = localUrlEntryEnabled; }, [localUrlEntryEnabled]);
+    useEffect(() => { isLockedRef.current = isLocked; }, [isLocked]);
+
+    useEffect(() => {
+        if (!activeProjectHashRef.current) return;
+        sheetMemoryCache.set(activeProjectHashRef.current, {
+            rows,
+            version,
+            isDirty,
+            lastSavedRows: lastSavedRowsRef.current,
+        });
+    }, [rows, version, isDirty]);
+
+    useEffect(() => {
+        if (activeProjectHashRef.current === projectHash) return;
+
+        if (activeProjectHashRef.current) {
+            sheetMemoryCache.set(activeProjectHashRef.current, {
+                rows: rowsRef.current,
+                version,
+                isDirty: isDirtyRef.current,
+                lastSavedRows: lastSavedRowsRef.current,
+            });
+        }
+
+        const memory = sheetMemoryCache.get(projectHash);
+        const shouldUseMemory = memory && Number(memory.version || 0) >= Number(initialVersion || 0);
+        const nextRows = shouldUseMemory ? memory.rows : (initialRows || []);
+        const nextVersion = shouldUseMemory ? memory.version : initialVersion;
+        const nextDirty = shouldUseMemory ? !!memory.isDirty : false;
+
+        activeProjectHashRef.current = projectHash;
+        initialRowIdsRef.current = new Set((initialRows || []).map(r => r.id));
+        lastSavedRowsRef.current = shouldUseMemory ? (memory.lastSavedRows || initialRows || []) : (initialRows || []);
+        rowsRef.current = nextRows;
+        isDirtyRef.current = nextDirty;
+
+        setRows(nextRows);
+        setVersion(nextVersion);
+        setIsDirty(nextDirty);
+        setLastSavedAt(null);
+        setFeedback({ type: '', message: '' });
+        setHasUnsavedCache(false);
+        setCachedRows(null);
+        setLocalUrlEntryEnabled(urlEntryEnabled);
+        setIsFilterActive(false);
+        setFilters({ target_url: '', anchor_text: '', published_url: '', remark: '', indexed_status: '' });
+        setShowBulkIndexModal(false);
+        setBulkIndexText('');
+    }, [projectHash, initialRows, initialVersion, urlEntryEnabled, version]);
+
+    useEffect(() => {
+        if (activeProjectHashRef.current !== projectHash) return;
+        if (Number(initialVersion || 0) <= Number(version || 0)) return;
+        if (isDirtyRef.current) return;
+
+        const nextRows = initialRows || [];
+        rowsRef.current = nextRows;
+        lastSavedRowsRef.current = nextRows;
+        initialRowIdsRef.current = new Set(nextRows.map(r => r.id));
+
+        setRows(nextRows);
+        setVersion(initialVersion);
+        setLocalUrlEntryEnabled(urlEntryEnabled);
+        setHasUnsavedCache(false);
+        setCachedRows(null);
+        setFeedback({ type: '', message: '' });
+    }, [projectHash, initialRows, initialVersion, urlEntryEnabled, version]);
 
     // Compute unique dropdown options from rows
     const uniqueOptions = useMemo(() => ({
@@ -197,14 +283,26 @@ export default function VendorForm({ initialRows, projectHash, siblingPlans = []
             if (cachedDataStr) {
                 const cachedData = JSON.parse(cachedDataStr);
                 if (cachedData?.rows && JSON.stringify(cachedData.rows) !== JSON.stringify(initialRows)) {
-                    setHasUnsavedCache(true);
-                    setCachedRows(cachedData.rows);
+                    const cacheVersion = Number(cachedData.version || 0);
+                    const serverVersion = Number(initialVersion || 0);
+                    if (cacheVersion >= serverVersion) {
+                        setRows(cachedData.rows);
+                        rowsRef.current = cachedData.rows;
+                        setVersion(cachedData.version || initialVersion);
+                        setIsDirty(true);
+                        isDirtyRef.current = true;
+                        setHasUnsavedCache(false);
+                        setCachedRows(null);
+                        setFeedback({ type: 'success', message: 'Cached sheet data restored and will auto-save shortly.' });
+                    } else {
+                        localStorage.removeItem(cacheKey);
+                    }
                 } else {
                     localStorage.removeItem(cacheKey);
                 }
             }
         } catch (e) { console.error('Failed to read local cache', e); }
-    }, [projectHash, initialRows]);
+    }, [projectHash, initialRows, initialVersion]);
 
     // Immediate Local Cache Writing
     useEffect(() => {
@@ -389,10 +487,6 @@ export default function VendorForm({ initialRows, projectHash, siblingPlans = []
             anchor, ...data, progress: Math.round((data.submitted / data.total) * 100),
         }));
     }, [rows]);
-
-    const [showBulkIndexModal, setShowBulkIndexModal] = useState(false);
-    const [bulkIndexText, setBulkIndexText] = useState('');
-    const [bulkIndexMode, setBulkIndexMode] = useState('empty');
 
     const handleBulkIndexApply = useCallback(() => {
         if (isLocked) return;
@@ -590,12 +684,7 @@ export default function VendorForm({ initialRows, projectHash, siblingPlans = []
         let univerInstance = null;
 
         (async () => {
-            const [{ createUniver, defaultTheme, LocaleType, merge }, { UniverSheetsCorePreset }, { UniverSheetsDataValidationPreset }, enUSModule] = await Promise.all([
-                import('@univerjs/presets'),
-                import('@univerjs/presets/preset-sheets-core'),
-                import('@univerjs/presets/preset-sheets-data-validation'),
-                import('@univerjs/presets/preset-sheets-core/locales/en-US'),
-            ]);
+            const [{ createUniver, defaultTheme, LocaleType, merge }, { UniverSheetsCorePreset }, { UniverSheetsDataValidationPreset }, enUSModule] = await loadUniverModules();
             if (cancelled) return;
             const enUS = enUSModule.default || enUSModule;
 
@@ -643,7 +732,7 @@ export default function VendorForm({ initialRows, projectHash, siblingPlans = []
         disposable = univerAPI.onCommandExecuted((command) => {
             if (isWritingBackRef.current > 0) return;
             if (command.id !== MUTATION_ID) return;
-            if (isLocked) return;
+            if (isLockedRef.current) return;
 
             const { cellValue } = command.params || {};
             if (!cellValue) return;

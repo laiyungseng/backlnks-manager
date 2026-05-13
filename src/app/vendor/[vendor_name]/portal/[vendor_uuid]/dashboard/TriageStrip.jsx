@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertTriangle, Clock, Sparkles, Hourglass, X } from 'lucide-react';
+import { AlertTriangle, Clock, Sparkles, Hourglass, X, Eye, EyeOff } from 'lucide-react';
 
 const CHIPS = [
     { key: 'overdue',       label: 'Overdue',       Icon: AlertTriangle, tone: 'red' },
@@ -32,7 +32,7 @@ const BADGE = {
 
 const ACTIVE_BADGE = 'bg-white text-gray-900';
 
-export default function TriageStrip({ counts, activeFilter, onSelect }) {
+export default function TriageStrip({ counts, activeFilter, onSelect, isCollapsed, onToggleCollapsed }) {
     const visibleChips = CHIPS.filter(c => (counts[c.key] || 0) > 0);
 
     if (visibleChips.length === 0) return null;
@@ -73,6 +73,15 @@ export default function TriageStrip({ counts, activeFilter, onSelect }) {
                     Clear
                 </button>
             )}
+            <button
+                type="button"
+                onClick={onToggleCollapsed}
+                className="ml-auto flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 hover:text-gray-900 transition-colors"
+                aria-pressed={isCollapsed}
+            >
+                {isCollapsed ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                {isCollapsed ? 'Show all' : 'Hide all'}
+            </button>
         </div>
     );
 }

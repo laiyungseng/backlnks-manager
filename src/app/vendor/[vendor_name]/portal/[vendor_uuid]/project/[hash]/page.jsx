@@ -5,7 +5,6 @@ import { redirect } from 'next/navigation';
 import ProjectPageHeader from './ProjectPageHeader';
 import { writeAuditLog } from '@/lib/auditLog';
 import ProjectFormSection from './ProjectFormSection';
-import FormSkeleton from './FormSkeleton';
 
 export const dynamic = 'force-dynamic';
 
@@ -69,7 +68,7 @@ export default async function PortalProjectPage({ params }) {
             deadline={projectData?.deadline}
             hash={hash}
         >
-            <Suspense fallback={<FormSkeleton />}>
+            <Suspense fallback={null}>
                 <ProjectFormSection
                     projectId={projectId}
                     hash={hash}

@@ -7,6 +7,7 @@ import { Loader, CheckCircle2, Clock, PanelLeftClose, PanelLeftOpen, LogOut, Lay
 import { vendorLogoutAction } from '@/app/vendor/actions';
 import ActiveFiltersBar from './_lib/ActiveFiltersBar';
 import StickyProjectTab from './_lib/StickyProjectTab';
+import { VendorWorkbenchProvider } from './_lib/VendorWorkbenchContext';
 
 export default function VendorPortalLayout({ children }) {
     const [collapsed, setCollapsed] = useState(false);
@@ -39,7 +40,7 @@ export default function VendorPortalLayout({ children }) {
 
     return (
         <div className="flex h-screen bg-gray-50 overflow-hidden">
-            <aside className={`${collapsed ? 'w-16' : 'w-64'} bg-white border-r border-gray-200 flex flex-col transition-all duration-300 shrink-0 sticky top-0 h-screen z-20`}>
+            <aside className={`${collapsed ? 'w-16' : 'w-64'} bg-white border-r border-gray-200 flex flex-col transition-all duration-300 shrink-0 sticky top-0 h-screen z-[1000]`}>
                 {/* Header */}
                 <div className="h-16 px-4 flex items-center gap-2 border-b border-gray-100 shrink-0">
                     <div className="bg-indigo-600 w-8 h-8 rounded flex items-center justify-center text-sm font-bold text-white shadow shrink-0">
@@ -100,11 +101,13 @@ export default function VendorPortalLayout({ children }) {
                 </div>
             </aside>
 
-            <main ref={mainRef} className="flex-1 min-w-0 overflow-y-auto">
+            <main ref={mainRef} className="relative z-0 flex-1 min-w-0 overflow-y-auto">
                 <Suspense fallback={null}>
                     <ActiveFiltersBar />
                 </Suspense>
-                {children}
+                <VendorWorkbenchProvider>
+                    {children}
+                </VendorWorkbenchProvider>
                 <StickyProjectTab />
                 {showScrollTop && (
                     <button

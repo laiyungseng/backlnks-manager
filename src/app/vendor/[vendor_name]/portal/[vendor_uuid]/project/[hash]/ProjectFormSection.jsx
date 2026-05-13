@@ -1,8 +1,8 @@
 import { redirect } from 'next/navigation';
 import { getServerSupabase } from '@/lib/supabase-server';
-import VendorForm from '@/app/vendor/[vendor_name]/[hash]/VendorForm';
 import VendorSessionSetter from '@/app/vendor/[vendor_name]/[hash]/VendorSessionSetter';
 import { generateVendorRows } from '@/lib/vendorRowGenerator';
+import VendorWorkbenchActivator from './VendorWorkbenchActivator';
 
 export default async function ProjectFormSection({
     projectId,
@@ -95,24 +95,24 @@ export default async function ProjectFormSection({
     });
 
     return (
-        <div className="max-w-none px-4 sm:px-6 lg:px-8 py-6 pb-12">
+        <>
             <VendorSessionSetter key={`session-${hash}`} hash={hash} />
-
-            <VendorForm
-                key={hash}
-                initialRows={generatedRows}
-                projectHash={hash}
-                siblingPlans={siblingPlans}
-                vendorName={vendorName}
-                vendorUuid={vendorUuid}
-                dripfeedEnabled={projectData?.dripfeed_enabled}
-                dripfeedPeriod={projectData?.dripfeed_period}
-                urlsPerDay={projectData?.urls_per_day}
-                isLocked={projectsHub.is_locked || false}
-                isFinalized={projectData?.status === 'Finalized'}
-                urlEntryEnabled={projectData?.url_entry_enabled ?? true}
-                initialVersion={projectsHub.version ?? 1}
+            <VendorWorkbenchActivator
+                project={{
+                    initialRows: generatedRows,
+                    projectHash: hash,
+                    siblingPlans,
+                    vendorName,
+                    vendorUuid,
+                    dripfeedEnabled: projectData?.dripfeed_enabled,
+                    dripfeedPeriod: projectData?.dripfeed_period,
+                    urlsPerDay: projectData?.urls_per_day,
+                    isLocked: projectsHub.is_locked || false,
+                    isFinalized: projectData?.status === 'Finalized',
+                    urlEntryEnabled: projectData?.url_entry_enabled ?? true,
+                    initialVersion: projectsHub.version ?? 1,
+                }}
             />
-        </div>
+        </>
     );
 }

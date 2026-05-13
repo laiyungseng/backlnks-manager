@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { ChevronLeft } from 'lucide-react';
+import { VendorWorkbenchHost } from '../../_lib/VendorWorkbenchContext';
 
 const LAST_PROJECT_EVENT = 'vendor:last-project-change';
 
@@ -28,7 +29,7 @@ export default function ProjectPageHeader({ projectName, deadline, hash, childre
         : null;
 
     return (
-        <div className="flex flex-col h-full animate-in slide-in-from-right duration-300">
+        <div className="flex flex-col animate-in slide-in-from-right duration-300">
             <div className="shrink-0 flex items-center gap-3 px-4 py-3 bg-white border-b border-gray-200 shadow-sm sticky top-0 z-20">
                 <button
                     onClick={() => router.back()}
@@ -46,7 +47,8 @@ export default function ProjectPageHeader({ projectName, deadline, hash, childre
                     </span>
                 )}
             </div>
-            <div className="flex-1">
+            <div>
+                <VendorWorkbenchHost />
                 {children}
             </div>
         </div>
