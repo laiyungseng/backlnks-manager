@@ -33,7 +33,23 @@ function getDateDurationDays(startDate, deadline) {
     return Math.max(0, Math.round((end.getTime() - start.getTime()) / 86400000));
 }
 
-async function approveProjectSchedule(supabase, projectId, includeProjectApproval = false) {
+async function approveSinglePlan(supabase, projectId) {
+    const { error } = await supabase
+        .from('projects')
+        .update({ is_approved: true })
+        .eq('id', projectId);
+    if (error) throw error;
+    return [projectId];
+}
+
+async function payAndShiftSinglePlan(supabase, projectId) {
+    const { data: targetProject, error: targetError } = await supabase
+        .from('projects')
+        .select('id, start_date, deadline, dripfeed_enabled, dripfeed_period')
+        .eq('id', projectId)
+        .single();
+    if (targetError) throw targetError;
+
     const { data: ownPlan, error: ownPlanError } = await supabase
         .from('project_plans')
         .select('campaign_id')
@@ -41,68 +57,62 @@ async function approveProjectSchedule(supabase, projectId, includeProjectApprova
         .maybeSingle();
     if (ownPlanError) throw ownPlanError;
 
-    if (!ownPlan?.campaign_id) {
-        const updatePayload = includeProjectApproval
-            ? { is_approved: true, payment_status: 'approved' }
-            : { payment_status: 'approved' };
-        const { error } = await supabase.from('projects').update(updatePayload).eq('id', projectId);
-        if (error) throw error;
-        return [projectId];
+    let latestPaidEnd = null;
+    if (ownPlan?.campaign_id) {
+        const { data: campaignPlans, error: campaignPlansError } = await supabase
+            .from('project_plans')
+            .select('project_id')
+            .eq('campaign_id', ownPlan.campaign_id);
+        if (campaignPlansError) throw campaignPlansError;
+
+        const siblingIds = [...new Set((campaignPlans || [])
+            .map(plan => plan.project_id)
+            .filter(id => id && id !== projectId))];
+
+        if (siblingIds.length) {
+            const { data: paidSiblings, error: siblingsError } = await supabase
+                .from('projects')
+                .select('deadline')
+                .in('id', siblingIds)
+                .eq('payment_status', 'approved');
+            if (siblingsError) throw siblingsError;
+            for (const sibling of paidSiblings || []) {
+                if (sibling.deadline && (!latestPaidEnd || sibling.deadline > latestPaidEnd)) {
+                    latestPaidEnd = sibling.deadline;
+                }
+            }
+        }
     }
 
-    const { data: campaignPlans, error: campaignPlansError } = await supabase
-        .from('project_plans')
-        .select('project_id, step_order, start_date, end_date')
-        .eq('campaign_id', ownPlan.campaign_id)
-        .order('step_order', { ascending: true });
-    if (campaignPlansError) throw campaignPlansError;
+    const todayStr = formatDateOnly(new Date());
+    const chainedStart = latestPaidEnd ? addDaysToDateStr(latestPaidEnd, 1) : todayStr;
+    const newStart = chainedStart > todayStr ? chainedStart : todayStr;
 
-    const projectIds = [...new Set((campaignPlans || []).map(plan => plan.project_id).filter(Boolean))];
-    if (projectIds.length === 0) return [];
+    const durationDays = targetProject.dripfeed_enabled && Number(targetProject.dripfeed_period) > 0
+        ? Number(targetProject.dripfeed_period)
+        : getDateDurationDays(targetProject.start_date, targetProject.deadline);
+    const newDeadline = addDaysToDateStr(newStart, durationDays);
 
-    const { data: projects, error: projectsError } = await supabase
+    const { error: updateProjectError } = await supabase
         .from('projects')
-        .select('id, start_date, deadline')
-        .in('id', projectIds);
-    if (projectsError) throw projectsError;
-    const projectById = new Map((projects || []).map(project => [project.id, project]));
-
-    let nextStart = formatDateOnly(new Date());
-    const touchedIds = [];
-
-    for (const plan of campaignPlans || []) {
-        if (!plan.project_id || touchedIds.includes(plan.project_id)) continue;
-
-        const project = projectById.get(plan.project_id) || {};
-        const originalStart = project.start_date || plan.start_date;
-        const originalDeadline = project.deadline || plan.end_date;
-        const durationDays = getDateDurationDays(originalStart, originalDeadline);
-        const newDeadline = addDaysToDateStr(nextStart, durationDays);
-        const updatePayload = {
-            start_date: nextStart,
+        .update({
+            payment_status: 'approved',
+            start_date: newStart,
             deadline: newDeadline,
-            payment_status: 'approved'
-        };
-        if (includeProjectApproval || plan.project_id === projectId) updatePayload.is_approved = true;
+        })
+        .eq('id', projectId);
+    if (updateProjectError) throw updateProjectError;
 
-        const { error: updateProjectError } = await supabase
-            .from('projects')
-            .update(updatePayload)
-            .eq('id', plan.project_id);
-        if (updateProjectError) throw updateProjectError;
-
+    if (ownPlan?.campaign_id) {
         const { error: updatePlanError } = await supabase
             .from('project_plans')
-            .update({ start_date: nextStart, end_date: newDeadline })
+            .update({ start_date: newStart, end_date: newDeadline })
             .eq('campaign_id', ownPlan.campaign_id)
-            .eq('project_id', plan.project_id);
+            .eq('project_id', projectId);
         if (updatePlanError) throw updatePlanError;
-
-        touchedIds.push(plan.project_id);
-        nextStart = addDaysToDateStr(newDeadline, 1);
     }
 
-    return touchedIds;
+    return { approvedProjectIds: [projectId], newStart, newDeadline };
 }
 
 export async function deleteProject(projectId) {
@@ -168,7 +178,7 @@ export async function approveProject(projectId) {
 
     const supabase = getServerSupabase();
     try {
-        const approvedProjectIds = await approveProjectSchedule(supabase, projectId, true);
+        const approvedProjectIds = await approveSinglePlan(supabase, projectId);
 
         revalidatePath('/admin', 'layout');
         return { success: true, message: 'Project approved successfully.', approvedProjectIds };
@@ -444,9 +454,14 @@ export async function approvePaymentAction(projectId) {
     if (!projectId) return { success: false, message: 'Project ID missing.' };
     const supabase = getServerSupabase();
     try {
-        const approvedProjectIds = await approveProjectSchedule(supabase, projectId);
+        const result = await payAndShiftSinglePlan(supabase, projectId);
         revalidatePath('/admin', 'layout');
-        return { success: true, approvedProjectIds };
+        return {
+            success: true,
+            approvedProjectIds: result.approvedProjectIds,
+            newStart: result.newStart,
+            newDeadline: result.newDeadline,
+        };
     } catch (error) {
         return { success: false, message: error.message };
     }

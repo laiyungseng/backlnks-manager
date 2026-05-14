@@ -18,18 +18,20 @@ const VENDOR_ACTIONS = [
     'url_entry_toggled',
 ];
 
-export async function getVendorAuditLog({ page = 0, limit = 50, vendorId = null } = {}) {
+export async function getVendorAuditLog({ page = 0, limit = 50, vendorId = null, actorType = null } = {}) {
     try { await requireAdmin(); } catch { return { success: false, message: 'Unauthorized.' }; }
     const supabase = getServerSupabase();
 
     let query = supabase
         .from('audit_log')
-        .select('id, action, actor_id, target_id, detail, meta, created_at', { count: 'exact' })
+        .select('id, action, actor, actor_id, target_id, detail, meta, created_at', { count: 'exact' })
         .in('action', VENDOR_ACTIONS)
         .order('created_at', { ascending: false })
         .range(page * limit, (page + 1) * limit - 1);
 
     if (vendorId) query = query.eq('actor_id', vendorId);
+    if (actorType === 'admin') query = query.eq('actor', 'Admin');
+    if (actorType === 'vendor') query = query.is('actor', null);
 
     const { data, error, count } = await query;
     if (error) return { success: false, message: error.message };

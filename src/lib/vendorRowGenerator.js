@@ -26,6 +26,7 @@ export function generateVendorRows({ targets, languages, fallbackLanguage, exist
 
     const generatedRows = [];
     let globalLangIndex = 0;
+    const matchedStagingIds = new Set();
 
     targetsData.forEach((target, tIdx) => {
         const targetId = target.target_id || `idx-${tIdx}`;
@@ -50,6 +51,8 @@ export function generateVendorRows({ targets, languages, fallbackLanguage, exist
                     || existingStagingData.find(st => st.id === undefinedEraRowId))
                 : null;
 
+            if (savedRow?.id) matchedStagingIds.add(savedRow.id);
+
             generatedRows.push({
                 id: rowId,
                 target_id: targetId,
@@ -69,6 +72,34 @@ export function generateVendorRows({ targets, languages, fallbackLanguage, exist
             });
         }
     });
+
+    // Overflow rows — staging entries the vendor added beyond the configured target quantity.
+    // Without this, the rows live in vendor_staging_data but are invisible in the sheet.
+    if (Array.isArray(existingStagingData)) {
+        const overflow = existingStagingData.filter(st => st && st.id && !matchedStagingIds.has(st.id));
+        for (const stagedRow of overflow) {
+            const matchedTarget = targetsData.find(t => (t.target_id || `idx-${targetsData.indexOf(t)}`) === stagedRow.target_id);
+            const tIdxResolved = matchedTarget ? targetsData.indexOf(matchedTarget) : targetsData.length;
+            generatedRows.push({
+                id: stagedRow.id,
+                target_id: stagedRow.target_id || matchedTarget?.target_id || null,
+                tIdx: tIdxResolved,
+                langIdx: 9999,
+                category: matchedTarget?.category || stagedRow.category || null,
+                sheet_name: matchedTarget?.sheet_name || stagedRow.sheet_name || null,
+                target_url: matchedTarget?.target_url || stagedRow.target_url || '',
+                anchor_text: matchedTarget?.anchor_text || stagedRow.anchor_text || '',
+                language: (stagedRow.language || fallbackLanguage || 'EN').toUpperCase(),
+                domain_url: stagedRow.domain_url || '',
+                published_url: stagedRow.published_url || '',
+                published_date: stagedRow.published_date || '',
+                remark: stagedRow.remark || '',
+                indexed_status: stagedRow.indexed_status || '',
+                indexed_datetime: stagedRow.indexed_datetime || '',
+                is_overflow: true,
+            });
+        }
+    }
 
     if (randomizeLanguages && generatedRows.length > 0) {
         generatedRows.sort((a, b) => {

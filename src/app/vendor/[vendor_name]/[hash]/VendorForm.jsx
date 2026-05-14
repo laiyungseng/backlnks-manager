@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { saveVendorProgressDelta, toggleUrlEntryMode } from './actions';
+import { saveVendorProgressDelta, toggleUrlEntryMode, getSiblingPlanProgress } from './actions';
 import { parseDomainUrl } from '../../../../lib/utils';
+import { broadcastPortalUpdate } from '@/lib/portalBroadcast';
 import NextLink from 'next/link';
 import { CheckCircle2, FileSpreadsheet, RefreshCw, Filter, ChevronDown, ChevronRight, Calendar, Lock, Unlock, Link, AlertCircle } from 'lucide-react';
 // Univer is loaded dynamically inside the mount effect — its modules touch
@@ -150,6 +151,9 @@ export default function VendorForm({ initialRows, projectHash, siblingPlans = []
     const [hasUnsavedCache, setHasUnsavedCache] = useState(false);
     const [cachedRows, setCachedRows] = useState(null);
 
+    // Sibling plan live progress — updated via BroadcastChannel when other plan tabs save
+    const [siblingPlansState, setSiblingPlansState] = useState(siblingPlans);
+
     // Live Toggle State
     const [localUrlEntryEnabled, setLocalUrlEntryEnabled] = useState(urlEntryEnabled);
 
@@ -168,11 +172,21 @@ export default function VendorForm({ initialRows, projectHash, siblingPlans = []
     const isInitializedRef = useRef(false);
     const prevFilteredLengthRef = useRef(0);
     const isLockedRef = useRef(isLocked);
+    // Tracks edit timestamps per cell: Map<rowId, {field: unix_ms}>
+    // Sent to the server so concurrent saves can merge at field granularity.
+    const cellEditTimestampsRef = useRef(new Map());
 
     // Snapshot of row IDs present at mount — anything not in this set was added by the user
     // via Univer typing and should bypass readonly on target_url / anchor_text / language cols.
     const initialRowIdsRef = useRef(new Set((initialRows || []).map(r => r.id)));
-    const isUserAddedRow = (rowId) => rowId && !initialRowIdsRef.current.has(rowId);
+    // Overflow rows persisted across reloads still have the `new-<uuid>` id pattern that the
+    // Phase 1 row-creation code assigns. Treat any row whose id starts with `new-` as
+    // user-added even after reload, so cols 1/2/3 stay editable on overflow rows.
+    const isUserAddedRow = (rowId) => {
+        if (!rowId) return false;
+        if (typeof rowId === 'string' && rowId.startsWith('new-')) return true;
+        return !initialRowIdsRef.current.has(rowId);
+    };
 
     // Mutable-value refs (used inside stable Univer command handler)
     const rowsRef = useRef(rows);
@@ -210,6 +224,7 @@ export default function VendorForm({ initialRows, projectHash, siblingPlans = []
         const nextDirty = shouldUseMemory ? !!memory.isDirty : false;
 
         activeProjectHashRef.current = projectHash;
+        cellEditTimestampsRef.current = new Map();
         initialRowIdsRef.current = new Set((initialRows || []).map(r => r.id));
         lastSavedRowsRef.current = shouldUseMemory ? (memory.lastSavedRows || initialRows || []) : (initialRows || []);
         rowsRef.current = nextRows;
@@ -364,7 +379,11 @@ export default function VendorForm({ initialRows, projectHash, siblingPlans = []
         if (!isAutoSave) setFeedback({ type: '', message: '' });
         try {
             const lastSavedMap = new Map(lastSavedRowsRef.current.map(r => [r.id, r]));
-            const isUserAddedAtSave = (rowId) => rowId && !initialRowIdsRef.current.has(rowId);
+            const isUserAddedAtSave = (rowId) => {
+                if (!rowId) return false;
+                if (typeof rowId === 'string' && rowId.startsWith('new-')) return true;
+                return !initialRowIdsRef.current.has(rowId);
+            };
 
             // For user-added rows: drop entirely if completely empty; warn if partially filled
             // (has placement data but missing target_url or anchor_text)
@@ -400,7 +419,18 @@ export default function VendorForm({ initialRows, projectHash, siblingPlans = []
             }
 
             const currentCompletedCount = completedRowsCount(rows);
-            const result = await saveVendorProgressDelta(projectHash, delta, currentCompletedCount, version);
+
+            // Build per-cell timestamps for server-side last-write-wins merge
+            const p_cell_ts = {};
+            for (const [rowId, fieldMap] of cellEditTimestampsRef.current) {
+                p_cell_ts[rowId] = { ...fieldMap };
+            }
+            const hasCellTs = Object.keys(p_cell_ts).length > 0;
+
+            const result = await saveVendorProgressDelta(
+                projectHash, delta, currentCompletedCount, version,
+                hasCellTs ? p_cell_ts : null
+            );
 
             if (result.conflict) {
                 setFeedback({ type: 'error', message: 'Another session saved simultaneously. Refreshing to latest data...' });
@@ -412,12 +442,45 @@ export default function VendorForm({ initialRows, projectHash, siblingPlans = []
                 setLastSavedAt(new Date());
                 setIsDirty(false);
                 isDirtyRef.current = false;
-                setVersion(v => v + 1);
-                lastSavedRowsRef.current = [...rows];
+                setVersion(result.newVersion ?? version + 1);
+
+                // Clear saved rows' timestamps — server has recorded them
+                for (const row of delta) {
+                    cellEditTimestampsRef.current.delete(row.id);
+                }
+
+                // Handle cells the server skipped (concurrent session's value wins)
+                const skipped = Array.isArray(result.skipped) ? result.skipped : [];
+                if (skipped.length > 0) {
+                    setRows(prevRows => {
+                        const next = prevRows.map(r => {
+                            const revs = skipped.filter(s => s.rowId === r.id);
+                            if (revs.length === 0) return r;
+                            const out = { ...r };
+                            for (const { field, value } of revs) {
+                                out[field] = value == null ? '' : String(value);
+                            }
+                            return out;
+                        });
+                        lastSavedRowsRef.current = next;
+                        rowsRef.current = next;
+                        return next;
+                    });
+                    const noun = skipped.length === 1 ? 'cell' : 'cells';
+                    setFeedback({
+                        type: 'error',
+                        message: `Saved — ${skipped.length} ${noun} overridden by a concurrent session and reverted locally.`,
+                    });
+                    setTimeout(() => setFeedback({ type: '', message: '' }), 7000);
+                } else {
+                    lastSavedRowsRef.current = [...rows];
+                }
+
                 try { localStorage.removeItem(`df_vendor_cache_${projectHash}`); } catch (e) {}
                 removePendingHash(vendorUuid, vendorName, projectHash);
+                if (vendorUuid) broadcastPortalUpdate(vendorUuid);
                 const flushResult = await flushCachedProjects(projectHash);
-                if (!isAutoSave && flushResult.saved > 0) {
+                if (!isAutoSave && flushResult.saved > 0 && skipped.length === 0) {
                     setFeedback({
                         type: 'success',
                         message: flushResult.failed > 0
@@ -514,11 +577,12 @@ export default function VendorForm({ initialRows, projectHash, siblingPlans = []
     }, [bulkIndexText, bulkIndexMode, isLocked]);
 
     // ---- Sibling plan tabs (Workbench) — switch between plans of the same campaign ----
-    const hasSiblings = Array.isArray(siblingPlans) && siblingPlans.length > 1;
-    // Recompute the *active* plan's live status from current row state so the icon updates as user types
+    const hasSiblings = Array.isArray(siblingPlansState) && siblingPlansState.length > 1;
+    // Recompute the *active* plan's live status from current row state so the icon updates as user types.
+    // Sibling (non-active) plans reflect siblingPlansState which is refreshed via BroadcastChannel.
     const liveSiblingPlans = useMemo(() => {
-        if (!Array.isArray(siblingPlans) || siblingPlans.length === 0) return [];
-        return siblingPlans.map(p => {
+        if (!Array.isArray(siblingPlansState) || siblingPlansState.length === 0) return [];
+        return siblingPlansState.map(p => {
             if (p.hash !== projectHash) return p;
             const total = rows.length || p.total || 0;
             const completed = rows.filter(r => r.published_url && r.published_url.trim().length > 0).length;
@@ -527,7 +591,33 @@ export default function VendorForm({ initialRows, projectHash, siblingPlans = []
             else if (completed > 0) status = 'progress';
             return { ...p, total, completed, status };
         });
-    }, [siblingPlans, projectHash, rows]);
+    }, [siblingPlansState, projectHash, rows]);
+
+    // Refresh sibling plan progress when another plan tab broadcasts a save event
+    useEffect(() => {
+        if (!vendorUuid || siblingPlansState.length < 2) return;
+        const siblingHashes = siblingPlansState
+            .filter(p => p.hash !== projectHash)
+            .map(p => p.hash);
+        if (siblingHashes.length === 0) return;
+
+        const channel = new BroadcastChannel('df-portal');
+        const handleMessage = async (e) => {
+            if (e.data?.vendorId !== `vendor:${vendorUuid}`) return;
+            const res = await getSiblingPlanProgress(siblingHashes);
+            if (!res.success) return;
+            setSiblingPlansState(prev => prev.map(p => {
+                if (p.hash === projectHash) return p;
+                const fresh = res.progress[p.hash];
+                if (!fresh) return p;
+                return { ...p, ...fresh };
+            }));
+        };
+
+        channel.addEventListener('message', handleMessage);
+        return () => channel.close();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [vendorUuid, projectHash]);
 
     const activeSibling = useMemo(
         () => liveSiblingPlans.find(p => p.hash === projectHash) || null,
@@ -776,7 +866,15 @@ export default function VendorForm({ initialRows, projectHash, siblingPlans = []
                     const col = parseInt(colStr);
                     const field = COLS[col];
                     if (!field) return;
-                    const newValue = String(cellData?.v ?? '');
+                    // Univer auto-detects URLs on paste and converts the cell to rich-text /
+                    // hyperlink format. When that happens, cellData.v is empty and the URL
+                    // lives in cellData.p.body.dataStream. Fall back to that when .v is empty.
+                    let raw = cellData?.v;
+                    if ((raw === undefined || raw === null || raw === '') && cellData?.p?.body?.dataStream) {
+                        // Univer rich-text streams end with \r\n paragraph terminators
+                        raw = String(cellData.p.body.dataStream).replace(/[\r\n]+$/, '');
+                    }
+                    const newValue = String(raw ?? '');
                     if (!rowEdits.has(rowId)) rowEdits.set(rowId, { univerRow, edits: [] });
                     rowEdits.get(rowId).edits.push({ col, field, newValue });
                 });
@@ -866,6 +964,15 @@ export default function VendorForm({ initialRows, projectHash, siblingPlans = []
                 }
 
                 if (hasValidChange) {
+                    // Record edit timestamp for every field that changed (including cascades)
+                    const ts = Date.now();
+                    if (!cellEditTimestampsRef.current.has(rowId)) {
+                        cellEditTimestampsRef.current.set(rowId, {});
+                    }
+                    const rowTs = cellEditTimestampsRef.current.get(rowId);
+                    for (const f of COLS) {
+                        if (updatedRow[f] !== existingRow[f]) rowTs[f] = ts;
+                    }
                     updates.set(rowId, updatedRow);
                 }
             }

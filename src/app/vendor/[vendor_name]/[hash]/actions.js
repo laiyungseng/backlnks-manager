@@ -3,7 +3,7 @@
 import { getServerSupabase } from '@/lib/supabase-server';
 import { vendorRateLimiter } from '@/lib/rateLimiter';
 import { writeAuditLog } from '@/lib/auditLog';
-import { setVendorSessionCookie, getVendorSession, verifyVendorSession } from '@/lib/session';
+import { setVendorSessionCookie, getVendorSession, verifyVendorSession, resolveActor } from '@/lib/session';
 import { z } from 'zod';
 
 const vendorPayloadSchema = z.array(z.object({
@@ -91,10 +91,10 @@ export async function saveVendorProgress(hash, payload, knownVersion) {
             return { success: false, message: 'Unauthorized Request: Missing Security Hash' };
         }
 
-        // Session guard — verify cookie + DB session_version (revocation check)
-        const session = await verifyVendorSession(supabase);
-        if (!session?.vendorId) {
-            return { success: false, message: 'Unauthorized: No active vendor session.' };
+        // Session guard — admin or verified vendor session
+        const actor = await resolveActor(supabase);
+        if (!actor) {
+            return { success: false, message: 'Unauthorized: No active session.' };
         }
 
         // Rate-limit per vendor hash
@@ -122,8 +122,8 @@ export async function saveVendorProgress(hash, payload, knownVersion) {
             return { success: false, message: 'Project context lost. Save Rejected.' };
         }
 
-        // Verify session vendor matches the project's vendor
-        if (projectList.projects?.vendor_id !== session.vendorId) {
+        // Vendor ownership check — admin bypasses this
+        if (actor.actorType === 'vendor' && projectList.projects?.vendor_id !== actor.vendorId) {
             return { success: false, message: 'Unauthorized: Session does not match project vendor.' };
         }
 
@@ -154,7 +154,8 @@ export async function saveVendorProgress(hash, payload, knownVersion) {
         if (deletions.length > 0) {
             await writeAuditLog(supabase, {
                 action: 'vendor_data_deletion',
-                actorId: session.vendorId,
+                actor: actor.actorLabel,
+                actorId: actor.actorType === 'vendor' ? actor.vendorId : projectList.projects?.vendor_id,
                 targetId: projectList.project_id,
                 detail: `${deletions.length} field(s) cleared`,
                 meta: { deletions },
@@ -200,7 +201,8 @@ export async function saveVendorProgress(hash, payload, knownVersion) {
         // Audit log the save
         await writeAuditLog(supabase, {
             action: 'vendor_save',
-            actorId: session.vendorId,
+            actor: actor.actorLabel,
+            actorId: actor.actorType === 'vendor' ? actor.vendorId : projectList.projects?.vendor_id,
             targetId: projectList.project_id,
             detail: `rows=${validRows.length} completed=${completedCount}`,
         });
@@ -400,7 +402,7 @@ export async function syncFinalizedIndexStatus(hash, payload) {
  * Eliminates the full vendor_staging_data read+write on every auto-save.
  * Requires the `patch_staging_rows` SQL function to exist in Supabase.
  */
-export async function saveVendorProgressDelta(hash, delta, completedCount, knownVersion) {
+export async function saveVendorProgressDelta(hash, delta, completedCount, knownVersion, cellTimestamps = null) {
     let supabase;
     try {
         supabase = getServerSupabase();
@@ -413,9 +415,9 @@ export async function saveVendorProgressDelta(hash, delta, completedCount, known
             return { success: false, message: 'Unauthorized Request: Missing Security Hash' };
         }
 
-        const session = await verifyVendorSession(supabase);
-        if (!session?.vendorId) {
-            return { success: false, message: 'Unauthorized: No active vendor session.' };
+        const actor = await resolveActor(supabase);
+        if (!actor) {
+            return { success: false, message: 'Unauthorized: No active session.' };
         }
 
         const rl = vendorRateLimiter.check(hash);
@@ -428,8 +430,17 @@ export async function saveVendorProgressDelta(hash, delta, completedCount, known
             return { success: false, message: 'Validation Error: Please ensure all provided URLs are valid format.' };
         }
 
-        // Strip immutable project-definition columns — vendor must not overwrite these
-        const validDelta = validatedData.data.map(({ target_url, anchor_text, language, ...rest }) => rest);
+        // Strip immutable project-definition columns — vendor must not overwrite these.
+        // EXCEPTION: vendor-added overflow rows (target_id='extra' or id starts with 'new-') are NOT
+        // tied to a project-defined target, so their target_url / anchor_text / language are
+        // vendor-supplied content and must be retained.
+        const validDelta = validatedData.data.map(row => {
+            const isOverflow = row.target_id === 'extra' || (typeof row.id === 'string' && row.id.startsWith('new-'));
+            if (isOverflow) return row;
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const { target_url: _tu, anchor_text: _at, language: _lg, ...rest } = row;
+            return rest;
+        });
 
         // Fetch hub metadata — intentionally excludes vendor_staging_data to save bandwidth
         const { data: projectList, error: checkError } = await supabase
@@ -442,7 +453,8 @@ export async function saveVendorProgressDelta(hash, delta, completedCount, known
             return { success: false, message: 'Project context lost. Save Rejected.' };
         }
 
-        if (projectList.projects?.vendor_id !== session.vendorId) {
+        // Vendor ownership check — admin bypasses this (can edit any project)
+        if (actor.actorType === 'vendor' && projectList.projects?.vendor_id !== actor.vendorId) {
             return { success: false, message: 'Unauthorized: Session does not match project vendor.' };
         }
 
@@ -456,6 +468,7 @@ export async function saveVendorProgressDelta(hash, delta, completedCount, known
                 p_hash: hash,
                 p_known_version: knownVersion,
                 p_delta: validDelta,
+                p_cell_ts: cellTimestamps || {},
             });
 
         if (patchError) {
@@ -518,15 +531,203 @@ export async function saveVendorProgressDelta(hash, delta, completedCount, known
 
         await writeAuditLog(supabase, {
             action: 'vendor_save',
-            actorId: session.vendorId,
+            actor: actor.actorLabel,
+            actorId: actor.actorType === 'vendor' ? actor.vendorId : projectList.projects?.vendor_id,
             targetId: projectList.project_id,
             detail: `delta=${validDelta.length} completed=${completedCount}`,
         });
 
-        return { success: true, message: 'All placements saved directly into Virtual Staging successfully!' };
+        const { new_version: newVersion, skipped } = patchResult[0];
+        return {
+            success: true,
+            message: 'All placements saved directly into Virtual Staging successfully!',
+            newVersion,
+            skipped: Array.isArray(skipped) ? skipped : [],
+        };
 
     } catch (e) {
         console.error('[saveVendorProgressDelta] Critical Error:', e);
+        return { success: false, message: 'An unexpected server error occurred.' };
+    }
+}
+
+/**
+ * saveCampaignProgressBulk — Phase C campaign bulk flush.
+ * Saves dirty sibling plans for a campaign in one DB transaction via
+ * patch_staging_rows_bulk RPC. Intended as a background flush triggered
+ * by VendorWorkbenchContext on tab-switch or 5-second idle.
+ *
+ * plans: [{ hash, delta, knownVersion, cellTimestamps, completedCount }]
+ * Returns: { results: [{ hash, success, newVersion, skipped[], conflict? }] }
+ */
+export async function saveCampaignProgressBulk(campaignId, vendorUuid, plans) {
+    let supabase;
+    try {
+        supabase = getServerSupabase();
+    } catch {
+        return { success: false, message: 'Database connection not configured.' };
+    }
+
+    try {
+        if (!campaignId || !Array.isArray(plans) || plans.length === 0) {
+            return { success: false, message: 'Invalid bulk save payload.' };
+        }
+
+        const actor = await resolveActor(supabase);
+        if (!actor) {
+            return { success: false, message: 'Unauthorized: No active session.' };
+        }
+
+        // Rate-limit per campaign — prevents rapid repeated flushes
+        const rl = vendorRateLimiter.check(`campaign:${campaignId}`);
+        if (!rl.allowed) {
+            return { success: false, message: `Too many save requests. Try again in ${rl.retryAfterSeconds}s.` };
+        }
+
+        const hashes = plans.map(p => p.hash).filter(Boolean);
+        if (hashes.length === 0) return { success: true, results: [] };
+
+        // Batch-fetch hub metadata for all plan hashes
+        const { data: hubs, error: hubError } = await supabase
+            .from('projects_hub')
+            .select('id, hash, project_id, is_locked, version, projects(vendor_id, status, completed_date, project_targets(quantity_requested))')
+            .in('hash', hashes);
+
+        if (hubError || !hubs) {
+            return { success: false, message: 'Failed to fetch project metadata.' };
+        }
+
+        const hubMap = new Map(hubs.map(h => [h.hash, h]));
+
+        // Validate each plan's delta and skip locked/finalized hubs
+        const validPlans = [];
+        for (const plan of plans) {
+            const hub = hubMap.get(plan.hash);
+            if (!hub) continue;
+            if (hub.is_locked) continue;
+            if (hub.projects?.status === 'Finalized') continue;
+
+            // Vendor ownership check — admin bypasses
+            if (actor.actorType === 'vendor' && hub.projects?.vendor_id !== actor.vendorId) continue;
+
+            const validated = vendorPayloadSchema.safeParse(plan.delta);
+            if (!validated.success) continue;
+
+            const validDelta = validated.data.map(row => {
+                const isOverflow = row.target_id === 'extra' || (typeof row.id === 'string' && row.id.startsWith('new-'));
+                if (isOverflow) return row;
+                // eslint-disable-next-line @typescript-eslint/no-unused-vars
+                const { target_url: _tu, anchor_text: _at, language: _lg, ...rest } = row;
+                return rest;
+            });
+            validPlans.push({
+                hash: plan.hash,
+                delta: validDelta,
+                knownVersion: plan.knownVersion,
+                cellTimestamps: plan.cellTimestamps || null,
+                completedCount: plan.completedCount ?? 0,
+                hub,
+            });
+        }
+
+        if (validPlans.length === 0) return { success: true, results: [] };
+
+        // Build RPC payload
+        const rpcPlans = validPlans.map(p => ({
+            hash: p.hash,
+            delta: p.delta,
+            cell_ts: p.cellTimestamps || {},
+            known_version: p.knownVersion,
+        }));
+
+        const { data: bulkResult, error: rpcError } = await supabase
+            .rpc('patch_staging_rows_bulk', {
+                p_campaign_id: campaignId,
+                p_plans: rpcPlans,
+            });
+
+        if (rpcError) {
+            console.error('[saveCampaignProgressBulk] RPC Error:', rpcError);
+            return { success: false, message: 'Bulk staging patch failed.' };
+        }
+
+        const perPlanResults = Array.isArray(bulkResult) ? bulkResult : [];
+        const resultMap = new Map(perPlanResults.map(r => [r.hash, r]));
+
+        // Update project statuses for successful plans
+        const nowIso = new Date().toISOString();
+        for (const plan of validPlans) {
+            const res = resultMap.get(plan.hash);
+            if (!res || res.conflict) continue;
+
+            const hub = plan.hub;
+            const proj = hub.projects;
+            if (!proj || !hub.project_id) continue;
+
+            const hubTargets = proj.project_targets || [];
+            const totalLinksOrdered = hubTargets.length > 0
+                ? hubTargets.reduce((acc, t) => acc + (t.quantity_requested || 0), 0)
+                : 0;
+
+            const newStatus = plan.completedCount >= totalLinksOrdered && totalLinksOrdered > 0 ? 'Completed' : 'Inprogress';
+            const dbPayload = { status: newStatus };
+            if (newStatus === 'Completed' && !proj.completed_date) {
+                dbPayload.completed_date = nowIso;
+            }
+            await supabase.from('projects').update(dbPayload).eq('id', hub.project_id);
+        }
+
+        // Write parent audit row
+        const successCount = perPlanResults.filter(r => !r.conflict).length;
+        const conflictCount = perPlanResults.filter(r => r.conflict).length;
+        const { data: parentRow } = await supabase
+            .from('audit_log')
+            .insert({
+                action: 'campaign_bulk_save',
+                actor: actor.actorLabel,
+                actor_id: actor.actorType === 'vendor' ? actor.vendorId : vendorUuid,
+                target_id: campaignId,
+                detail: `plans=${successCount} conflicts=${conflictCount}`,
+                meta: { totalPlans: validPlans.length, successCount, conflictCount },
+                created_at: nowIso,
+            })
+            .select('id')
+            .single();
+
+        const parentAuditId = parentRow?.id ?? null;
+
+        // Write N child audit rows
+        for (const plan of validPlans) {
+            const res = resultMap.get(plan.hash);
+            const hub = plan.hub;
+            void writeAuditLog(supabase, {
+                action: 'vendor_save',
+                actor: actor.actorLabel,
+                actorId: actor.actorType === 'vendor' ? actor.vendorId : vendorUuid,
+                targetId: hub.project_id,
+                detail: `delta=${plan.delta.length} completed=${plan.completedCount} bulk=true conflict=${!!res?.conflict}`,
+                meta: parentAuditId ? { parent_audit_id: parentAuditId } : undefined,
+            });
+        }
+
+        // Build client-facing results
+        const results = hashes.map(hash => {
+            const res = resultMap.get(hash);
+            if (!res) return { hash, success: false, conflict: false, newVersion: null, skipped: [] };
+            if (res.conflict) return { hash, success: false, conflict: true, newVersion: null, skipped: [] };
+            return {
+                hash,
+                success: true,
+                conflict: false,
+                newVersion: res.new_version,
+                skipped: Array.isArray(res.skipped) ? res.skipped : [],
+            };
+        });
+
+        return { success: true, results };
+
+    } catch (e) {
+        console.error('[saveCampaignProgressBulk] Critical Error:', e);
         return { success: false, message: 'An unexpected server error occurred.' };
     }
 }
@@ -585,4 +786,37 @@ export async function toggleUrlEntryMode(hash, isEnabled) {
         console.error("Toggle URL Entry Critical Error:", e);
         return { success: false, message: 'An unexpected error occurred.' };
     }
+}
+
+/**
+ * Returns fresh completed/total/status for a list of project hashes.
+ * Called by VendorForm when a BroadcastChannel event arrives from another plan tab.
+ */
+export async function getSiblingPlanProgress(hashes) {
+    if (!Array.isArray(hashes) || hashes.length === 0) return { success: true, progress: {} };
+    let supabase;
+    try { supabase = getServerSupabase(); } catch { return { success: false }; }
+
+    const { data, error } = await supabase
+        .from('projects_hub')
+        .select('hash, vendor_staging_data, targets, projects ( status )')
+        .in('hash', hashes);
+
+    if (error) return { success: false };
+
+    const progress = {};
+    for (const hub of (data || [])) {
+        const targets = Array.isArray(hub.targets) ? hub.targets : [];
+        const staging = Array.isArray(hub.vendor_staging_data) ? hub.vendor_staging_data : [];
+        const total = targets.reduce((acc, t) => acc + (parseInt(t.quantity || '0', 10)), 0);
+        const completed = staging.filter(s => s.published_url && s.published_url.trim().length > 0).length;
+        const projectStatus = hub.projects?.status;
+        let status = 'pending';
+        if (projectStatus === 'Finalized') status = 'done';
+        else if (total > 0 && completed >= total) status = 'done';
+        else if (completed > 0) status = 'progress';
+        progress[hub.hash] = { completed, total, status };
+    }
+
+    return { success: true, progress };
 }

@@ -88,7 +88,15 @@ export async function GET() {
     let activeChannel = null;
     let heartbeatTimer = null;
     let debounceTimer = null;
+    let pollTimer = null;
     let isClosed = false;
+
+    // Polling fallback — runs alongside Supabase Realtime CDC.
+    // Required because the free tier does not allow enabling Replication
+    // on the projects / projects_hub / project_plans tables, so CDC events
+    // never fire. With polling, admin pages refresh within POLL_INTERVAL_MS
+    // regardless of Realtime config.
+    const POLL_INTERVAL_MS = 10000;
 
     const stream = new ReadableStream({
         async start(controller) {
@@ -136,11 +144,16 @@ export async function GET() {
                 .subscribe((status) => {
                     console.log(`[Realtime] Dashboard subscription: ${status}`);
                 });
+
+            // Polling fallback — fires pushLatest on a fixed interval so the
+            // dashboard refreshes even when Realtime CDC is not enabled.
+            pollTimer = setInterval(pushLatest, POLL_INTERVAL_MS);
         },
 
         cancel() {
             isClosed = true;
             clearInterval(heartbeatTimer);
+            clearInterval(pollTimer);
             clearTimeout(debounceTimer);
             if (activeChannel) {
                 supabase.removeChannel(activeChannel);

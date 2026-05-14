@@ -1,6 +1,6 @@
 import { Suspense } from 'react';
 import { getServerSupabase } from '@/lib/supabase-server';
-import { verifyVendorSession, getSession } from '@/lib/session';
+import { verifyVendorSession, getSession, resolveActor } from '@/lib/session';
 import { redirect } from 'next/navigation';
 import ProjectPageHeader from './ProjectPageHeader';
 import { writeAuditLog } from '@/lib/auditLog';
@@ -55,8 +55,10 @@ export default async function PortalProjectPage({ params }) {
     const expectedSlug = vendorMatch.vendor_name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
     if (expectedSlug !== vendorNameParam) redirect('/unauthorized');
 
+    const actor = await resolveActor(supabase);
     void writeAuditLog(supabase, {
         action: 'vendor_project_view',
+        actor: actor?.actorLabel ?? null,
         actorId: vendorUuidParam,
         targetId: projectId,
         detail: `hash=${hash}`,

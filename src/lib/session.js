@@ -203,6 +203,29 @@ export async function clearClientSessionCookie() {
 }
 
 // ---------------------------------------------------------------------------
+// Actor resolution — used by vendor save actions to distinguish admin vs vendor
+// ---------------------------------------------------------------------------
+
+/**
+ * Checks admin session first; falls back to verified vendor session.
+ * Returns null if neither is present or valid.
+ *
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabase
+ * @returns {Promise<{ actorType: 'admin'|'vendor', actorId: string, actorLabel: string|null, vendorId: string|null }|null>}
+ */
+export async function resolveActor(supabase) {
+    const adminSession = await getSession();
+    if (adminSession?.id) {
+        return { actorType: 'admin', actorId: adminSession.id, actorLabel: 'Admin', vendorId: null };
+    }
+    const vendorSession = await verifyVendorSession(supabase);
+    if (vendorSession?.vendorId) {
+        return { actorType: 'vendor', actorId: vendorSession.vendorId, actorLabel: null, vendorId: vendorSession.vendorId };
+    }
+    return null;
+}
+
+// ---------------------------------------------------------------------------
 // Report tokens — stateless signed tokens for shareable read-only analytics
 // ---------------------------------------------------------------------------
 

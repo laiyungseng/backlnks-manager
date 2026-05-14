@@ -148,23 +148,19 @@ function summarizeCampaign(projects) {
     const earliestStart = totals.starts.length ? new Date(Math.min(...totals.starts)).toISOString() : null;
     const latestEnd = totals.ends.length ? new Date(Math.max(...totals.ends)).toISOString() : null;
     const finalizedCount = projects.filter(p => p.status === 'Finalized' || (p.placements && p.placements.length > 0)).length;
-    const pendingPaymentCount = projects.filter(p => p.payment_status === 'pending').length;
     const approvedCount = projects.filter(p => p.is_approved).length;
 
-    let status = 'In Progress';
-    let statusClass = 'bg-indigo-50 text-indigo-700';
+    let status;
+    let statusClass;
     if (finalizedCount === projects.length && projects.length > 0) {
         status = 'Finalized';
         statusClass = 'bg-emerald-50 text-emerald-700';
-    } else if (pendingPaymentCount > 0) {
-        status = 'Payment Pending';
+    } else if (approvedCount === projects.length && projects.length > 0) {
+        status = 'Running';
+        statusClass = 'bg-emerald-50 text-emerald-700';
+    } else {
+        status = 'Pending Process';
         statusClass = 'bg-amber-50 text-amber-700';
-    } else if (approvedCount < projects.length) {
-        status = 'Pending Approval';
-        statusClass = 'bg-slate-100 text-slate-600';
-    } else if (totals.total > 0 && totals.completed >= totals.total) {
-        status = 'Completed';
-        statusClass = 'bg-indigo-50 text-indigo-700';
     }
 
     return {
@@ -205,9 +201,10 @@ function groupProjectsByCampaign(projects) {
         .map(group => ({
             ...group,
             projects: group.projects.sort((a, b) => {
-                const ap = getPrimaryPlan(a).step_order ?? 0;
-                const bp = getPrimaryPlan(b).step_order ?? 0;
-                return ap - bp;
+                const as = a.start_date ? new Date(a.start_date).getTime() : Infinity;
+                const bs = b.start_date ? new Date(b.start_date).getTime() : Infinity;
+                if (as !== bs) return as - bs;
+                return (getPrimaryPlan(a).step_order ?? 0) - (getPrimaryPlan(b).step_order ?? 0);
             }),
         }))
         .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
@@ -323,7 +320,7 @@ export default function ProjectDetailsClient({ initialProjects }) {
 
     const handleApprove = (projectId) => {
         if (confirm('Approve this project? It will become active and available in Placements.')) {
-            const buildUpdate = ids => p => ids.includes(p.id) ? { ...p, is_approved: true, payment_status: 'approved' } : p;
+            const buildUpdate = ids => p => ids.includes(p.id) ? { ...p, is_approved: true } : p;
             const optimisticUpdate = buildUpdate([projectId]);
             setProjects(prev => prev.map(optimisticUpdate));
             if (isEditMode) setEditedProjects(prev => prev.map(optimisticUpdate));
@@ -351,7 +348,14 @@ export default function ProjectDetailsClient({ initialProjects }) {
                 const approvedIds = Array.isArray(res.approvedProjectIds) && res.approvedProjectIds.length > 0
                     ? res.approvedProjectIds
                     : [projectId];
-                const updatePayment = p => approvedIds.includes(p.id) ? { ...p, payment_status: 'approved' } : p;
+                const updatePayment = p => approvedIds.includes(p.id)
+                    ? {
+                        ...p,
+                        payment_status: 'approved',
+                        ...(res.newStart ? { start_date: res.newStart } : {}),
+                        ...(res.newDeadline ? { deadline: res.newDeadline } : {}),
+                    }
+                    : p;
                 setProjects(prev => prev.map(updatePayment));
                 if (isEditMode) setEditedProjects(prev => prev.map(updatePayment));
             } else {

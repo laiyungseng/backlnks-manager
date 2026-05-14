@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react';
 import { AlertCircle, ChevronDown, ChevronUp, Calendar } from 'lucide-react';
 import { approvePaymentAction } from '@/app/admin/actions';
+import { broadcastPortalUpdate } from '@/lib/portalBroadcast';
 
 function formatDate(d) {
     if (!d) return '—';
@@ -25,7 +26,13 @@ function VendorCard({ vendorName, items }) {
             const result = await approvePaymentAction(projectId);
             if (!result?.success) return;
             const approvedIds = new Set(result.approvedProjectIds?.length ? result.approvedProjectIds : [projectId]);
-            setProjects(prev => prev.filter(p => !approvedIds.has(p.id)));
+            setProjects(prev => {
+                const remaining = prev.filter(p => !approvedIds.has(p.id));
+                // Broadcast to vendor portal tabs after payment approval
+                const vendorId = prev.find(p => approvedIds.has(p.id))?.vendor_id;
+                if (vendorId) broadcastPortalUpdate(vendorId);
+                return remaining;
+            });
         });
     }
 

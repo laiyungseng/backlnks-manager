@@ -5,6 +5,7 @@ import VendorSessionSetter from './VendorSessionSetter';
 import VendorSidebar from './VendorSidebar';
 import { writeAuditLog } from '@/lib/auditLog';
 import { generateVendorRows } from '@/lib/vendorRowGenerator';
+import { resolveActor } from '@/lib/session';
 
 export const dynamic = 'force-dynamic';
 
@@ -58,10 +59,12 @@ export default async function VendorProjectPage({ params }) {
         vendorUuid = vendorMatch.id;
     }
 
-    // Log vendor page view (non-blocking)
+    // Log vendor page view (non-blocking) — resolve actor to distinguish admin vs vendor
     if (vendorUuid) {
+        const actor = await resolveActor(supabase);
         void writeAuditLog(supabase, {
             action: 'vendor_project_view',
+            actor: actor?.actorLabel ?? null,
             actorId: vendorUuid,
             targetId: projectId,
             detail: `hash=${hash}`,

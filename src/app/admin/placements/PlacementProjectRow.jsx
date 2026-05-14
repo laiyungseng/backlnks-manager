@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Eye, Link as LinkIcon, MoreVertical, CheckCircle2, Lock, Unlock, XCircle, AlertTriangle, ShieldAlert, Star, Globe2 } from 'lucide-react';
 import { finalizeProjectAction, toggleProjectLockAction, closeProjectAction, toggleUrlEntryAction, togglePriorityAction } from './actions';
+import { broadcastPortalUpdate } from '@/lib/portalBroadcast';
 import CopyButton from '../projects/CopyButton';
 import CloseProjectModal from './CloseProjectModal';
 import AnchorInfoPopup from './AnchorInfoPopup';
@@ -95,8 +96,10 @@ export default function PlacementProjectRow({ project, isCompletedView, onProjec
         setIsTogglingUrlEntry(true);
         try {
             const res = await toggleUrlEntryAction(project.id, !localUrlEntry);
-            if (res.success) setLocalUrlEntry(v => !v);
-            else alert(`Error: ${res.message}`);
+            if (res.success) {
+                setLocalUrlEntry(v => !v);
+                if (project.vendor_id) broadcastPortalUpdate(project.vendor_id);
+            } else alert(`Error: ${res.message}`);
         } finally {
             setIsTogglingUrlEntry(false);
         }
@@ -107,8 +110,10 @@ export default function PlacementProjectRow({ project, isCompletedView, onProjec
         setIsTogglingPriority(true);
         try {
             const res = await togglePriorityAction(project.id, !localPriority);
-            if (res.success) setLocalPriority(v => !v);
-            else alert(`Error: ${res.message}`);
+            if (res.success) {
+                setLocalPriority(v => !v);
+                if (project.vendor_id) broadcastPortalUpdate(project.vendor_id);
+            } else alert(`Error: ${res.message}`);
         } finally {
             setIsTogglingPriority(false);
         }

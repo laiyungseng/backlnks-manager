@@ -1,17 +1,64 @@
 'use client';
 
-import { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { usePathname } from 'next/navigation';
 import VendorForm from '@/app/vendor/[vendor_name]/[hash]/VendorForm';
+import { saveCampaignProgressBulk } from '@/app/vendor/[vendor_name]/[hash]/actions';
 
 const VendorWorkbenchContext = createContext(null);
 
+// ---------------------------------------------------------------------------
+// Helpers — mirror minimal logic from VendorForm without importing it
+// ---------------------------------------------------------------------------
+function readCacheForHash(hash) {
+    try {
+        const raw = localStorage.getItem(`df_vendor_cache_${hash}`);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed?.rows || !Array.isArray(parsed.rows)) return null;
+        return parsed; // { rows, version, timestamp }
+    } catch {
+        return null;
+    }
+}
+
+function buildBulkDelta(rows) {
+    return (rows || [])
+        .filter(r => {
+            if (typeof r.id === 'string' && r.id.startsWith('new-')) {
+                return !!(r.target_url || r.anchor_text || r.published_url || r.domain_url || r.remark);
+            }
+            return true;
+        })
+        .map(r => ({
+            id: r.id,
+            target_id: r.target_id,
+            target_url: r.target_url,
+            anchor_text: r.anchor_text,
+            language: r.language || '',
+            domain_url: r.domain_url || '',
+            published_url: r.published_url || '',
+            published_date: r.published_date || '',
+            remark: r.remark || '',
+            indexed_status: r.indexed_status || '',
+            indexed_datetime: r.indexed_datetime || '',
+        }));
+}
+
+function countCompleted(rows) {
+    return (rows || []).filter(r => r.published_url?.trim() && r.published_date?.trim()).length;
+}
+
+// ---------------------------------------------------------------------------
+// Provider
+// ---------------------------------------------------------------------------
 export function VendorWorkbenchProvider({ children }) {
     const pathname = usePathname();
     const [activeProject, setActiveProjectState] = useState(null);
     const [hostElement, setHostElement] = useState(null);
     const [hiddenHostElement, setHiddenHostElement] = useState(null);
+    const prevActiveProjectRef = useRef(null);
 
     const setActiveProject = useCallback((project) => {
         if (!project?.projectHash) return;
@@ -35,6 +82,65 @@ export function VendorWorkbenchProvider({ children }) {
     const registerHiddenHost = useCallback((node) => {
         setHiddenHostElement(prev => (prev === node ? prev : node));
     }, []);
+
+    // Flush sibling plans (not the active plan — VendorForm handles its own hash)
+    const flushSiblingPlans = useCallback(async (project) => {
+        if (!project?.campaignId) return;
+        const siblingHashes = (project.siblingPlans || [])
+            .map(p => p.hash)
+            .filter(h => h && h !== project.projectHash);
+        if (siblingHashes.length === 0) return;
+
+        const dirtyPlans = [];
+        for (const hash of siblingHashes) {
+            const cache = readCacheForHash(hash);
+            if (!cache?.rows?.length) continue;
+            const delta = buildBulkDelta(cache.rows);
+            if (!delta.length) continue;
+            dirtyPlans.push({
+                hash,
+                delta,
+                knownVersion: cache.version,
+                cellTimestamps: null,
+                completedCount: countCompleted(cache.rows),
+            });
+        }
+
+        if (dirtyPlans.length === 0) return;
+
+        try {
+            const result = await saveCampaignProgressBulk(
+                project.campaignId,
+                project.vendorUuid,
+                dirtyPlans
+            );
+            if (result?.results) {
+                for (const r of result.results) {
+                    if (r.success) {
+                        try { localStorage.removeItem(`df_vendor_cache_${r.hash}`); } catch { /* noop */ }
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('[VendorWorkbenchContext] Bulk flush error:', e);
+        }
+    }, []);
+
+    // Flush previous campaign's siblings on tab-switch
+    useEffect(() => {
+        const prev = prevActiveProjectRef.current;
+        if (prev && prev.projectHash !== activeProject?.projectHash && prev.campaignId) {
+            flushSiblingPlans(prev);
+        }
+        prevActiveProjectRef.current = activeProject;
+    }, [activeProject, flushSiblingPlans]);
+
+    // Periodic 5s flush for sibling plans while a campaign project is active
+    useEffect(() => {
+        if (!activeProject?.campaignId || !(activeProject?.siblingPlans?.length > 0)) return;
+        const id = setInterval(() => { flushSiblingPlans(activeProject); }, 5000);
+        return () => clearInterval(id);
+    }, [activeProject, flushSiblingPlans]);
 
     const value = useMemo(() => ({ setActiveProject, registerHost }), [setActiveProject, registerHost]);
     const isProjectRoute = pathname?.includes('/project/');

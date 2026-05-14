@@ -1,17 +1,20 @@
 'use client';
 
-import { useState, useEffect, useRef, Suspense } from 'react';
+import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { usePathname, useParams } from 'next/navigation';
 import Link from 'next/link';
-import { Loader, CheckCircle2, Clock, PanelLeftClose, PanelLeftOpen, LogOut, LayoutDashboard, ArrowUp, Package } from 'lucide-react';
+import { Loader, CheckCircle2, Clock, PanelLeftClose, PanelLeftOpen, LogOut, LayoutDashboard, ArrowUp, Package, RefreshCw } from 'lucide-react';
 import { vendorLogoutAction } from '@/app/vendor/actions';
 import ActiveFiltersBar from './_lib/ActiveFiltersBar';
 import StickyProjectTab from './_lib/StickyProjectTab';
 import { VendorWorkbenchProvider } from './_lib/VendorWorkbenchContext';
+import PortalLiveRefresh from './_lib/PortalLiveRefresh';
 
 export default function VendorPortalLayout({ children }) {
     const [collapsed, setCollapsed] = useState(false);
     const [showScrollTop, setShowScrollTop] = useState(false);
+    const [lastRefreshed, setLastRefreshed] = useState(null);
+    const [isRefreshing, setIsRefreshing] = useState(false);
     const mainRef = useRef(null);
     const pathname = usePathname();
     const params = useParams();
@@ -29,6 +32,20 @@ export default function VendorPortalLayout({ children }) {
     ];
 
     const isActive = (match) => pathname.includes(match);
+
+    const handleRefresh = useCallback((ts) => {
+        setLastRefreshed(ts || new Date());
+    }, []);
+
+    const handleManualRefresh = useCallback(() => {
+        setIsRefreshing(true);
+        // router is not available here without importing it — PortalLiveRefresh owns refresh calls.
+        // Trigger by dispatching a synthetic broadcast to ourselves.
+        import('@/lib/portalBroadcast').then(({ broadcastPortalUpdate }) => {
+            broadcastPortalUpdate(vendorUuid);
+            setTimeout(() => setIsRefreshing(false), 600);
+        });
+    }, [vendorUuid]);
 
     useEffect(() => {
         const el = mainRef.current;
@@ -102,6 +119,7 @@ export default function VendorPortalLayout({ children }) {
             </aside>
 
             <main ref={mainRef} className="relative z-0 flex-1 min-w-0 overflow-y-auto">
+                <PortalLiveRefresh vendorUuid={vendorUuid} onRefresh={handleRefresh} />
                 <Suspense fallback={null}>
                     <ActiveFiltersBar />
                 </Suspense>
@@ -109,6 +127,15 @@ export default function VendorPortalLayout({ children }) {
                     {children}
                 </VendorWorkbenchProvider>
                 <StickyProjectTab />
+                {/* Manual refresh button — bottom-right stack above scroll-to-top */}
+                <button
+                    onClick={handleManualRefresh}
+                    className="fixed bottom-20 right-6 z-50 w-11 h-11 rounded-full bg-white border border-gray-200 text-gray-500 shadow flex items-center justify-center hover:bg-gray-50 hover:text-indigo-600 active:scale-95 transition-all"
+                    aria-label={lastRefreshed ? `Last updated ${lastRefreshed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Refresh data'}
+                    title={lastRefreshed ? `Last updated ${lastRefreshed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Refresh data'}
+                >
+                    <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                </button>
                 {showScrollTop && (
                     <button
                         onClick={() => mainRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}

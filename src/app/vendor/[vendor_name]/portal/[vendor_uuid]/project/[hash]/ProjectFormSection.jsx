@@ -101,6 +101,7 @@ export default async function ProjectFormSection({
                 project={{
                     initialRows: generatedRows,
                     projectHash: hash,
+                    campaignId: campaignId || null,
                     siblingPlans,
                     vendorName,
                     vendorUuid,
