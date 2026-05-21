@@ -17,7 +17,7 @@ export async function getPackagesAction() {
 
     const { data: packages, error } = await supabase
         .from('backlink_packages')
-        .select('*, vendors ( vendor_name )')
+        .select('*, vendors ( vendor_name ), total_price, payment_status, is_approved')
         .order('created_at', { ascending: false });
 
     if (error || !packages) return [];
@@ -72,8 +72,9 @@ export async function getAvailablePackagesAction(vendorName) {
 
     const { data: packages } = await supabase
         .from('backlink_packages')
-        .select('id, code, cat_abbr, category, total_quantity, vendors ( vendor_name )')
+        .select('id, code, cat_abbr, category, total_quantity, total_price, vendors ( vendor_name )')
         .eq('vendor_id', vendor.id)
+        .eq('is_approved', true)
         .order('created_at', { ascending: false });
 
     if (!packages?.length) return [];
@@ -100,6 +101,8 @@ export async function getAvailablePackagesAction(vendorName) {
             category: pkg.category,
             vendor_name: pkg.vendors?.vendor_name || vendorName,
             total_quantity: pkg.total_quantity,
+            total_price: pkg.total_price || 0,
+            price_per_url: pkg.total_quantity > 0 ? (pkg.total_price || 0) / pkg.total_quantity : 0,
             used_quantity: used,
             remaining_quantity: remaining,
         };
@@ -112,17 +115,19 @@ export async function createPackageAction(formData) {
 
     const supabase = getServerSupabase();
 
-    const vendorName = formData.get('vendor_name')?.trim();
-    const category   = formData.get('category')?.trim();
-    const catAbbr    = (formData.get('cat_abbr') || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
-    const totalQty   = parseInt(formData.get('total_quantity'));
+    const vendorName  = formData.get('vendor_name')?.trim();
+    const category    = formData.get('category')?.trim();
+    const catAbbr     = (formData.get('cat_abbr') || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
+    const totalQty    = parseInt(formData.get('total_quantity'));
+    const totalPrice  = parseFloat(formData.get('total_price'));
     const purchasedAt = formData.get('purchased_at') || new Date().toISOString();
-    const notes      = formData.get('notes')?.trim() || null;
+    const notes       = formData.get('notes')?.trim() || null;
 
     if (!vendorName) return { success: false, message: 'Vendor is required.' };
     if (!category)   return { success: false, message: 'Category is required.' };
     if (!catAbbr)    return { success: false, message: 'Abbreviation is required.' };
     if (!totalQty || totalQty <= 0) return { success: false, message: 'Total quantity must be greater than 0.' };
+    if (!totalPrice || totalPrice <= 0) return { success: false, message: 'Total price must be greater than 0.' };
 
     // Resolve vendor
     const { data: vendor } = await supabase
@@ -149,8 +154,11 @@ export async function createPackageAction(formData) {
         category,
         cat_abbr: catAbbr,
         total_quantity: totalQty,
+        total_price: totalPrice,
         purchased_at: purchasedAt,
         notes,
+        payment_status: 'pending',
+        is_approved: false,
     });
 
     if (error) return { success: false, message: `Failed to create package: ${error.message}` };
@@ -179,6 +187,50 @@ export async function deletePackageAction(packageId) {
     const { error } = await supabase.from('backlink_packages').delete().eq('id', packageId);
     if (error) return { success: false, message: `Failed to delete: ${error.message}` };
 
+    revalidatePath('/admin/backlinks-package');
+    return { success: true };
+}
+
+// Approve package payment (sets payment_status=approved + is_approved=true)
+export async function approvePackagePaymentAction(packageId) {
+    try { await requireAdmin(); } catch { return { success: false, message: 'Unauthorized.' }; }
+    if (!packageId) return { success: false, message: 'Invalid package.' };
+    const supabase = getServerSupabase();
+    const { error } = await supabase
+        .from('backlink_packages')
+        .update({ payment_status: 'approved', is_approved: true })
+        .eq('id', packageId);
+    if (error) return { success: false, message: error.message };
+    revalidatePath('/admin/pending-payment');
+    revalidatePath('/admin/backlinks-package');
+    return { success: true, approvedPackageId: packageId };
+}
+
+// Revert package payment back to pending (reversible)
+export async function revertPackagePaymentAction(packageId) {
+    try { await requireAdmin(); } catch { return { success: false, message: 'Unauthorized.' }; }
+    if (!packageId) return { success: false, message: 'Invalid package.' };
+    const supabase = getServerSupabase();
+    const { error } = await supabase
+        .from('backlink_packages')
+        .update({ payment_status: 'pending', is_approved: false })
+        .eq('id', packageId);
+    if (error) return { success: false, message: error.message };
+    revalidatePath('/admin/pending-payment');
+    revalidatePath('/admin/backlinks-package');
+    return { success: true };
+}
+
+// Toggle is_approved independently of payment_status
+export async function togglePackageApprovalAction(packageId, nextValue) {
+    try { await requireAdmin(); } catch { return { success: false, message: 'Unauthorized.' }; }
+    if (!packageId) return { success: false, message: 'Invalid package.' };
+    const supabase = getServerSupabase();
+    const { error } = await supabase
+        .from('backlink_packages')
+        .update({ is_approved: nextValue })
+        .eq('id', packageId);
+    if (error) return { success: false, message: error.message };
     revalidatePath('/admin/backlinks-package');
     return { success: true };
 }

@@ -11,20 +11,27 @@ export default async function AdminPendingPaymentPage() {
 
     const supabase = getServerSupabase();
 
-    const { data: projects, error } = await supabase
-        .from('projects')
-        .select(`
-            id, project_name, price, price_type, total_quantity,
-            start_date, deadline, created_date,
-            project_targets ( category ),
-            vendors ( vendor_name )
-        `)
-        .eq('payment_status', 'pending')
-        .order('created_date', { ascending: false });
+    const [{ data: projects, error }, { data: packages }] = await Promise.all([
+        supabase
+            .from('projects')
+            .select(`
+                id, project_name, price, price_type, total_quantity,
+                start_date, deadline, created_date,
+                project_targets ( category, sheet_name, price, quantity_requested ),
+                vendors ( vendor_name )
+            `)
+            .eq('payment_status', 'pending')
+            .order('created_date', { ascending: false }),
+        supabase
+            .from('backlink_packages')
+            .select('id, code, category, cat_abbr, total_quantity, total_price, purchased_at, payment_status, is_approved, vendors ( vendor_name )')
+            .eq('payment_status', 'pending')
+            .order('purchased_at', { ascending: false }),
+    ]);
 
     if (error) console.error('Pending Payment fetch error:', error);
 
-    // Group by vendor_name server-side
+    // Group projects by vendor
     const grouped = {};
     for (const p of (projects || [])) {
         const vendorName = p.vendors?.vendor_name || 'Unknown Vendor';
@@ -32,17 +39,37 @@ export default async function AdminPendingPaymentPage() {
         grouped[vendorName].push(p);
     }
 
+    const computeProjectCost = (p) => {
+        const targets = Array.isArray(p.project_targets) ? p.project_targets : [];
+        if (targets.length > 0 && targets.some(t => parseFloat(t.price) > 0)) {
+            return targets.reduce((sum, t) => sum + (parseFloat(t.price) || 0) * (parseInt(t.quantity_requested) || 0), 0);
+        }
+        if (p.price_type === 'package') return parseFloat(p.price) || 0;
+        return (parseFloat(p.price) || 0) * (p.total_quantity || 0);
+    };
+
     const vendorGroups = Object.entries(grouped).map(([vendorName, items]) => {
-        const totalPrice = items.reduce((acc, p) => {
-            if (p.price_type === 'package') return acc + (parseFloat(p.price) || 0);
-            return acc + (parseFloat(p.price) || 0) * (p.total_quantity || 0);
-        }, 0);
+        const itemsWithCost = items.map(p => ({ ...p, _computedCost: computeProjectCost(p) }));
+        const totalPrice = itemsWithCost.reduce((acc, p) => acc + p._computedCost, 0);
+        return { vendorName, items: itemsWithCost, totalPrice };
+    });
+
+    // Group packages by vendor
+    const pkgGrouped = {};
+    for (const pkg of (packages || [])) {
+        const vendorName = pkg.vendors?.vendor_name || 'Unknown Vendor';
+        if (!pkgGrouped[vendorName]) pkgGrouped[vendorName] = [];
+        pkgGrouped[vendorName].push(pkg);
+    }
+
+    const packageGroups = Object.entries(pkgGrouped).map(([vendorName, items]) => {
+        const totalPrice = items.reduce((acc, p) => acc + (parseFloat(p.total_price) || 0), 0);
         return { vendorName, items, totalPrice };
     });
 
     return (
         <div className="max-w-5xl mx-auto px-6 py-8 pb-20">
-            <PendingPaymentClient vendorGroups={vendorGroups} />
+            <PendingPaymentClient vendorGroups={vendorGroups} packageGroups={packageGroups} />
         </div>
     );
 }

@@ -53,6 +53,15 @@ function getProjectCategories(project) {
     return [...new Set(targets.map(t => t.category).filter(c => c && c !== 'NULL'))];
 }
 
+function getProjectCost(project) {
+    const targets = Array.isArray(project.project_targets) ? project.project_targets : [];
+    if (targets.length > 0 && targets.some(t => parseFloat(t.price) > 0)) {
+        return targets.reduce((sum, t) => sum + (parseFloat(t.price) || 0) * (parseInt(t.quantity_requested) || 0), 0);
+    }
+    // Fallback for legacy projects: price × total_quantity
+    return (parseFloat(project.price) || 0) * (parseInt(project.total_quantity) || 0);
+}
+
 function formatDate(value) {
     if (!value) return '-';
     const date = new Date(value);
@@ -136,7 +145,7 @@ function summarizeCampaign(projects) {
         const metrics = getProjectMetrics(project);
         acc.completed += metrics.completedLinks;
         acc.total += metrics.totalLinks;
-        acc.price += parseFloat(project.price || 0);
+        acc.price += getProjectCost(project);
         if (project.start_date) acc.starts.push(new Date(project.start_date).getTime());
         if (project.deadline) acc.ends.push(new Date(project.deadline).getTime());
         return acc;
@@ -216,7 +225,7 @@ export default function ProjectDetailsClient({ initialProjects }) {
     const [projectToDelete, setProjectToDelete] = useState(null);
     const [activeTab, setActiveTab] = useState('active');
     const [search, setSearch] = useState('');
-    const [isCollapsed, setIsCollapsed] = useState({ pending: false, completed: true });
+    // isCollapsed removed — sections now live in separate tabs
     const [isEditMode, setIsEditMode] = useState(false);
     const [editedProjects, setEditedProjects] = useState([]);
     const [dirtyProjectIds, setDirtyProjectIds] = useState(() => new Set());
@@ -477,7 +486,7 @@ export default function ProjectDetailsClient({ initialProjects }) {
             setProjects(prev => [nextProject, ...prev]);
             if (isEditMode) setEditedProjects(prev => [nextProject, ...prev]);
             setExpandedCampaigns(prev => ({ ...prev, [addPlanCampaign.key]: true }));
-            if (!nextProject.is_approved) setActiveTab('completed');
+            if (!nextProject.is_approved) setActiveTab('pending');
             setAddPlanCampaign(null);
             setAddPlanForm(createAddPlanForm());
         } else {
@@ -596,12 +605,33 @@ export default function ProjectDetailsClient({ initialProjects }) {
                             <span className="text-slate-400 text-xs">$</span>
                             <input type="number" step="0.01" value={project.price ?? ''} onChange={(e) => handleFieldChange(project.id, 'price', e.target.value)} className="w-20 px-2 py-1.5 border border-slate-200 focus:ring-2 focus:ring-indigo-500 rounded-md text-sm outline-none" />
                         </div>
-                    ) : (
-                        <div className="flex flex-col">
-                            <span className="text-sm font-black text-slate-800">${project.price ?? '0.00'}</span>
-                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{project.price_type === 'package' ? 'Package' : 'URL'}</span>
-                        </div>
-                    )}
+                    ) : (() => {
+                        const targets = Array.isArray(project.project_targets) ? project.project_targets : [];
+                        const hasTargetPrices = targets.some(t => parseFloat(t.price) > 0);
+                        const totalCost = getProjectCost(project);
+                        if (hasTargetPrices) {
+                            const byCategory = targets.reduce((acc, t) => {
+                                const cat = t.category && t.category !== 'NULL' ? t.category : 'Uncategorized';
+                                if (!acc[cat]) acc[cat] = 0;
+                                acc[cat] += (parseFloat(t.price) || 0) * (parseInt(t.quantity_requested) || 0);
+                                return acc;
+                            }, {});
+                            return (
+                                <div className="flex flex-col gap-0.5">
+                                    <span className="text-sm font-black text-slate-800">${totalCost.toFixed(2)}</span>
+                                    {Object.entries(byCategory).map(([cat, cost]) => (
+                                        <span key={cat} className="text-[9px] font-semibold text-slate-400">{cat}: ${cost.toFixed(2)}</span>
+                                    ))}
+                                </div>
+                            );
+                        }
+                        return (
+                            <div className="flex flex-col">
+                                <span className="text-sm font-black text-slate-800">${project.price ?? '0.00'}</span>
+                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{project.price_type === 'package' ? 'Package' : 'URL'}</span>
+                            </div>
+                        );
+                    })()}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                     {isEditMode ? (
@@ -863,7 +893,8 @@ export default function ProjectDetailsClient({ initialProjects }) {
 
     const tabs = [
         { id: 'active', label: 'Active Placements', count: activeProjects.length },
-        { id: 'completed', label: 'Completed & Pending', count: completedProjects.length + pendingProjects.length },
+        { id: 'pending', label: 'Pending Approval', count: pendingProjects.length },
+        { id: 'completed', label: 'Completed & Finalized', count: completedProjects.length },
     ];
 
     return (
@@ -896,11 +927,12 @@ export default function ProjectDetailsClient({ initialProjects }) {
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                 {[
                     { label: 'Total Projects', value: projects.length, color: 'bg-slate-500/30' },
-                    { label: 'Completed', value: completedProjects.length, color: 'bg-emerald-500/30' },
                     { label: 'Active', value: activeProjects.length, color: 'bg-indigo-500/30' },
+                    { label: 'Pending Approval', value: pendingProjects.length, color: 'bg-amber-500/30' },
+                    { label: 'Completed', value: completedProjects.length, color: 'bg-emerald-500/30' },
                 ].map((stat, i) => (
                     <div key={i} className="bg-white p-6 rounded-xl border border-slate-200 shadow-soft group hover:border-indigo-200 transition-colors">
                         <dt className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{stat.label}</dt>
@@ -947,29 +979,26 @@ export default function ProjectDetailsClient({ initialProjects }) {
 
             {activeTab === 'active' && renderProjectTable('Active Placements', filteredActive, isEditMode, false, null, false, false, false, true)}
 
-            {activeTab === 'completed' && (
-                <div className="flex flex-col gap-8">
-                    {renderProjectTable(
-                        'Pending Payment / Approval',
-                        filteredPending,
-                        isEditMode,
-                        isCollapsed.pending,
-                        () => setIsCollapsed(prev => ({ ...prev, pending: !prev.pending })),
-                        false,
-                        true,
-                        true,
-                        false,
-                        true
-                    )}
-                    {renderProjectTable(
-                        'Recently Completed & Finalized',
-                        filteredCompleted,
-                        false,
-                        isCollapsed.completed,
-                        () => setIsCollapsed(prev => ({ ...prev, completed: !prev.completed })),
-                        true
-                    )}
-                </div>
+            {activeTab === 'pending' && renderProjectTable(
+                'Pending Payment / Approval',
+                filteredPending,
+                isEditMode,
+                false,
+                null,
+                false,
+                true,
+                true,
+                false,
+                true
+            )}
+
+            {activeTab === 'completed' && renderProjectTable(
+                'Recently Completed & Finalized',
+                filteredCompleted,
+                false,
+                false,
+                null,
+                true
             )}
 
             {addPlanCampaign && (

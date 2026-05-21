@@ -17,7 +17,7 @@ export default async function AdminProjectDetailsPage() {
             projects_hub ( targets, vendor_staging_data ),
             placements ( id ),
             project_languages ( lang_code, ratio ),
-            project_targets ( category, sheet_name ),
+            project_targets ( category, sheet_name, price, quantity_requested ),
             project_plans ( id, campaign_id, step_order, category, plan_info, created_at, start_date, end_date, total_quantity )
         `)
         .order('created_date', { ascending: false });

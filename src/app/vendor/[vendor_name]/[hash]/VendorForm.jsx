@@ -21,6 +21,8 @@ const COL_WIDTHS = [220, 250, 200, 100, 150, 300, 180, 180, 200];
 const ALWAYS_READONLY = new Set([1, 2, 3, 6, 8]);
 const MUTATION_ID = 'sheet.mutation.set-range-values';
 const READONLY_STYLE = 'readonly';
+const SHEET_ROW_HEIGHT = 28;
+const SHEET_VISIBLE_ROWS = 15;
 const INDEXED_STATUS_OPTIONS = ['page indexed', 'page not indexed', 'domain not indexed'];
 const CACHE_PREFIX = 'df_vendor_cache_';
 const PENDING_PREFIX = 'df_vendor_pending_hashes_';
@@ -712,7 +714,12 @@ export default function VendorForm({ initialRows, projectHash, siblingPlans = []
         });
         const columnData = {};
         COL_WIDTHS.forEach((w, col) => { columnData[col] = { w }; });
-        const rowCount = Math.max(displayRows.length + 2, 50);
+        const rowCount = Math.max(displayRows.length + 2, SHEET_VISIBLE_ROWS);
+        // Pin every row to a fixed height so visible count stays stable across projects
+        const rowData = {};
+        for (let r = 0; r < rowCount; r++) {
+            rowData[r] = { h: SHEET_ROW_HEIGHT };
+        }
         return {
             id: `wb-${projectHash}`,
             sheetOrder: ['sheet1'],
@@ -724,6 +731,7 @@ export default function VendorForm({ initialRows, projectHash, siblingPlans = []
                     columnCount: COLS.length,
                     cellData,
                     columnData,
+                    rowData,
                     freeze: { startRow: 1, startColumn: 0, ySplit: 1, xSplit: 0 },
                 },
             },
@@ -1170,8 +1178,8 @@ export default function VendorForm({ initialRows, projectHash, siblingPlans = []
                 </div>
             )}
 
-            {/* Spreadsheet */}
-            <div className="bg-white rounded-md shadow-sm border border-gray-200 overflow-hidden flex flex-col h-[700px] max-h-[75vh]">
+            {/* Spreadsheet — height pinned so exactly 15 rows are always visible */}
+            <div className="bg-white rounded-md shadow-sm border border-gray-200 overflow-hidden flex flex-col" style={{ height: '564px' }}>
 
                 {/* Top Action Strip */}
                 <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex flex-col sm:flex-row items-center justify-between gap-4 shrink-0">

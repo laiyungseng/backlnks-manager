@@ -26,6 +26,13 @@ async function resolveVendor(supabase, vendorName) {
     return newV.id;
 }
 
+export async function getExistingVendorNames() {
+    try { await requireAdmin(); } catch { return []; }
+    const supabase = getServerSupabase();
+    const { data } = await supabase.from('vendors').select('vendor_name').order('vendor_name').limit(500);
+    return [...new Set((data || []).map(r => r.vendor_name).filter(Boolean))];
+}
+
 export async function getExistingCampaignTitles() {
     try { await requireAdmin(); } catch { return []; }
     const supabase = getServerSupabase();
@@ -117,6 +124,7 @@ export async function createCampaignAction(prevState, formData) {
                         quantity: String(parseInt(t.ratio) || 0),
                         category: g.category,
                         sheet_name: g.sheet_name || null,
+                        group_price: parseFloat(g.group_price) || 0,
                         created_at: new Date().toISOString()
                     });
                 });
@@ -126,6 +134,19 @@ export async function createCampaignAction(prevState, formData) {
             const vendorSlug = vendor_name.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
             const vendorId = await resolveVendor(supabase, vendor_name.trim());
             const firstLangCode = ((languages?.[0]?.code) || 'EN').toUpperCase();
+
+            // For package plans, derive per-URL price from the package definition
+            let perUrlPriceFromPackage = null;
+            if (price_type === 'package' && package_id) {
+                const { data: pkgRow } = await supabase
+                    .from('backlink_packages')
+                    .select('total_price, total_quantity')
+                    .eq('id', package_id)
+                    .single();
+                if (pkgRow && pkgRow.total_quantity > 0 && pkgRow.total_price > 0) {
+                    perUrlPriceFromPackage = pkgRow.total_price / pkgRow.total_quantity;
+                }
+            }
 
             // Create project (project_name mirrors campaign title for backward compat)
             const { data: proj, error: projErr } = await supabase
@@ -144,7 +165,7 @@ export async function createCampaignAction(prevState, formData) {
                     dripfeed_period: dripfeed_enabled ? (dripfeed_period || null) : null,
                     urls_per_day: dripfeed_enabled ? (parseInt(urls_per_day) || null) : null,
                     url_entry_enabled: false,
-                    price: parseFloat(price) || 0,
+                    price: price_type === 'per_url' ? 0 : (perUrlPriceFromPackage ?? parseFloat(price) ?? 0),
                     price_type: price_type || 'per_url',
                     package_id: (price_type === 'package' && package_id) ? package_id : null,
                     randomize_languages: !!randomize_languages,
@@ -176,14 +197,15 @@ export async function createCampaignAction(prevState, formData) {
                 if (langErr) { await rollback(); throw new Error(`Languages insert failed: ${langErr.message}`); }
             }
 
-            // Insert targets
+            // Insert targets — package plans use derived per-URL price; per_url plans use group_price
             const targetsToInsert = flattenedTargets.map(t => ({
                 project_id: projectId,
                 category: t.category || 'NULL',
                 anchor_text: t.anchor_text,
                 target_url: t.target_url,
                 quantity_requested: parseInt(t.quantity, 10),
-                sheet_name: t.sheet_name
+                sheet_name: t.sheet_name,
+                price: perUrlPriceFromPackage != null ? perUrlPriceFromPackage : (t.group_price || 0)
             }));
 
             if (targetsToInsert.length > 0) {

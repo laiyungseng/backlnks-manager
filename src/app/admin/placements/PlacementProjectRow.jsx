@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Eye, Link as LinkIcon, MoreVertical, CheckCircle2, Lock, Unlock, XCircle, AlertTriangle, ShieldAlert, Star, Globe2 } from 'lucide-react';
+import { Eye, Link as LinkIcon, MoreVertical, CheckCircle2, Lock, Unlock, XCircle, AlertTriangle, ShieldAlert, Star, Globe2, CircleDollarSign } from 'lucide-react';
 import { finalizeProjectAction, toggleProjectLockAction, closeProjectAction, toggleUrlEntryAction, togglePriorityAction } from './actions';
 import { broadcastPortalUpdate } from '@/lib/portalBroadcast';
 import CopyButton from '../projects/CopyButton';
@@ -343,6 +343,12 @@ export default function PlacementProjectRow({ project, isCompletedView, onProjec
                     <span className={`block w-full px-2 py-0.5 text-[9px] font-black rounded uppercase tracking-widest mb-1.5 ${statusStyle.bg}`}>
                         {statusStyle.label}
                     </span>
+                    {project.payment_status === 'pending' && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[9px] font-black rounded border uppercase tracking-widest mb-1.5 bg-amber-50 text-amber-600 border-amber-200">
+                            <CircleDollarSign className="w-2.5 h-2.5" />
+                            Payment Pending
+                        </span>
+                    )}
                     {riskTier && riskStyle && (() => {
                         const RiskIcon = riskStyle.icon;
                         return (
@@ -430,6 +436,15 @@ export default function PlacementProjectRow({ project, isCompletedView, onProjec
                             <span className={`px-2 py-0.5 text-[8px] font-bold rounded-full border uppercase tracking-tight self-start whitespace-nowrap ${identityStatusClass}`}>
                                 {statusStyle.label}
                             </span>
+                            {project.payment_status === 'pending' && (
+                                <span className="relative group/pay inline-flex items-center gap-1 px-2 py-0.5 text-[8px] font-bold rounded-full border uppercase tracking-tight self-start whitespace-nowrap bg-amber-50 text-amber-600 border-amber-200 cursor-default">
+                                    <CircleDollarSign className="w-2.5 h-2.5" />
+                                    Payment Pending
+                                    <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 text-[10px] font-bold bg-slate-900 text-white rounded whitespace-nowrap opacity-0 group-hover/pay:opacity-100 transition-opacity pointer-events-none z-20">
+                                        Payment not yet approved
+                                    </span>
+                                </span>
+                            )}
                             {riskTier && riskStyle && (() => {
                                 const RiskIcon = riskStyle.icon;
                                 return (
