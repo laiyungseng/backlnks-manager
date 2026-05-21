@@ -35,6 +35,7 @@ export default async function AdminMetricsPage() {
             completed_date,
             status,
             is_approved,
+            payment_status,
             project_targets ( price, quantity_requested )
         `),
         // This week: plans whose deadline falls within next 7 days or is ongoing now

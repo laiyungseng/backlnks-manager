@@ -110,14 +110,14 @@ export default function DashboardLanding({ placements = [], projects = [], weekP
         let outstandingCost = 0;
         projects.forEach(p => {
             const cost = computeProjectCost(p);
-            if (p.is_approved) approvedCost += cost;
-            else outstandingCost += cost;
+            if (p.payment_status === 'approved') approvedCost += cost;
+            else if (p.payment_status === 'pending') outstandingCost += cost;
         });
         // Add package spend to cost cards
         packages.forEach(pkg => {
             const price = parseFloat(pkg.total_price) || 0;
             if (pkg.payment_status === 'approved') approvedCost += price;
-            else outstandingCost += price;
+            else if (pkg.payment_status === 'pending') outstandingCost += price;
         });
 
         return { indexRate, errorRate, avgSpeed, approvedCost, outstandingCost, totalPlacements };
