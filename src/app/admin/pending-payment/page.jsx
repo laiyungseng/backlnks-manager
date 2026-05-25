@@ -49,10 +49,12 @@ export default async function AdminPendingPaymentPage() {
     };
 
     const vendorGroups = Object.entries(grouped).map(([vendorName, items]) => {
-        const itemsWithCost = items.map(p => ({ ...p, _computedCost: computeProjectCost(p) }));
+        const itemsWithCost = items
+            .map(p => ({ ...p, _computedCost: computeProjectCost(p) }))
+            .sort((a, b) => (a.project_name || '').localeCompare(b.project_name || ''));
         const totalPrice = itemsWithCost.reduce((acc, p) => acc + p._computedCost, 0);
         return { vendorName, items: itemsWithCost, totalPrice };
-    });
+    }).sort((a, b) => a.vendorName.localeCompare(b.vendorName));
 
     // Group packages by vendor
     const pkgGrouped = {};
@@ -63,9 +65,10 @@ export default async function AdminPendingPaymentPage() {
     }
 
     const packageGroups = Object.entries(pkgGrouped).map(([vendorName, items]) => {
-        const totalPrice = items.reduce((acc, p) => acc + (parseFloat(p.total_price) || 0), 0);
-        return { vendorName, items, totalPrice };
-    });
+        const sortedItems = [...items].sort((a, b) => (a.code || '').localeCompare(b.code || ''));
+        const totalPrice = sortedItems.reduce((acc, p) => acc + (parseFloat(p.total_price) || 0), 0);
+        return { vendorName, items: sortedItems, totalPrice };
+    }).sort((a, b) => a.vendorName.localeCompare(b.vendorName));
 
     return (
         <div className="max-w-5xl mx-auto px-6 py-8 pb-20">

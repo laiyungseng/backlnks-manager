@@ -54,6 +54,7 @@ async function payAndShiftSinglePlan(supabase, projectId) {
         .from('project_plans')
         .select('campaign_id')
         .eq('project_id', projectId)
+        .limit(1)
         .maybeSingle();
     if (ownPlanError) throw ownPlanError;
 
