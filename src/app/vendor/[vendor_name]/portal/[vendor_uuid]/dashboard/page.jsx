@@ -1,10 +1,10 @@
 import { getServerSupabase } from '@/lib/supabase-server';
 import { verifyVendorSession, getSession } from '@/lib/session';
 import { redirect } from 'next/navigation';
-import { LayoutDashboard, CheckCircle2, Activity, Zap, Star, ExternalLink } from 'lucide-react';
-import Link from 'next/link';
+import { LayoutDashboard, CheckCircle2, Activity, Zap, Star } from 'lucide-react';
 import DashboardActiveProjects from './DashboardActiveProjects';
 import DashboardTriage from './DashboardTriage';
+import DashboardFocus from './DashboardFocus';
 
 export const dynamic = 'force-dynamic';
 
@@ -65,18 +65,6 @@ function getProgress(project) {
     return { completed, indexedCount, total, percent: total > 0 ? Math.round((completed / total) * 100) : 0 };
 }
 
-function getTotal(project) {
-    const hub = project.projects_hub?.[0] || {};
-    const hubTargets = Array.isArray(hub.targets) ? hub.targets : [];
-    return hubTargets.length > 0
-        ? hubTargets.reduce((acc, t) => acc + (parseInt(t.quantity || '0', 10)), 0)
-        : (project.total_quantity || 0);
-}
-
-function formatDate(dateStr) {
-    if (!dateStr) return '—';
-    return new Date(dateStr).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-}
 
 export default async function VendorDashboardPage({ params }) {
     const supabase = getServerSupabase();
@@ -270,59 +258,11 @@ export default async function VendorDashboardPage({ params }) {
             </div>
 
             {/* Focus Section — priority projects */}
-            {activeProjects.filter(p => p.is_priority).length > 0 && (
-                <section className="mb-8">
-                    <div className="flex items-center gap-2 mb-3">
-                        <Star className="w-4 h-4 text-amber-500 fill-amber-400" />
-                        <h2 className="text-lg font-bold text-gray-800">Focus</h2>
-                        <span className="ml-1 px-2 py-0.5 text-xs font-bold rounded-full bg-amber-100 text-amber-700">
-                            {activeProjects.filter(p => p.is_priority).length}
-                        </span>
-                    </div>
-                    <div className="space-y-2">
-                        {activeProjects.filter(p => p.is_priority).map(p => {
-                            const { completed, total, percent } = getProgress(p);
-                            const daysLeft = getRemainingDays(p.deadline);
-                            const hash = p.projects_hub?.[0]?.hash;
-                            return (
-                                <div key={p.id} className="bg-white rounded-xl ring-1 ring-amber-200 border-l-4 border-l-amber-400 px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-4">
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex flex-wrap items-center gap-2 mb-1">
-                                            <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400 shrink-0" />
-                                            <span className="font-bold text-gray-900 text-sm">{p.project_name || 'Unnamed'}</span>
-                                            {p.country && <span className="text-xs font-mono text-gray-400 uppercase">{p.country}</span>}
-                                        </div>
-                                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 mb-2">
-                                            <span>Qty: <span className="font-semibold text-gray-700">{total}</span></span>
-                                            <span>Deadline: <span className={`font-semibold ${daysLeft !== null && daysLeft <= 0 ? 'text-red-600' : 'text-gray-700'}`}>{formatDate(p.deadline)}</span></span>
-                                            {daysLeft !== null && daysLeft <= 3 && (
-                                                <span className={`font-bold px-1.5 py-0.5 rounded text-[10px] ${daysLeft < 0 ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                                                    {daysLeft < 0 ? `${Math.abs(daysLeft)}d late` : daysLeft === 0 ? 'Today' : `${daysLeft}d left`}
-                                                </span>
-                                            )}
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            <div className="flex-1 bg-gray-100 rounded-full h-1.5 overflow-hidden max-w-[160px]">
-                                                <div className="h-1.5 rounded-full bg-amber-400 transition-all" style={{ width: `${percent}%` }} />
-                                            </div>
-                                            <span className="text-xs text-gray-500 tabular-nums">{completed}/{total} ({percent}%)</span>
-                                        </div>
-                                    </div>
-                                    {hash && (
-                                        <Link
-                                            href={`/vendor/${vendorName}/portal/${vendorUuid}/project/${hash}`}
-                                            className="flex items-center gap-1.5 px-4 py-2 bg-amber-500 text-white text-xs font-bold rounded-lg hover:bg-amber-600 transition-colors shadow-sm shrink-0"
-                                        >
-                                            <ExternalLink className="w-3.5 h-3.5" />
-                                            Open
-                                        </Link>
-                                    )}
-                                </div>
-                            );
-                        })}
-                    </div>
-                </section>
-            )}
+            <DashboardFocus
+                priorityProjects={activeProjects.filter(p => p.is_priority)}
+                vendorName={vendorName}
+                vendorUuid={vendorUuid}
+            />
 
             {/* Active Projects */}
             <DashboardActiveProjects activeProjects={activeProjects} vendorName={vendorName} vendorUuid={vendorUuid} />
