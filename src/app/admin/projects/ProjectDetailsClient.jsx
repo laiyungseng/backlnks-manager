@@ -627,8 +627,8 @@ export default function ProjectDetailsClient({ initialProjects }) {
                         }
                         return (
                             <div className="flex flex-col">
-                                <span className="text-sm font-black text-slate-800">${project.price ?? '0.00'}</span>
-                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{project.price_type === 'package' ? 'Package' : 'URL'}</span>
+                                <span className="text-sm font-black text-slate-800">${getProjectCost(project).toFixed(2)}</span>
+                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{project.price_type === 'package' ? 'Package' : `@ $${parseFloat(project.price || 0).toFixed(2)}/URL`}</span>
                             </div>
                         );
                     })()}
