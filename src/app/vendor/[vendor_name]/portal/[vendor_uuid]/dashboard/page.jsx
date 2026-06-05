@@ -1,11 +1,18 @@
 import { getServerSupabase } from '@/lib/supabase-server';
 import { verifyVendorSession, getSession } from '@/lib/session';
 import { redirect } from 'next/navigation';
-import { LayoutDashboard, Clock, CheckCircle2, AlertTriangle, Activity, Zap, Star, ExternalLink } from 'lucide-react';
-import Link from 'next/link';
+import { LayoutDashboard, CheckCircle2, Activity, Zap, Star } from 'lucide-react';
 import DashboardActiveProjects from './DashboardActiveProjects';
+import DashboardTriage from './DashboardTriage';
+import DashboardFocus from './DashboardFocus';
 
 export const dynamic = 'force-dynamic';
+
+function isWithinLastDays(dateStr, days) {
+    if (!dateStr) return false;
+    const ms = days * 24 * 60 * 60 * 1000;
+    return (Date.now() - new Date(dateStr).getTime()) <= ms;
+}
 
 function getRemainingDays(deadline) {
     if (!deadline) return null;
@@ -58,18 +65,6 @@ function getProgress(project) {
     return { completed, indexedCount, total, percent: total > 0 ? Math.round((completed / total) * 100) : 0 };
 }
 
-function getTotal(project) {
-    const hub = project.projects_hub?.[0] || {};
-    const hubTargets = Array.isArray(hub.targets) ? hub.targets : [];
-    return hubTargets.length > 0
-        ? hubTargets.reduce((acc, t) => acc + (parseInt(t.quantity || '0', 10)), 0)
-        : (project.total_quantity || 0);
-}
-
-function formatDate(dateStr) {
-    if (!dateStr) return '—';
-    return new Date(dateStr).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-}
 
 export default async function VendorDashboardPage({ params }) {
     const supabase = getServerSupabase();
@@ -114,6 +109,7 @@ export default async function VendorDashboardPage({ params }) {
             completed_date,
             is_priority,
             project_targets ( category ),
+            project_plans ( campaign_id, project_campaigns ( id, title ) ),
             projects_hub ( hash, vendor_staging_data, is_locked, targets ),
             placements ( id )
         `)
@@ -149,7 +145,6 @@ export default async function VendorDashboardPage({ params }) {
         : 0;
 
     // Urgent: active projects past deadline where vendor has NOT yet submitted all URLs
-    // (projects where all URLs are already submitted belong in the pending-index warning instead)
     const urgentProjects = activeProjects.filter(p => {
         const d = getRemainingDays(p.deadline);
         if (d === null || d > 0) return false;
@@ -157,11 +152,55 @@ export default async function VendorDashboardPage({ params }) {
         return !(total > 0 && completed >= total);
     });
 
-    // Any project (active or completed) where all URLs are submitted but index status not yet recorded
-    // Uses vendor_staging_data via getProgress() — same source as the "Completed — Pending Index Status" label
+    // Due today/tomorrow: incomplete and 0 or 1 days remaining (excludes already-overdue)
+    const dueTodayProjects = activeProjects.filter(p => {
+        const d = getRemainingDays(p.deadline);
+        if (d === null || d < 0 || d > 1) return false;
+        const { completed, total } = getProgress(p);
+        return !(total > 0 && completed >= total);
+    });
+
+    // New: active, 0 URLs entered, created within last 14 days
+    const newAssignmentProjects = activeProjects.filter(p => {
+        const { completed } = getProgress(p);
+        if (completed !== 0) return false;
+        return isWithinLastDays(p.created_date, 14);
+    });
+
+    // Pending index: any project where all URLs are submitted but index status not yet recorded
     const pendingIndexProjects = allProjects.filter(p => {
         const { completed, indexedCount, total } = getProgress(p);
         return total > 0 && completed >= total && indexedCount < total;
+    });
+
+    function toFocusItem(p, meta) {
+        const hash = p.projects_hub?.[0]?.hash || null;
+        const campaignTitle = p.project_plans?.[0]?.project_campaigns?.title || p.project_name || 'Unnamed';
+        const category = p.project_targets?.[0]?.category || null;
+        return {
+            id: p.id,
+            label: campaignTitle,
+            category,
+            hash,
+            meta,
+        };
+    }
+
+    const overdueItems = urgentProjects.map(p => {
+        const d = getRemainingDays(p.deadline);
+        return toFocusItem(p, `${Math.abs(d)}d late`);
+    });
+    const dueTodayItems = dueTodayProjects.map(p => {
+        const d = getRemainingDays(p.deadline);
+        return toFocusItem(p, d === 0 ? 'Today' : '1d left');
+    });
+    const newItems = newAssignmentProjects.map(p => {
+        const { total } = getProgress(p);
+        return toFocusItem(p, `0/${total}`);
+    });
+    const pendingIndexItems = pendingIndexProjects.map(p => {
+        const { indexedCount, total } = getProgress(p);
+        return toFocusItem(p, `${indexedCount}/${total} indexed`);
     });
 
     return (
@@ -177,52 +216,14 @@ export default async function VendorDashboardPage({ params }) {
                 </p>
             </div>
 
-            {/* Pending index warning */}
-            {pendingIndexProjects.length > 0 && (
-                <div className="mb-4 bg-yellow-50 border border-yellow-200 rounded-lg overflow-hidden text-sm text-yellow-800">
-                    <details>
-                        <summary className="flex items-start gap-3 p-4 cursor-pointer select-none hover:bg-yellow-100/60 transition-colors list-none">
-                            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-yellow-500" />
-                            <p>
-                                <span className="font-bold">{pendingIndexProjects.length} completed project{pendingIndexProjects.length !== 1 ? 's' : ''}</span>
-                                {' '}
-                                <span className="underline underline-offset-2 decoration-yellow-500 font-semibold hover:text-yellow-900">
-                                    {pendingIndexProjects.length !== 1 ? 'are' : 'is'} awaiting index status verification
-                                </span>
-                                {' — click to view.'}
-                            </p>
-                        </summary>
-                        <div className="border-t border-yellow-200 px-4 pb-4 pt-3">
-                            <ul className="space-y-2">
-                                {pendingIndexProjects.map(p => {
-                                    const { completed, indexedCount, total } = getProgress(p);
-                                    return (
-                                        <li key={p.id} className="flex items-center gap-2 text-xs text-yellow-800">
-                                            <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 shrink-0" />
-                                            <span className="font-semibold">{p.project_name || 'Unnamed'}</span>
-                                            {p.country && (
-                                                <span className="font-mono text-[10px] bg-yellow-100 border border-yellow-200 px-1.5 py-0.5 rounded">{p.country}</span>
-                                            )}
-                                            <span className="text-yellow-600 ml-auto tabular-nums">{indexedCount}/{total} indexed</span>
-                                        </li>
-                                    );
-                                })}
-                            </ul>
-                        </div>
-                    </details>
-                </div>
-            )}
-
-            {/* Urgent alert */}
-            {urgentProjects.length > 0 && (
-                <div className="mb-6 flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
-                    <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-red-500" />
-                    <p>
-                        <span className="font-bold">{urgentProjects.length} project{urgentProjects.length > 1 ? 's are' : ' is'} overdue or due today.</span>
-                        {' '}Please submit your URLs as soon as possible.
-                    </p>
-                </div>
-            )}
+            <DashboardTriage
+                overdue={overdueItems}
+                dueToday={dueTodayItems}
+                newAssignments={newItems}
+                pendingIndex={pendingIndexItems}
+                vendorName={vendorName}
+                vendorUuid={vendorUuid}
+            />
 
             {/* KPI Strip */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-10">
@@ -257,62 +258,14 @@ export default async function VendorDashboardPage({ params }) {
             </div>
 
             {/* Focus Section — priority projects */}
-            {activeProjects.filter(p => p.is_priority).length > 0 && (
-                <section className="mb-8">
-                    <div className="flex items-center gap-2 mb-3">
-                        <Star className="w-4 h-4 text-amber-500 fill-amber-400" />
-                        <h2 className="text-lg font-bold text-gray-800">Focus</h2>
-                        <span className="ml-1 px-2 py-0.5 text-xs font-bold rounded-full bg-amber-100 text-amber-700">
-                            {activeProjects.filter(p => p.is_priority).length}
-                        </span>
-                    </div>
-                    <div className="space-y-2">
-                        {activeProjects.filter(p => p.is_priority).map(p => {
-                            const { completed, total, percent } = getProgress(p);
-                            const daysLeft = getRemainingDays(p.deadline);
-                            const hash = p.projects_hub?.[0]?.hash;
-                            return (
-                                <div key={p.id} className="bg-white rounded-xl ring-1 ring-amber-200 border-l-4 border-l-amber-400 px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-4">
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex flex-wrap items-center gap-2 mb-1">
-                                            <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400 shrink-0" />
-                                            <span className="font-bold text-gray-900 text-sm">{p.project_name || 'Unnamed'}</span>
-                                            {p.country && <span className="text-xs font-mono text-gray-400 uppercase">{p.country}</span>}
-                                        </div>
-                                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 mb-2">
-                                            <span>Qty: <span className="font-semibold text-gray-700">{total}</span></span>
-                                            <span>Deadline: <span className={`font-semibold ${daysLeft !== null && daysLeft <= 0 ? 'text-red-600' : 'text-gray-700'}`}>{formatDate(p.deadline)}</span></span>
-                                            {daysLeft !== null && daysLeft <= 3 && (
-                                                <span className={`font-bold px-1.5 py-0.5 rounded text-[10px] ${daysLeft < 0 ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                                                    {daysLeft < 0 ? `${Math.abs(daysLeft)}d late` : daysLeft === 0 ? 'Today' : `${daysLeft}d left`}
-                                                </span>
-                                            )}
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            <div className="flex-1 bg-gray-100 rounded-full h-1.5 overflow-hidden max-w-[160px]">
-                                                <div className="h-1.5 rounded-full bg-amber-400 transition-all" style={{ width: `${percent}%` }} />
-                                            </div>
-                                            <span className="text-xs text-gray-500 tabular-nums">{completed}/{total} ({percent}%)</span>
-                                        </div>
-                                    </div>
-                                    {hash && (
-                                        <Link
-                                            href={`/vendor/${vendorName}/${hash}`}
-                                            className="flex items-center gap-1.5 px-4 py-2 bg-amber-500 text-white text-xs font-bold rounded-lg hover:bg-amber-600 transition-colors shadow-sm shrink-0"
-                                        >
-                                            <ExternalLink className="w-3.5 h-3.5" />
-                                            Open
-                                        </Link>
-                                    )}
-                                </div>
-                            );
-                        })}
-                    </div>
-                </section>
-            )}
+            <DashboardFocus
+                priorityProjects={activeProjects.filter(p => p.is_priority)}
+                vendorName={vendorName}
+                vendorUuid={vendorUuid}
+            />
 
             {/* Active Projects */}
-            <DashboardActiveProjects activeProjects={activeProjects} vendorName={vendorName} />
+            <DashboardActiveProjects activeProjects={activeProjects} vendorName={vendorName} vendorUuid={vendorUuid} />
         </div>
     );
 }

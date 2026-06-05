@@ -4,10 +4,12 @@ import { useState } from 'react';
 import {
     ResponsiveContainer,
     PieChart, Pie, Cell,
-    LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+    LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
     BarChart, Bar,
 } from 'recharts';
-import { TrendingUp, DollarSign, Package, Zap, Filter } from 'lucide-react';
+import { TrendingUp, DollarSign, Package, Zap } from 'lucide-react';
+import ProjectMultiSelect from '@/components/ProjectMultiSelect';
+import ProjectCostChart from '@/components/ProjectCostChart';
 
 const PALETTE = ['#6366f1', '#22d3ee', '#f59e0b', '#10b981', '#f43f5e', '#8b5cf6', '#06b6d4', '#84cc16', '#f97316', '#ec4899'];
 
@@ -136,7 +138,7 @@ function EmptyState({ label }) {
 }
 
 export default function ReportDashboard({ stats }) {
-    const [selectedProject, setSelectedProject] = useState(null);
+    const [selectedProjects, setSelectedProjects] = useState([]);
 
     const indexPct = stats.indexRate.total > 0
         ? Math.round((stats.indexRate.indexed / stats.indexRate.total) * 100)
@@ -274,76 +276,36 @@ export default function ReportDashboard({ stats }) {
                 const cpp = stats.costPerProject || { data: [], categories: [] };
                 const vcp = stats.vendorCostPerProject || { data: [], vendorNames: [] };
                 const projectNames = cpp.data.map(d => d.projectName);
-                const filteredCpp = selectedProject ? cpp.data.filter(d => d.projectName === selectedProject) : cpp.data;
-                const filteredVcp = selectedProject ? vcp.data.filter(d => d.projectName === selectedProject) : vcp.data;
+                const filteredCpp = selectedProjects.length ? cpp.data.filter(d => selectedProjects.includes(d.projectName)) : cpp.data;
+                const filteredVcp = selectedProjects.length ? vcp.data.filter(d => selectedProjects.includes(d.projectName)) : vcp.data;
 
                 return (
                     <div className="space-y-4">
                         {projectNames.length > 0 && (
-                            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-                                <div className="flex items-center gap-2 mb-3">
-                                    <Filter className="w-3.5 h-3.5 text-slate-400" />
-                                    <span className="text-xs font-black uppercase tracking-widest text-slate-400">Filter by Project</span>
-                                </div>
-                                <div className="flex flex-wrap gap-2 max-h-24 overflow-y-auto">
-                                    <button
-                                        onClick={() => setSelectedProject(null)}
-                                        className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors ${selectedProject === null ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
-                                    >
-                                        All Projects
-                                    </button>
-                                    {projectNames.map(name => (
-                                        <button
-                                            key={name}
-                                            onClick={() => setSelectedProject(name)}
-                                            className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors ${selectedProject === name ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
-                                        >
-                                            {name}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
+                            <ProjectMultiSelect
+                                options={projectNames}
+                                value={selectedProjects}
+                                onChange={setSelectedProjects}
+                            />
                         )}
 
-                        <ChartCard title="Cost Per Project">
-                            {filteredCpp.length === 0
-                                ? <EmptyState label="No project cost data" />
-                                : (
-                                    <ResponsiveContainer width="100%" height={280}>
-                                        <BarChart data={filteredCpp} margin={{ top: 5, right: 160, bottom: 55, left: 15 }}>
-                                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                                            <XAxis dataKey="projectName" tick={{ fontSize: 10 }} angle={-20} textAnchor="end" interval={0} label={{ value: 'Project Name', position: 'insideBottom', offset: -10, style: { fontSize: 11, fill: '#94a3b8' } }} />
-                                            <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `$${v.toLocaleString()}`} label={{ value: 'Cost (USD)', angle: -90, position: 'insideLeft', offset: 10, style: { fontSize: 11, fill: '#94a3b8' } }} />
-                                            <Tooltip formatter={(v) => [`$${Number(v).toLocaleString()}`, '']} />
-                                            <Legend layout="vertical" verticalAlign="middle" align="right" wrapperStyle={{ fontSize: 11, paddingLeft: 16 }} />
-                                            {cpp.categories.map((cat, i) => (
-                                                <Bar key={cat} dataKey={cat} stackId="cpp" fill={PALETTE[i % PALETTE.length]} radius={i === cpp.categories.length - 1 ? [3, 3, 0, 0] : [0, 0, 0, 0]} />
-                                            ))}
-                                        </BarChart>
-                                    </ResponsiveContainer>
-                                )
-                            }
-                        </ChartCard>
+                        <ProjectCostChart
+                            title="Cost Per Project"
+                            data={filteredCpp}
+                            seriesKeys={cpp.categories}
+                            stackId="cpp"
+                            emptyLabel="No project cost data"
+                            summaryNoun="category"
+                        />
 
-                        <ChartCard title="Vendor Participation Per Project">
-                            {filteredVcp.length === 0
-                                ? <EmptyState label="No vendor participation data" />
-                                : (
-                                    <ResponsiveContainer width="100%" height={280}>
-                                        <BarChart data={filteredVcp} margin={{ top: 5, right: 160, bottom: 55, left: 15 }}>
-                                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                                            <XAxis dataKey="projectName" tick={{ fontSize: 10 }} angle={-20} textAnchor="end" interval={0} label={{ value: 'Project Name', position: 'insideBottom', offset: -10, style: { fontSize: 11, fill: '#94a3b8' } }} />
-                                            <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `$${v.toLocaleString()}`} label={{ value: 'Cost (USD)', angle: -90, position: 'insideLeft', offset: 10, style: { fontSize: 11, fill: '#94a3b8' } }} />
-                                            <Tooltip formatter={(v) => [`$${Number(v).toLocaleString()}`, '']} />
-                                            <Legend layout="vertical" verticalAlign="middle" align="right" wrapperStyle={{ fontSize: 11, paddingLeft: 16 }} />
-                                            {vcp.vendorNames.map((vendor, i) => (
-                                                <Bar key={vendor} dataKey={vendor} stackId="vcp" fill={PALETTE[i % PALETTE.length]} radius={i === vcp.vendorNames.length - 1 ? [3, 3, 0, 0] : [0, 0, 0, 0]} />
-                                            ))}
-                                        </BarChart>
-                                    </ResponsiveContainer>
-                                )
-                            }
-                        </ChartCard>
+                        <ProjectCostChart
+                            title="Vendor Participation Per Project"
+                            data={filteredVcp}
+                            seriesKeys={vcp.vendorNames}
+                            stackId="vcp"
+                            emptyLabel="No vendor participation data"
+                            summaryNoun="vendor"
+                        />
                     </div>
                 );
             })()}

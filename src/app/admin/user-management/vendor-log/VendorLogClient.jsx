@@ -56,6 +56,7 @@ export default function VendorLogClient({ initialLogs, initialTotal, initialProj
     const [total, setTotal] = useState(initialTotal);
     const [projectNames, setProjectNames] = useState(initialProjectNames);
     const [selectedVendorId, setSelectedVendorId] = useState('');
+    const [actorType, setActorType] = useState('');
     const [page, setPage] = useState(0);
     const [isPending, startTransition] = useTransition();
 
@@ -63,9 +64,9 @@ export default function VendorLogClient({ initialLogs, initialTotal, initialProj
 
     const vendorNameMap = Object.fromEntries(vendors.map(v => [v.id, v.vendor_name]));
 
-    const load = (vendorId, p) => {
+    const load = (vendorId, p, aType) => {
         startTransition(async () => {
-            const res = await getVendorAuditLog({ page: p, limit: LIMIT, vendorId: vendorId || null });
+            const res = await getVendorAuditLog({ page: p, limit: LIMIT, vendorId: vendorId || null, actorType: aType || null });
             if (res.success) {
                 setLogs(res.logs);
                 setTotal(res.total);
@@ -77,20 +78,26 @@ export default function VendorLogClient({ initialLogs, initialTotal, initialProj
     const handleVendorChange = (id) => {
         setSelectedVendorId(id);
         setPage(0);
-        load(id, 0);
+        load(id, 0, actorType);
+    };
+
+    const handleActorTypeChange = (aType) => {
+        setActorType(aType);
+        setPage(0);
+        load(selectedVendorId, 0, aType);
     };
 
     const handlePage = (p) => {
         setPage(p);
-        load(selectedVendorId, p);
+        load(selectedVendorId, p, actorType);
     };
 
     const totalPages = Math.ceil(total / LIMIT);
 
     return (
         <div>
-            {/* Filter */}
-            <div className="flex items-center gap-3 mb-5">
+            {/* Filters */}
+            <div className="flex flex-wrap items-center gap-3 mb-5">
                 <label className="text-sm font-semibold text-slate-600 whitespace-nowrap">Filter by Vendor:</label>
                 <select
                     value={selectedVendorId}
@@ -102,6 +109,21 @@ export default function VendorLogClient({ initialLogs, initialTotal, initialProj
                         <option key={v.id} value={v.id}>{v.vendor_name}</option>
                     ))}
                 </select>
+                <div className="flex items-center gap-1.5">
+                    {[
+                        { value: '', label: 'All' },
+                        { value: 'admin', label: 'Admin' },
+                        { value: 'vendor', label: 'Vendor' },
+                    ].map(pill => (
+                        <button
+                            key={pill.value}
+                            onClick={() => handleActorTypeChange(pill.value)}
+                            className={`px-3 py-1 rounded-full text-xs font-semibold border transition-colors ${actorType === pill.value ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-300 hover:border-slate-400'}`}
+                        >
+                            {pill.label}
+                        </button>
+                    ))}
+                </div>
                 <span className="text-xs text-slate-400">{total} record{total !== 1 ? 's' : ''}</span>
                 {isPending && <span className="text-xs text-indigo-500 animate-pulse">Loading…</span>}
             </div>
@@ -136,7 +158,10 @@ export default function VendorLogClient({ initialLogs, initialTotal, initialProj
                                         </span>
                                     </td>
                                     <td className="px-4 py-3 text-xs text-slate-700">
-                                        {log.actor_id ? (vendorNameMap[log.actor_id] || <span className="font-mono text-slate-400">{log.actor_id.slice(0, 8)}…</span>) : '—'}
+                                        {log.actor === 'Admin'
+                                            ? <span className="inline-block px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-700">Admin</span>
+                                            : log.actor_id ? (vendorNameMap[log.actor_id] || <span className="font-mono text-slate-400">{log.actor_id.slice(0, 8)}…</span>) : '—'
+                                        }
                                     </td>
                                     <td className="px-4 py-3 text-xs text-slate-700 max-w-[180px] truncate">
                                         {log.target_id ? (projectNames[log.target_id] || <span className="font-mono text-slate-400">{log.target_id.slice(0, 8)}…</span>) : '—'}

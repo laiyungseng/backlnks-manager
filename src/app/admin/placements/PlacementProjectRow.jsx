@@ -2,8 +2,9 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Eye, Link as LinkIcon, MoreVertical, CheckCircle2, Lock, Unlock, XCircle, AlertTriangle, ShieldAlert, Star, Globe2 } from 'lucide-react';
+import { Eye, Link as LinkIcon, MoreVertical, CheckCircle2, Lock, Unlock, XCircle, AlertTriangle, ShieldAlert, Star, Globe2, CircleDollarSign } from 'lucide-react';
 import { finalizeProjectAction, toggleProjectLockAction, closeProjectAction, toggleUrlEntryAction, togglePriorityAction } from './actions';
+import { broadcastPortalUpdate } from '@/lib/portalBroadcast';
 import CopyButton from '../projects/CopyButton';
 import CloseProjectModal from './CloseProjectModal';
 import AnchorInfoPopup from './AnchorInfoPopup';
@@ -29,7 +30,7 @@ function computeRiskTier(lastActivityIso, createdDateIso) {
     return null;
 }
 
-export default function PlacementProjectRow({ project, isCompletedView }) {
+export default function PlacementProjectRow({ project, isCompletedView, onProjectFinalized }) {
     const router = useRouter();
     const representativeHash = project.projects_hub?.[0]?.hash;
 
@@ -65,7 +66,10 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
         try {
             const res = await finalizeProjectAction(representativeHash);
             if (!res.success) alert(`Error Finalizing: ${res.message}`);
-            else router.refresh();
+            else {
+                onProjectFinalized?.(project.id);
+                router.refresh();
+            }
         } catch {
             alert('Crash triggering processor.');
         } finally {
@@ -92,8 +96,10 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
         setIsTogglingUrlEntry(true);
         try {
             const res = await toggleUrlEntryAction(project.id, !localUrlEntry);
-            if (res.success) setLocalUrlEntry(v => !v);
-            else alert(`Error: ${res.message}`);
+            if (res.success) {
+                setLocalUrlEntry(v => !v);
+                if (project.vendor_id) broadcastPortalUpdate(project.vendor_id);
+            } else alert(`Error: ${res.message}`);
         } finally {
             setIsTogglingUrlEntry(false);
         }
@@ -104,8 +110,10 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
         setIsTogglingPriority(true);
         try {
             const res = await togglePriorityAction(project.id, !localPriority);
-            if (res.success) setLocalPriority(v => !v);
-            else alert(`Error: ${res.message}`);
+            if (res.success) {
+                setLocalPriority(v => !v);
+                if (project.vendor_id) broadcastPortalUpdate(project.vendor_id);
+            } else alert(`Error: ${res.message}`);
         } finally {
             setIsTogglingPriority(false);
         }
@@ -131,14 +139,14 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
 
     const vendorName = project.vendors?.vendor_name || 'unknown';
     const vendorSlug = vendorName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+    const portalHref = representativeHash && project.vendor_id
+        ? `/vendor/${vendorSlug}/portal/${project.vendor_id}/project/${representativeHash}`
+        : '';
     const copyLink = () => {
-        const fullUrl = `${window.location.origin}/vendor/${vendorSlug}/${representativeHash}`;
+        if (!portalHref) return;
+        const fullUrl = `${window.location.origin}${portalHref}`;
         navigator.clipboard.writeText(fullUrl);
         alert('Vendor Portal Link copied to clipboard!');
-    };
-    const openLink = () => {
-        const fullUrl = `${window.location.origin}/vendor/${vendorSlug}/${representativeHash}`;
-        window.open(fullUrl, '_blank');
     };
 
     const riskTier = !isCompletedView ? computeRiskTier(hub.last_activity_at || null, project.created_date) : null;
@@ -172,11 +180,26 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
     // Mobile portal buttons (full-width with text)
     const portalButtonsMobile = (
         <>
-            <button onClick={openLink} className="flex items-center gap-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 font-bold text-[10px] uppercase tracking-widest px-3 py-2 rounded-lg transition-colors flex-1 justify-center">
+            <a
+                href={portalHref || undefined}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-disabled={!portalHref}
+                className={`flex items-center gap-2 font-bold text-[10px] uppercase tracking-widest px-3 py-2 rounded-lg transition-colors flex-1 justify-center ${
+                    portalHref
+                        ? 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'
+                        : 'bg-slate-50 text-slate-300 pointer-events-none'
+                }`}
+            >
                 <Eye className="w-3.5 h-3.5" />
                 Open Link
-            </button>
-            <button onClick={copyLink} className="p-2 border border-slate-200 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-lg transition-colors shrink-0" title="Copy Link">
+            </a>
+            <button
+                onClick={copyLink}
+                disabled={!portalHref}
+                className="p-2 border border-slate-200 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-lg transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                title={portalHref ? 'Copy Link' : 'Missing vendor portal link'}
+            >
                 <LinkIcon className="w-3.5 h-3.5" />
             </button>
         </>
@@ -185,11 +208,27 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
     // Desktop portal buttons (compact icon-only for narrow col-span-1)
     const portalButtons = (
         <div className="flex flex-col gap-1.5 w-full">
-            <button onClick={openLink} title="Open Vendor Portal" className="flex items-center justify-center gap-1 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 font-bold text-[9px] uppercase tracking-widest px-2 py-1.5 rounded-lg transition-colors w-full">
+            <a
+                href={portalHref || undefined}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-disabled={!portalHref}
+                title={portalHref ? 'Open Vendor Portal' : 'Missing vendor portal link'}
+                className={`flex items-center justify-center gap-1 font-bold text-[9px] uppercase tracking-widest px-2 py-1.5 rounded-lg transition-colors w-full ${
+                    portalHref
+                        ? 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'
+                        : 'bg-slate-50 text-slate-300 pointer-events-none'
+                }`}
+            >
                 <Eye className="w-3 h-3" />
                 Open
-            </button>
-            <button onClick={copyLink} title="Copy Link" className="flex items-center justify-center gap-1 border border-slate-200 text-slate-400 hover:text-slate-600 hover:bg-slate-50 text-[9px] font-bold uppercase tracking-widest px-2 py-1.5 rounded-lg transition-colors w-full">
+            </a>
+            <button
+                onClick={copyLink}
+                disabled={!portalHref}
+                title={portalHref ? 'Copy Link' : 'Missing vendor portal link'}
+                className="flex items-center justify-center gap-1 border border-slate-200 text-slate-400 hover:text-slate-600 hover:bg-slate-50 text-[9px] font-bold uppercase tracking-widest px-2 py-1.5 rounded-lg transition-colors w-full disabled:opacity-40 disabled:cursor-not-allowed"
+            >
                 <LinkIcon className="w-3 h-3" />
                 Copy
             </button>
@@ -304,6 +343,12 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
                     <span className={`block w-full px-2 py-0.5 text-[9px] font-black rounded uppercase tracking-widest mb-1.5 ${statusStyle.bg}`}>
                         {statusStyle.label}
                     </span>
+                    {project.payment_status === 'pending' && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[9px] font-black rounded border uppercase tracking-widest mb-1.5 bg-amber-50 text-amber-600 border-amber-200">
+                            <CircleDollarSign className="w-2.5 h-2.5" />
+                            Payment Pending
+                        </span>
+                    )}
                     {riskTier && riskStyle && (() => {
                         const RiskIcon = riskStyle.icon;
                         return (
@@ -391,6 +436,15 @@ export default function PlacementProjectRow({ project, isCompletedView }) {
                             <span className={`px-2 py-0.5 text-[8px] font-bold rounded-full border uppercase tracking-tight self-start whitespace-nowrap ${identityStatusClass}`}>
                                 {statusStyle.label}
                             </span>
+                            {project.payment_status === 'pending' && (
+                                <span className="relative group/pay inline-flex items-center gap-1 px-2 py-0.5 text-[8px] font-bold rounded-full border uppercase tracking-tight self-start whitespace-nowrap bg-amber-50 text-amber-600 border-amber-200 cursor-default">
+                                    <CircleDollarSign className="w-2.5 h-2.5" />
+                                    Payment Pending
+                                    <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 text-[10px] font-bold bg-slate-900 text-white rounded whitespace-nowrap opacity-0 group-hover/pay:opacity-100 transition-opacity pointer-events-none z-20">
+                                        Payment not yet approved
+                                    </span>
+                                </span>
+                            )}
                             {riskTier && riskStyle && (() => {
                                 const RiskIcon = riskStyle.icon;
                                 return (

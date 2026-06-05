@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useActionState, useMemo, useRef, useEffect } from 'react';
-import { createCampaignAction, getExistingCampaignTitles } from './actions';
+import { createCampaignAction, getExistingCampaignTitles, getExistingVendorNames } from './actions';
 import { getCategories } from '../catalog/categories/actions';
 import { getAvailablePackagesAction } from '../catalog/backlink-packages/actions';
 import { useFormStatus } from 'react-dom';
@@ -15,6 +15,39 @@ function addDaysToDateStr(dateStr, days) {
     const mo = String(date.getMonth() + 1).padStart(2, '0');
     const dy = String(date.getDate()).padStart(2, '0');
     return `${yr}-${mo}-${dy}`;
+}
+
+function normalizePlanDates(plans) {
+    const next = plans.map(plan => ({ ...plan }));
+    let changed = false;
+
+    for (let i = 0; i < next.length; i++) {
+        const plan = next[i];
+
+        if (i > 0 && !plan.startDateManualOverride) {
+            const prevDeadline = next[i - 1].deadline;
+            if (prevDeadline) {
+                const newStart = addDaysToDateStr(prevDeadline, 1);
+                if (plan.start_date !== newStart) {
+                    plan.start_date = newStart;
+                    changed = true;
+                }
+            }
+        }
+
+        if (plan.dripfeed_enabled && !plan.deadlineManualOverride) {
+            const period = parseInt(plan.dripfeed_period) || 0;
+            if (plan.start_date && period) {
+                const newDeadline = addDaysToDateStr(plan.start_date, period);
+                if (plan.deadline !== newDeadline) {
+                    plan.deadline = newDeadline;
+                    changed = true;
+                }
+            }
+        }
+    }
+
+    return changed ? next : plans;
 }
 
 function genId() {
@@ -49,6 +82,7 @@ function createEmptyPlan() {
             id: genId(),
             sheet_name: '',
             category: 'NULL',
+            group_price: 0,
             placement_target: [{ id: genId(), anchor_text: '', target_url: '', ratio: 0 }]
         }]
     };
@@ -95,7 +129,7 @@ function SubmitButton({ isValid }) {
     );
 }
 
-function PlanCard({ plan, planIndex, categories, onUpdate, onRemove, canRemove, vendorPackages, allPlans, onLoadPackages }) {
+function PlanCard({ plan, planIndex, categories, onUpdate, onRemove, canRemove, vendorPackages, allPlans, onLoadPackages, vendorSuggestions }) {
     const [collapsed, setCollapsed] = useState(false);
     const [packagesLoading, setPackagesLoading] = useState(false);
 
@@ -140,7 +174,7 @@ function PlanCard({ plan, planIndex, categories, onUpdate, onRemove, canRemove, 
     // ── group helpers
     const addGroup = () => {
         const next = [...plan.project_info_groups, {
-            id: genId(), sheet_name: '', category: 'NULL',
+            id: genId(), sheet_name: '', category: 'NULL', group_price: 0,
             placement_target: [{ id: genId(), anchor_text: '', target_url: '', ratio: 0 }]
         }];
         set('project_info_groups', rebalanceGroups(next, planQty));
@@ -187,6 +221,7 @@ function PlanCard({ plan, planIndex, categories, onUpdate, onRemove, canRemove, 
     useEffect(() => {
         if (plan.price_type !== 'package' || !plan.vendor_name?.trim()) return;
         if (vendorPackages[plan.vendor_name]) return; // already cached
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setPackagesLoading(true);
         onLoadPackages(plan.vendor_name).finally(() => setPackagesLoading(false));
     }, [plan.price_type, plan.vendor_name]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -231,7 +266,11 @@ function PlanCard({ plan, planIndex, categories, onUpdate, onRemove, canRemove, 
                         <div>
                             <label className="block text-xs font-semibold text-gray-600 mb-1">Vendor Assigned *</label>
                             <input type="text" required value={plan.vendor_name} onChange={e => set('vendor_name', e.target.value)}
-                                placeholder="e.g. Vendor company name" className="block w-full border border-gray-300 rounded-md shadow-sm p-2.5 text-gray-900 text-sm focus:ring-indigo-500 focus:border-indigo-500" />
+                                placeholder="e.g. Vendor company name" list={`vendor-suggestions-${plan.id}`} autoComplete="off"
+                                className="block w-full border border-gray-300 rounded-md shadow-sm p-2.5 text-gray-900 text-sm focus:ring-indigo-500 focus:border-indigo-500" />
+                            <datalist id={`vendor-suggestions-${plan.id}`}>
+                                {(vendorSuggestions || []).map((name, i) => <option key={i} value={name} />)}
+                            </datalist>
                         </div>
                         <div>
                             <label className="block text-xs font-semibold text-gray-600 mb-1">Country Code *</label>
@@ -272,6 +311,7 @@ function PlanCard({ plan, planIndex, categories, onUpdate, onRemove, canRemove, 
                                 )}
                             </div>
                             <input type="date" required value={plan.deadline}
+                                min={plan.start_date || undefined}
                                 onChange={e => onUpdate(plan.id, { deadline: e.target.value, deadlineManualOverride: true })}
                                 className="block w-full border border-gray-300 rounded-md shadow-sm p-2.5 text-gray-900 text-sm focus:ring-indigo-500 focus:border-indigo-500" />
                         </div>
@@ -290,28 +330,19 @@ function PlanCard({ plan, planIndex, categories, onUpdate, onRemove, canRemove, 
                     {/* Pricing */}
                     <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
                         <h3 className="text-sm font-bold text-gray-800 mb-3">Pricing</h3>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div className="relative">
-                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                    <span className="text-gray-500 text-sm font-bold">$</span>
-                                </div>
-                                <input type="number" min="0" step="0.01" value={plan.price}
-                                    onChange={e => set('price', parseFloat(e.target.value) || 0)}
-                                    className="pl-7 block w-full border border-gray-300 rounded-md p-2.5 text-sm font-mono focus:ring-indigo-500 focus:border-indigo-500" placeholder="0.00" />
-                            </div>
-                            <div className="flex bg-gray-100 rounded-lg p-1">
-                                <button type="button" onClick={() => onUpdate(plan.id, { price_type: 'per_url', package_id: null })}
-                                    className={`flex-1 text-xs font-semibold py-1.5 px-2 rounded-md transition-colors ${plan.price_type === 'per_url' ? 'bg-white shadow-sm text-indigo-700' : 'text-gray-500'}`}>
-                                    Per URL
-                                </button>
-                                <button type="button" onClick={() => {
-                                    onUpdate(plan.id, { price_type: 'package' });
-                                    if (plan.vendor_name?.trim()) onLoadPackages(plan.vendor_name);
-                                }}
-                                    className={`flex-1 text-xs font-semibold py-1.5 px-2 rounded-md transition-colors ${plan.price_type === 'package' ? 'bg-white shadow-sm text-indigo-700' : 'text-gray-500'}`}>
-                                    Package
-                                </button>
-                            </div>
+                        <p className="text-xs text-gray-500 mb-3">Per-URL prices are set per category group below. Choose Package to bill by package instead.</p>
+                        <div className="flex bg-gray-100 rounded-lg p-1 max-w-xs">
+                            <button type="button" onClick={() => onUpdate(plan.id, { price_type: 'per_url', package_id: null })}
+                                className={`flex-1 text-xs font-semibold py-1.5 px-2 rounded-md transition-colors ${plan.price_type === 'per_url' ? 'bg-white shadow-sm text-indigo-700' : 'text-gray-500'}`}>
+                                Per URL
+                            </button>
+                            <button type="button" onClick={() => {
+                                onUpdate(plan.id, { price_type: 'package' });
+                                if (plan.vendor_name?.trim()) onLoadPackages(plan.vendor_name);
+                            }}
+                                className={`flex-1 text-xs font-semibold py-1.5 px-2 rounded-md transition-colors ${plan.price_type === 'package' ? 'bg-white shadow-sm text-indigo-700' : 'text-gray-500'}`}>
+                                Package
+                            </button>
                         </div>
                     </div>
 
@@ -321,7 +352,7 @@ function PlanCard({ plan, planIndex, categories, onUpdate, onRemove, canRemove, 
                             <Package className="w-4 h-4 text-indigo-500" />
                             <h3 className="text-sm font-bold text-gray-800">Package Selection</h3>
                             {plan.price_type !== 'package' && (
-                                <span className="text-[10px] text-gray-400 font-semibold">— select "Package" pricing to enable</span>
+                                <span className="text-[10px] text-gray-400 font-semibold">— select &quot;Package&quot; pricing to enable</span>
                             )}
                         </div>
                         {plan.price_type === 'package' && (
@@ -374,6 +405,23 @@ function PlanCard({ plan, planIndex, categories, onUpdate, onRemove, canRemove, 
                                                             ? `✓ ${eff} remaining — sufficient for ${qty} qty`
                                                             : `⚠ Only ${eff} remaining — insufficient for ${qty} qty`}
                                                     </div>
+                                                    {sel.total_price > 0 && (
+                                                        <div className="mt-2 px-3 py-2 rounded-lg bg-indigo-50 border border-indigo-100 text-xs">
+                                                            <div className="flex items-center gap-3 flex-wrap">
+                                                                <span className="font-black text-indigo-700">${parseFloat(sel.total_price).toFixed(2)} total</span>
+                                                                <span className="text-indigo-400">·</span>
+                                                                <span className="font-semibold text-indigo-600">${sel.price_per_url?.toFixed(4)}/url</span>
+                                                                {qty > 0 && (
+                                                                    <>
+                                                                        <span className="text-indigo-400">·</span>
+                                                                        <span className="font-semibold text-indigo-600">
+                                                                            {qty} urls = ${(sel.price_per_url * qty).toFixed(2)} cost
+                                                                        </span>
+                                                                    </>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                     {categoryMismatch && (
                                                         <div className="mt-2 text-xs font-semibold px-3 py-1.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-200">
                                                             ⚠ Package category (<strong>{sel.category}</strong>) doesn't match any placement group in this plan. You can still proceed if this is intentional.
@@ -497,7 +545,7 @@ function PlanCard({ plan, planIndex, categories, onUpdate, onRemove, canRemove, 
                                             <span className="w-5 h-5 flex items-center justify-center rounded-full bg-indigo-100 text-indigo-700 font-bold text-[10px]">{gi + 1}</span>
                                             <span className="text-xs font-bold text-gray-700">Group</span>
                                         </div>
-                                        <div className="flex-1 grid grid-cols-2 gap-3">
+                                        <div className="flex-1 grid grid-cols-3 gap-3">
                                             <div>
                                                 <label className="block text-[10px] font-semibold text-gray-500 mb-1">Category</label>
                                                 <select value={group.category} onChange={e => updateGroup(group.id, 'category', e.target.value)}
@@ -514,6 +562,15 @@ function PlanCard({ plan, planIndex, categories, onUpdate, onRemove, canRemove, 
                                                     onChange={e => updateGroup(group.id, 'sheet_name', e.target.value)}
                                                     className="block w-full border border-gray-300 rounded py-1.5 px-2 text-sm focus:ring-indigo-500 focus:border-indigo-500" />
                                             </div>
+                                            {plan.price_type === 'per_url' && (
+                                                <div>
+                                                    <label className="block text-[10px] font-semibold text-gray-500 mb-1">Price / URL ($)</label>
+                                                    <input type="number" min="0" step="0.01" placeholder="0.00"
+                                                        value={group.group_price || ''}
+                                                        onChange={e => updateGroup(group.id, 'group_price', parseFloat(e.target.value) || 0)}
+                                                        className="block w-full border border-gray-300 rounded py-1.5 px-2 text-sm font-mono focus:ring-indigo-500 focus:border-indigo-500" />
+                                                </div>
+                                            )}
                                         </div>
                                         {plan.project_info_groups.length > 1 && (
                                             <button type="button" onClick={() => removeGroup(group.id)}
@@ -589,11 +646,13 @@ export default function NewProjectPage() {
     const [plans, setPlans] = useState([createEmptyPlan()]);
     const [categories, setCategories] = useState([]);
     const [campaignSuggestions, setCampaignSuggestions] = useState([]);
+    const [vendorSuggestions, setVendorSuggestions] = useState([]);
     const [vendorPackages, setVendorPackages] = useState({}); // { [vendorName]: Package[] }
 
     useEffect(() => {
         getCategories().then(res => { if (res.success) setCategories(res.categories); });
         getExistingCampaignTitles().then(titles => setCampaignSuggestions(titles));
+        getExistingVendorNames().then(names => setVendorSuggestions(names));
     }, []);
 
     // Auto-calc urls_per_day when plan fields change
@@ -609,35 +668,7 @@ export default function NewProjectPage() {
 
     // Auto-calc deadline from dripfeed + chain plan start dates from previous plan's deadline
     useEffect(() => {
-        setPlans(prev => {
-            const next = [...prev];
-            let changed = false;
-            for (let i = 0; i < next.length; i++) {
-                const plan = { ...next[i] };
-                let planChanged = false;
-
-                // Chain start_date from previous plan's deadline + 1 day
-                if (i > 0 && !plan.startDateManualOverride) {
-                    const prevDeadline = next[i - 1].deadline;
-                    if (prevDeadline) {
-                        const newStart = addDaysToDateStr(prevDeadline, 1);
-                        if (plan.start_date !== newStart) { plan.start_date = newStart; planChanged = true; }
-                    }
-                }
-
-                // Auto-calc deadline = start_date + dripfeed_period
-                if (plan.dripfeed_enabled && !plan.deadlineManualOverride) {
-                    const period = parseInt(plan.dripfeed_period) || 0;
-                    if (plan.start_date && period) {
-                        const newDeadline = addDaysToDateStr(plan.start_date, period);
-                        if (plan.deadline !== newDeadline) { plan.deadline = newDeadline; planChanged = true; }
-                    }
-                }
-
-                if (planChanged) { next[i] = plan; changed = true; }
-            }
-            return changed ? next : prev;
-        });
+        setPlans(prev => normalizePlanDates(prev));
     }, [plans.map(p => `${p.start_date}|${p.deadline}|${p.dripfeed_enabled}|${p.dripfeed_period}|${p.deadlineManualOverride}|${p.startDateManualOverride}`).join('||')]);
 
     useEffect(() => {
@@ -666,7 +697,7 @@ export default function NewProjectPage() {
         }));
     };
 
-    const addPlan = () => setPlans(prev => [...prev, createEmptyPlan()]);
+    const addPlan = () => setPlans(prev => normalizePlanDates([...prev, createEmptyPlan()]));
     const removePlan = (planId) => setPlans(prev => prev.filter(p => p.id !== planId));
 
     const isFormValid = useMemo(() => {
@@ -696,8 +727,23 @@ export default function NewProjectPage() {
         });
     }, [campaignTitle, personInCharge, plans]);
 
-    // Serialize plans for hidden input (strip internal id from sub-items, keep for server to ignore)
-    const plansForSubmit = plans.map(({ id, manualOverride, deadlineManualOverride, startDateManualOverride, ...rest }) => rest);
+    // Serialize plans for hidden input. Apply a final dripfeed deadline recompute here so the
+    // submitted JSON always reflects the auto-calc, even if a render race left state stale.
+    const plansForSubmit = normalizePlanDates(plans).map(plan => {
+        const out = { ...plan };
+        const deadlineManualOverride = out.deadlineManualOverride;
+        delete out.id;
+        delete out.manualOverride;
+        delete out.deadlineManualOverride;
+        delete out.startDateManualOverride;
+        if (out.dripfeed_enabled && !deadlineManualOverride && out.start_date) {
+            const period = parseInt(out.dripfeed_period) || 0;
+            if (period > 0) {
+                out.deadline = addDaysToDateStr(out.start_date, period);
+            }
+        }
+        return out;
+    });
 
     return (
         <div className="max-w-4xl mx-auto py-10 px-4 sm:px-6 lg:px-8 pb-24">
@@ -714,7 +760,7 @@ export default function NewProjectPage() {
                             <div key={i}>
                                 <p className="text-xs font-semibold text-green-700 mb-1">Plan {i + 1}: {r.planLabel}</p>
                                 <code className="block p-2 bg-green-100 rounded text-green-900 border border-green-300 select-all overflow-x-auto font-mono text-xs">
-                                    {typeof window !== 'undefined' ? `${window.location.origin}/vendor/${r.vendorSlug}/${r.hash}` : `/vendor/${r.vendorSlug}/${r.hash}`}
+                                    {typeof window !== 'undefined' ? `${window.location.origin}/vendor/${r.vendorSlug}/portal/${r.vendorUuid}/project/${r.hash}` : `/vendor/${r.vendorSlug}/portal/${r.vendorUuid}/project/${r.hash}`}
                                 </code>
                             </div>
                         ))}
@@ -782,7 +828,8 @@ export default function NewProjectPage() {
                             canRemove={plans.length > 1}
                             vendorPackages={vendorPackages}
                             allPlans={plans}
-                            onLoadPackages={loadVendorPackages} />
+                            onLoadPackages={loadVendorPackages}
+                            vendorSuggestions={vendorSuggestions} />
                     ))}
                 </div>
 

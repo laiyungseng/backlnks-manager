@@ -106,7 +106,12 @@ function PlanEntry({ plan }) {
                     <TableHeader />
                     <div className="px-4 pb-4 pt-3 space-y-3">
                         {plan.projects.map((project, idx) => (
-                            <PlacementProjectRow key={project.id || idx} project={project} isCompletedView={plan.isCompletedView} />
+                            <PlacementProjectRow
+                                key={project.id || idx}
+                                project={project}
+                                isCompletedView={plan.isCompletedView}
+                                onProjectFinalized={plan.onProjectFinalized}
+                            />
                         ))}
                     </div>
                 </div>
@@ -115,7 +120,7 @@ function PlanEntry({ plan }) {
     );
 }
 
-export default function PlacementGroupCard({ group, isCompletedView }) {
+export default function PlacementGroupCard({ group, isCompletedView, onProjectFinalized }) {
     const [isCollapsed, setIsCollapsed] = useState(true);
 
     const projectTitle = group.projectTitle || group.vendorName || 'Unnamed Project';
@@ -132,6 +137,7 @@ export default function PlacementGroupCard({ group, isCompletedView }) {
                     ...meta,
                     projects: [],
                     isCompletedView,
+                    onProjectFinalized,
                 });
             }
             planMap.get(meta.key).projects.push(project);

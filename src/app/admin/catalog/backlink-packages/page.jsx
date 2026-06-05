@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect, useTransition } from 'react';
-import { Package, Plus, Trash2, ChevronDown, ChevronRight, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
-import { getPackagesAction, createPackageAction, deletePackageAction } from './actions';
+import { Package, Plus, Trash2, ChevronDown, ChevronRight, Loader2, AlertCircle, CheckCircle2, BadgeCheck, RotateCcw } from 'lucide-react';
+import { getPackagesAction, createPackageAction, deletePackageAction, togglePackageApprovalAction } from './actions';
 import { getCategories } from '../categories/actions';
 
 // ── helpers ────────────────────────────────────────────────────────────────
@@ -33,6 +33,8 @@ function AddPackageForm({ categories, onCreated }) {
     const [catAbbr, setCatAbbr] = useState('');
     const [codePreview, setCodePreview] = useState('BK-??-001');
     const [selectedCategory, setSelectedCategory] = useState('');
+    const [totalQty, setTotalQty] = useState('');
+    const [totalPrice, setTotalPrice] = useState('');
 
     function handleCategoryChange(e) {
         const cat = e.target.value;
@@ -65,10 +67,16 @@ function AddPackageForm({ categories, onCreated }) {
                 setSelectedCategory('');
                 setCatAbbr('');
                 setCodePreview('BK-??-###');
+                setTotalQty('');
+                setTotalPrice('');
                 onCreated();
             }
         });
     }
+
+    const pricePerUrl = totalQty > 0 && totalPrice > 0
+        ? (parseFloat(totalPrice) / parseInt(totalQty)).toFixed(4)
+        : null;
 
     return (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mb-8">
@@ -138,8 +146,29 @@ function AddPackageForm({ categories, onCreated }) {
                         min={1}
                         required
                         placeholder="e.g. 100"
+                        value={totalQty}
+                        onChange={e => setTotalQty(e.target.value)}
                         className="px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-400 placeholder-slate-300"
                     />
+                </div>
+
+                {/* Total Price */}
+                <div className="flex flex-col gap-1">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Total Price ($) <span className="text-red-400">*</span></label>
+                    <input
+                        name="total_price"
+                        type="number"
+                        min={0.01}
+                        step={0.01}
+                        required
+                        placeholder="e.g. 500.00"
+                        value={totalPrice}
+                        onChange={e => setTotalPrice(e.target.value)}
+                        className="px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-800 font-mono focus:outline-none focus:ring-2 focus:ring-indigo-400 placeholder-slate-300"
+                    />
+                    {pricePerUrl && (
+                        <p className="text-[9px] text-indigo-500 font-bold">${pricePerUrl}/url</p>
+                    )}
                 </div>
 
                 {/* Purchased At */}
@@ -188,12 +217,17 @@ function AddPackageForm({ categories, onCreated }) {
 
 // ── Package Row ─────────────────────────────────────────────────────────────
 
-function PackageRow({ pkg, onDeleted }) {
+function PackageRow({ pkg, onDeleted, onUpdated }) {
     const [expanded, setExpanded] = useState(false);
     const [isPending, startTransition] = useTransition();
     const [deleteMsg, setDeleteMsg] = useState(null);
+    const [localApproved, setLocalApproved] = useState(pkg.is_approved ?? false);
 
     const remainPct = pkg.total_quantity > 0 ? Math.round((pkg.remaining_quantity / pkg.total_quantity) * 100) : 0;
+    const pricePerUrl = pkg.total_quantity > 0 && pkg.total_price > 0
+        ? (pkg.total_price / pkg.total_quantity).toFixed(4)
+        : null;
+    const isPendingPayment = pkg.payment_status !== 'approved';
 
     function handleDelete() {
         if (!confirm(`Delete package ${pkg.code}? This cannot be undone.`)) return;
@@ -204,13 +238,30 @@ function PackageRow({ pkg, onDeleted }) {
         });
     }
 
+    function handleToggleApproval() {
+        const next = !localApproved;
+        setLocalApproved(next);
+        startTransition(async () => {
+            const result = await togglePackageApprovalAction(pkg.id, next);
+            if (!result.success) {
+                setLocalApproved(!next);
+            } else {
+                onUpdated?.();
+            }
+        });
+    }
+
     return (
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
             <div className="grid grid-cols-12 items-center px-5 py-4 gap-3">
-                {/* Code */}
+                {/* Code + category chip */}
                 <div className="col-span-2">
-                    <span className="text-xs font-black text-indigo-700 tracking-widest font-mono">{pkg.code}</span>
-                    <p className="text-[9px] text-slate-400 mt-0.5">{pkg.category}</p>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-xs font-black text-indigo-700 tracking-widest font-mono">{pkg.code}</span>
+                        <span className="px-1.5 py-0.5 text-[9px] font-black uppercase tracking-widest rounded bg-indigo-50 text-indigo-600 border border-indigo-100">
+                            {pkg.category}
+                        </span>
+                    </div>
                 </div>
 
                 {/* Vendor */}
@@ -218,8 +269,27 @@ function PackageRow({ pkg, onDeleted }) {
                     <span className="text-xs font-bold text-slate-800 uppercase">{pkg.vendor_name}</span>
                 </div>
 
+                {/* Pricing */}
+                <div className="col-span-2">
+                    {pkg.total_price > 0 ? (
+                        <>
+                            <p className="text-sm font-black text-slate-800">${parseFloat(pkg.total_price).toFixed(2)}</p>
+                            {pricePerUrl && <p className="text-[9px] text-slate-400 font-semibold">${pricePerUrl}/url</p>}
+                        </>
+                    ) : (
+                        <p className="text-[9px] text-slate-300 italic">No price</p>
+                    )}
+                    <div className="mt-1">
+                        {isPendingPayment ? (
+                            <span className="px-1.5 py-0.5 text-[9px] font-black uppercase tracking-widest rounded bg-amber-50 text-amber-600 border border-amber-100">Pending Payment</span>
+                        ) : (
+                            <span className="px-1.5 py-0.5 text-[9px] font-black uppercase tracking-widest rounded bg-emerald-50 text-emerald-700 border border-emerald-100">Paid</span>
+                        )}
+                    </div>
+                </div>
+
                 {/* Quantity bars */}
-                <div className="col-span-3">
+                <div className="col-span-2">
                     <div className="flex items-center gap-2 mb-1">
                         <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest w-12">Total</span>
                         <span className="text-xs font-bold text-slate-700">{pkg.total_quantity}</span>
@@ -235,7 +305,6 @@ function PackageRow({ pkg, onDeleted }) {
                         </span>
                         <span className="text-[9px] text-slate-400">({remainPct}%)</span>
                     </div>
-                    {/* Progress bar */}
                     <div className="mt-1.5 h-1.5 bg-slate-100 rounded-full overflow-hidden w-full">
                         <div
                             className={`h-full rounded-full transition-all ${remainPct <= 10 ? 'bg-red-400' : remainPct <= 40 ? 'bg-amber-400' : 'bg-emerald-400'}`}
@@ -245,13 +314,13 @@ function PackageRow({ pkg, onDeleted }) {
                 </div>
 
                 {/* Projects count */}
-                <div className="col-span-2 flex items-center gap-2">
+                <div className="col-span-1 flex items-center gap-2">
                     <button
                         onClick={() => setExpanded(v => !v)}
                         className="flex items-center gap-1.5 text-xs font-bold text-slate-700 hover:text-indigo-600 transition-colors"
                     >
                         {expanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-                        {pkg.projects.length} {pkg.projects.length === 1 ? 'project' : 'projects'}
+                        {pkg.projects.length}
                     </button>
                 </div>
 
@@ -270,14 +339,31 @@ function PackageRow({ pkg, onDeleted }) {
                 {/* Status + actions */}
                 <div className="col-span-1 flex flex-col items-end gap-2">
                     <StatusBadge status={pkg.status} />
-                    <button
-                        onClick={handleDelete}
-                        disabled={isPending}
-                        title="Delete package"
-                        className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
-                    >
-                        {isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                        {/* is_approved toggle */}
+                        <button
+                            onClick={handleToggleApproval}
+                            disabled={isPending}
+                            title={localApproved ? 'Approved for use — click to revoke' : 'Not approved for use — click to approve'}
+                            className={`p-1.5 rounded-lg transition-colors disabled:opacity-50 ${localApproved ? 'text-emerald-600 bg-emerald-50 hover:bg-emerald-100' : 'text-slate-300 hover:text-indigo-500 hover:bg-indigo-50'}`}
+                        >
+                            <BadgeCheck className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                            onClick={handleDelete}
+                            disabled={isPending}
+                            title="Delete package"
+                            className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+                        >
+                            {isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                        </button>
+                    </div>
+                    {isPendingPayment && !localApproved && (
+                        <p className="text-[8px] text-slate-400 text-right leading-tight max-w-[80px]">Pending payment + approval</p>
+                    )}
+                    {isPendingPayment && localApproved && (
+                        <p className="text-[8px] text-amber-500 text-right leading-tight max-w-[80px]">Approved but payment outstanding</p>
+                    )}
                     {deleteMsg && <p className="text-[9px] text-red-500 text-right max-w-[120px]">{deleteMsg}</p>}
                 </div>
             </div>
@@ -331,8 +417,9 @@ export default function BacklinksPackagePage() {
 
     useEffect(() => { load(); }, []);
 
-    const active    = packages.filter(p => p.status === 'Active');
-    const exhausted = packages.filter(p => p.status === 'Exhausted');
+    const active           = packages.filter(p => p.status === 'Active');
+    const exhausted        = packages.filter(p => p.status === 'Exhausted');
+    const awaitingPayment  = packages.filter(p => p.payment_status !== 'approved');
 
     return (
         <div className="p-8 max-w-7xl mx-auto">
@@ -355,6 +442,12 @@ export default function BacklinksPackagePage() {
                             <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Exhausted</p>
                             <p className="text-xl font-black text-slate-400">{exhausted.length}</p>
                         </div>
+                        {awaitingPayment.length > 0 && (
+                            <div className="text-right">
+                                <p className="text-[9px] font-black text-amber-400 uppercase tracking-widest">Awaiting Payment</p>
+                                <p className="text-xl font-black text-amber-500">{awaitingPayment.length}</p>
+                            </div>
+                        )}
                     </div>
                 )}
             </div>
@@ -367,8 +460,9 @@ export default function BacklinksPackagePage() {
                 <div className="hidden md:grid grid-cols-12 px-5 py-3 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-200 mb-2">
                     <div className="col-span-2">Code / Category</div>
                     <div className="col-span-2">Vendor</div>
-                    <div className="col-span-3">Quantity</div>
-                    <div className="col-span-2">Projects</div>
+                    <div className="col-span-2">Price</div>
+                    <div className="col-span-2">Quantity</div>
+                    <div className="col-span-1">Projects</div>
                     <div className="col-span-2">Dates</div>
                     <div className="col-span-1 text-right">Status</div>
                 </div>
@@ -388,7 +482,7 @@ export default function BacklinksPackagePage() {
             ) : (
                 <div className="space-y-3">
                     {packages.map(pkg => (
-                        <PackageRow key={pkg.id} pkg={pkg} onDeleted={load} />
+                        <PackageRow key={pkg.id} pkg={pkg} onDeleted={load} onUpdated={load} />
                     ))}
                 </div>
             )}

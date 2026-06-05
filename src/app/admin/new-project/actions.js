@@ -26,6 +26,13 @@ async function resolveVendor(supabase, vendorName) {
     return newV.id;
 }
 
+export async function getExistingVendorNames() {
+    try { await requireAdmin(); } catch { return []; }
+    const supabase = getServerSupabase();
+    const { data } = await supabase.from('vendors').select('vendor_name').order('vendor_name').limit(500);
+    return [...new Set((data || []).map(r => r.vendor_name).filter(Boolean))];
+}
+
 export async function getExistingCampaignTitles() {
     try { await requireAdmin(); } catch { return []; }
     const supabase = getServerSupabase();
@@ -70,14 +77,37 @@ export async function createCampaignAction(prevState, formData) {
 
         const results = [];
 
+        // Safety: if dripfeed is on with a valid period and the submitted deadline is
+        // missing or equals start_date, recompute deadline = start_date + period days.
+        const computeDeadlineSafely = (startDate, dl, dripOn, dripPeriod) => {
+            if (!startDate) return dl;
+            if (!dripOn) return dl;
+            const period = parseInt(dripPeriod) || 0;
+            if (period <= 0) return dl;
+            const needsFix = !dl || dl === startDate;
+            if (!needsFix) return dl;
+            try {
+                const [y, m, d] = startDate.split('-').map(Number);
+                const dt = new Date(y, m - 1, d);
+                dt.setDate(dt.getDate() + period);
+                const yr = dt.getFullYear();
+                const mo = String(dt.getMonth() + 1).padStart(2, '0');
+                const dy = String(dt.getDate()).padStart(2, '0');
+                return `${yr}-${mo}-${dy}`;
+            } catch {
+                return dl;
+            }
+        };
+
         // 2. Process each plan sequentially
         for (const plan of plans) {
             const {
-                vendor_name, country, start_date, deadline,
+                vendor_name, country, start_date,
                 dripfeed_enabled, dripfeed_period, urls_per_day,
                 price, price_type, package_id, randomize_languages, remarks,
                 languages, project_info_groups
             } = plan;
+            const deadline = computeDeadlineSafely(start_date, plan.deadline, dripfeed_enabled, dripfeed_period);
 
             if (!vendor_name?.trim()) continue;
 
@@ -94,6 +124,7 @@ export async function createCampaignAction(prevState, formData) {
                         quantity: String(parseInt(t.ratio) || 0),
                         category: g.category,
                         sheet_name: g.sheet_name || null,
+                        group_price: parseFloat(g.group_price) || 0,
                         created_at: new Date().toISOString()
                     });
                 });
@@ -103,6 +134,19 @@ export async function createCampaignAction(prevState, formData) {
             const vendorSlug = vendor_name.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
             const vendorId = await resolveVendor(supabase, vendor_name.trim());
             const firstLangCode = ((languages?.[0]?.code) || 'EN').toUpperCase();
+
+            // For package plans, derive per-URL price from the package definition
+            let perUrlPriceFromPackage = null;
+            if (price_type === 'package' && package_id) {
+                const { data: pkgRow } = await supabase
+                    .from('backlink_packages')
+                    .select('total_price, total_quantity')
+                    .eq('id', package_id)
+                    .single();
+                if (pkgRow && pkgRow.total_quantity > 0 && pkgRow.total_price > 0) {
+                    perUrlPriceFromPackage = pkgRow.total_price / pkgRow.total_quantity;
+                }
+            }
 
             // Create project (project_name mirrors campaign title for backward compat)
             const { data: proj, error: projErr } = await supabase
@@ -121,7 +165,7 @@ export async function createCampaignAction(prevState, formData) {
                     dripfeed_period: dripfeed_enabled ? (dripfeed_period || null) : null,
                     urls_per_day: dripfeed_enabled ? (parseInt(urls_per_day) || null) : null,
                     url_entry_enabled: false,
-                    price: parseFloat(price) || 0,
+                    price: price_type === 'per_url' ? 0 : (perUrlPriceFromPackage ?? parseFloat(price) ?? 0),
                     price_type: price_type || 'per_url',
                     package_id: (price_type === 'package' && package_id) ? package_id : null,
                     randomize_languages: !!randomize_languages,
@@ -153,14 +197,15 @@ export async function createCampaignAction(prevState, formData) {
                 if (langErr) { await rollback(); throw new Error(`Languages insert failed: ${langErr.message}`); }
             }
 
-            // Insert targets
+            // Insert targets — package plans use derived per-URL price; per_url plans use group_price
             const targetsToInsert = flattenedTargets.map(t => ({
                 project_id: projectId,
                 category: t.category || 'NULL',
                 anchor_text: t.anchor_text,
                 target_url: t.target_url,
                 quantity_requested: parseInt(t.quantity, 10),
-                sheet_name: t.sheet_name
+                sheet_name: t.sheet_name,
+                price: perUrlPriceFromPackage != null ? perUrlPriceFromPackage : (t.group_price || 0)
             }));
 
             if (targetsToInsert.length > 0) {
@@ -200,7 +245,7 @@ export async function createCampaignAction(prevState, formData) {
                 if (planErr) console.warn(`[Kickoff] project_plans insert warning: ${planErr.message}`);
             }
 
-            results.push({ hash: projectHash, vendorSlug, planLabel: vendor_name.trim() });
+            results.push({ hash: projectHash, vendorSlug, vendorUuid: vendorId, planLabel: vendor_name.trim() });
         }
 
         if (results.length === 0) {

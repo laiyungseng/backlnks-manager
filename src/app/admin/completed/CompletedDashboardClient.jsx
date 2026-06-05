@@ -37,6 +37,7 @@ function ClosedProjectRow({ project }) {
         ? hubTargets.reduce((acc, t) => acc + (parseInt(t.quantity || '0', 10)), 0)
         : (project.total_quantity || 0);
     const completedLinks = hub.completed_count ?? 0;
+    const formatExecutionDate = (value) => value ? String(value).split('T')[0] : 'N/A';
 
     return (
         <div className="group flex flex-wrap items-center gap-3 px-4 py-3 bg-white rounded-2xl border border-red-100 hover:border-red-200 transition-all">
@@ -60,6 +61,19 @@ function ClosedProjectRow({ project }) {
             {/* Info Button — fixed width, no shrink */}
             <div className="flex items-center justify-center shrink-0 px-1">
                 <AnchorInfoPopup projectId={project.id} projectName={project.project_name} />
+            </div>
+
+            {/* Execution range */}
+            <div className="flex-1 min-w-[120px]">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Range</p>
+                <div className="space-y-0.5">
+                    <p className="text-[11px] font-bold text-slate-500">
+                        <span className="font-black text-slate-300">S: </span>{formatExecutionDate(project.start_date)}
+                    </p>
+                    <p className="text-[11px] font-bold text-slate-500">
+                        <span className="font-black text-slate-300">E: </span>{formatExecutionDate(project.deadline)}
+                    </p>
+                </div>
             </div>
 
             {/* Fulfillment at time of close */}

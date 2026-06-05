@@ -6,7 +6,8 @@ import { useState } from 'react';
 export default function CopyButton({ textToCopy }) {
     const [copied, setCopied] = useState(false);
 
-    const handleCopy = () => {
+    const handleCopy = (event) => {
+        event.stopPropagation();
         navigator.clipboard.writeText(textToCopy);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000); // Reset icon after 2 seconds

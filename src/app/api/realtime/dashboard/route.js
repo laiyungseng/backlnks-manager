@@ -33,11 +33,12 @@ async function fetchProjects(supabase) {
             project_name, country, total_quantity,
             status, is_approved, is_priority, start_date, deadline, price, price_type, payment_status,
             dripfeed_enabled, dripfeed_period, urls_per_day, url_entry_enabled,
+            vendor_id,
             vendors ( vendor_name ),
             projects_hub ( hash, targets, is_locked, vendor_staging_data ),
             placements ( id ),
             project_languages ( lang_code, ratio ),
-            project_targets ( category, sheet_name ),
+            project_targets ( category, sheet_name, price, quantity_requested ),
             project_plans ( id, campaign_id, step_order, category, plan_info, created_at, start_date, end_date, total_quantity )
         `)
         .order('created_date', { ascending: false });
@@ -87,7 +88,15 @@ export async function GET() {
     let activeChannel = null;
     let heartbeatTimer = null;
     let debounceTimer = null;
+    let pollTimer = null;
     let isClosed = false;
+
+    // Polling fallback — runs alongside Supabase Realtime CDC.
+    // Required because the free tier does not allow enabling Replication
+    // on the projects / projects_hub / project_plans tables, so CDC events
+    // never fire. With polling, admin pages refresh within POLL_INTERVAL_MS
+    // regardless of Realtime config.
+    const POLL_INTERVAL_MS = 10000;
 
     const stream = new ReadableStream({
         async start(controller) {
@@ -135,11 +144,16 @@ export async function GET() {
                 .subscribe((status) => {
                     console.log(`[Realtime] Dashboard subscription: ${status}`);
                 });
+
+            // Polling fallback — fires pushLatest on a fixed interval so the
+            // dashboard refreshes even when Realtime CDC is not enabled.
+            pollTimer = setInterval(pushLatest, POLL_INTERVAL_MS);
         },
 
         cancel() {
             isClosed = true;
             clearInterval(heartbeatTimer);
+            clearInterval(pollTimer);
             clearTimeout(debounceTimer);
             if (activeChannel) {
                 supabase.removeChannel(activeChannel);

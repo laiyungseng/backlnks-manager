@@ -42,9 +42,11 @@ export default async function VendorCompletedPage({ params }) {
             country,
             total_quantity,
             created_date,
+            start_date,
             language,
             project_languages ( lang_code, ratio ),
             project_targets ( category ),
+            project_plans ( campaign_id, project_campaigns ( id, title ) ),
             projects_hub ( hash, vendor_staging_data, is_locked, targets ),
             placements ( id )
         `)
@@ -60,7 +62,7 @@ export default async function VendorCompletedPage({ params }) {
 
     return (
         <div className="max-w-6xl mx-auto px-6 py-8 pb-20">
-            <CompletedProjectList projects={completedProjects} vendorName={vendorName} displayName={displayName} />
+            <CompletedProjectList projects={completedProjects} vendorName={vendorName} vendorUuid={vendorUuid} displayName={displayName} />
         </div>
     );
 }
